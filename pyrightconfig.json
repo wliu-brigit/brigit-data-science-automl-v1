@@ -1,0 +1,25 @@
+{
+  "include": [
+    "agent-skills",
+    "automl",
+    "projects",
+    "tests"
+  ],
+  "exclude": [
+    "**/.cache",
+    "**/.pytest_cache",
+    "**/.venv",
+    "**/__pycache__",
+    "**/experiments",
+    "automl_runs",
+    "mlruns"
+  ],
+  "extraPaths": [
+    "."
+  ],
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "off",
+  "reportMissingImports": "warning",
+  "reportMissingModuleSource": "warning",
+  "reportPrivateImportUsage": "none"
+}

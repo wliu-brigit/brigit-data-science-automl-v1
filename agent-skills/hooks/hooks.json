@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "SubagentStart": [
+      {
+        "matcher": "^(brigit-automl:)?automl-(proposer|coder)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/hooks/agent_timeline.py\" --project-root \"${AUTOML_PROJECT_ROOT:-${CLAUDE_PROJECT_DIR}}\" hook-event",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "matcher": "^(brigit-automl:)?automl-(proposer|coder)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run \"${CLAUDE_PLUGIN_ROOT}/hooks/agent_timeline.py\" --project-root \"${AUTOML_PROJECT_ROOT:-${CLAUDE_PROJECT_DIR}}\" hook-event",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

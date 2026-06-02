@@ -1,0 +1,8 @@
+{
+  "name": "brigit-automl",
+  "version": "0.1.0",
+  "description": "AutoML agent skill bundle for tabular ML problems",
+  "author": {
+    "name": "Brigit Data Science"
+  }
+}

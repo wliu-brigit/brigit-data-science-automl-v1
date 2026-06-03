@@ -123,8 +123,12 @@ def read_profile(dataset_id: str):
         return None
     artifact_path = f"datasets/{dataset_id}/profile/profile_manifest.json"
     try:
-        local_path = client.raw().download_artifacts(run.info.run_id, artifact_path)
+        local_path = client.download_artifact(run.info.run_id, artifact_path)
     except Exception:
+        return None
+    if local_path is None:
+        # No profile was published for this dataset — a normal state (e.g. a
+        # freshly materialized dataset), not a storage failure.
         return None
     try:
         with open(local_path, encoding="utf-8") as handle:

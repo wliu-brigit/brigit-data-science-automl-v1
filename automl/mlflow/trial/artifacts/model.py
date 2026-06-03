@@ -176,7 +176,7 @@ def load_model(run_id: str):
     if uri.startswith(f"runs:/{run_id}/"):
         path = uri.removeprefix(f"runs:/{run_id}/")
         try:
-            local_path = client.raw().download_artifacts(run_id, path)
+            local_path = client.download_artifact(run_id, path, required=True)
             with open(local_path, "rb") as handle:
                 return cloudpickle.loads(handle.read())
         except Exception as exc:
@@ -198,7 +198,7 @@ def load_model_source(run_id: str) -> str:
     if uri.startswith(f"runs:/{run_id}/"):
         path = uri.removeprefix(f"runs:/{run_id}/")
         try:
-            local_path = client.raw().download_artifacts(run_id, path)
+            local_path = client.download_artifact(run_id, path, required=True)
             with open(local_path, encoding="utf-8") as handle:
                 return handle.read()
         except Exception as exc:
@@ -243,7 +243,7 @@ def _load_model_source_from_pyfunc_code(run_id: str) -> str:
             f"run {run_id!r} is missing {tags.MODEL_SOURCE_URI!r} and pyfunc code source"
         )
     try:
-        local_path = client.raw().download_artifacts(run_id, preferred)
+        local_path = client.download_artifact(run_id, preferred, required=True)
         with open(local_path, encoding="utf-8") as handle:
             return handle.read()
     except Exception as exc:

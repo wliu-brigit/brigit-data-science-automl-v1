@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +19,7 @@ from automl.agent.timeline.reconcile import (
     _agent_transcript_paths_by_id,
     _compact_iteration,
     _events_for_session,
+    _final_assistant_message,
     _latest_session_id_from_events,
     _main_transcript_paths,
     _optional_float,
@@ -41,6 +43,7 @@ def publish(
 ) -> dict[str, Any]:
     """Stage and publish reconciled session/trial agent artifacts."""
 
+    publish_started = time.monotonic()
     active = session if session is not None else active_project_session()
     route = _route(active)
     timeline_path = _timeline_path(active.config.repo_root, route)
@@ -57,16 +60,18 @@ def publish(
         session_id=resolved_session_id,
     )
     gcs_refs = _publish_raw_artifacts_to_gcs(active, route=route, events=events, staged=staged)
-    if gcs_refs:
-        staged = _stage_publish_artifacts(
-            project_root=active.config.repo_root,
-            route=route,
-            timeline_path=timeline_path,
-            events=events,
-            summary=summary,
-            session_id=resolved_session_id,
-            gcs_refs=gcs_refs,
-        )
+    # Reconciliation + staging + GCS upload dominate publish; the trailing
+    # MLflow JSON uploads below are excluded (the report is already written).
+    summary["publish_s"] = max(0.0, time.monotonic() - publish_started)
+    staged = _stage_publish_artifacts(
+        project_root=active.config.repo_root,
+        route=route,
+        timeline_path=timeline_path,
+        events=events,
+        summary=summary,
+        session_id=resolved_session_id,
+        gcs_refs=gcs_refs or None,
+    )
     _publish_to_mlflow(active, staged=staged)
     return {**staged, "status": "published"}
 
@@ -214,12 +219,45 @@ def _stage_trial_artifact(
             tool_events=coder_tool_events,
         ),
     )
+    message_paths = _stage_phase_messages(
+        trial_dir=trial_dir,
+        events=events,
+        iteration=iteration,
+    )
     return {
         "route": route,
         "trial_id": trial_id,
         "run_id": run_id,
         **{key: str(path) for key, path in paths.items()},
+        **{key: str(path) for key, path in message_paths.items()},
     }
+
+
+def _stage_phase_messages(
+    *,
+    trial_dir: Path,
+    events: list[dict[str, Any]],
+    iteration: dict[str, Any],
+) -> dict[str, Path]:
+    """Write each agent's full closing message as a per-phase markdown file.
+
+    The free-flow report is the human-readable record of what the agent did
+    and why; the JSON reports beside it carry only structured fields. Absent
+    transcripts (or empty messages) stage nothing rather than an empty file.
+    """
+    transcript_paths = _agent_transcript_paths_by_id(events)
+    agent_ids = iteration.get("agent_ids") if isinstance(iteration.get("agent_ids"), dict) else {}
+    staged: dict[str, Path] = {}
+    for phase in ("proposer", "coder"):
+        agent_id = str(agent_ids.get(phase) or "")
+        message = _final_assistant_message(transcript_paths.get(agent_id, ""))
+        if not message:
+            continue
+        message_path = trial_dir / phase / "message.md"
+        message_path.parent.mkdir(parents=True, exist_ok=True)
+        message_path.write_text(message + "\n", encoding="utf-8")
+        staged[f"{phase}_message_path"] = message_path
+    return staged
 
 
 def _agent_manifest_payload(
@@ -241,8 +279,10 @@ def _agent_manifest_payload(
         "artifacts": {
             "manifest": "agent/manifest.json",
             "proposer_report": "agent/proposer/report.json",
+            "proposer_message": "agent/proposer/message.md",
             "proposer_tool_events": "agent/proposer/tool_events.json",
             "coder_report": "agent/coder/report.json",
+            "coder_message": "agent/coder/message.md",
             "coder_tool_events": "agent/coder/tool_events.json",
         },
     }
@@ -280,6 +320,8 @@ def _phase_report_payload(
     if phase == "coder":
         payload["runner_execution_s"] = _optional_float(iteration.get("runner_execution_s"))
         payload["runner_status"] = str(iteration.get("runner_status") or "")
+        if isinstance(iteration.get("runner_phases_s"), dict):
+            payload["runner_phases_s"] = iteration["runner_phases_s"]
         if payload["duration_s"] is not None and payload["runner_execution_s"] is not None:
             payload["coder_non_runner_s"] = max(
                 0.0,
@@ -434,6 +476,7 @@ def _publish_to_mlflow(active: Session, *, staged: dict[str, Any]) -> None:
             if not run_id:
                 continue
             _log_trial_json_artifacts(run_id, artifact)
+            _log_trial_message_artifacts(run_id, artifact)
             _log_trial_metrics(run_id, artifact)
 
 
@@ -448,6 +491,19 @@ def _log_trial_json_artifacts(run_id: str, artifact: dict[str, Any]) -> None:
     for artifact_name, path_key in mapping.items():
         payload = json.loads(Path(str(artifact[path_key])).read_text(encoding="utf-8"))
         mlflow_trial.log_json(run_id, artifact_name, payload)
+
+
+def _log_trial_message_artifacts(run_id: str, artifact: dict[str, Any]) -> None:
+    """Log each staged agent closing message as a readable run artifact."""
+    for phase in ("proposer", "coder"):
+        path_value = artifact.get(f"{phase}_message_path")
+        if not path_value:
+            continue
+        mlflow_client.log_artifact_file(
+            run_id,
+            f"agent/{phase}/message.md",
+            Path(str(path_value)),
+        )
 
 
 def _log_trial_metrics(run_id: str, artifact: dict[str, Any]) -> None:

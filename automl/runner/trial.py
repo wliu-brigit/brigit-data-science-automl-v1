@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
-import os
 import sys
 from dataclasses import dataclass, field
 from json import JSONDecodeError
@@ -58,19 +57,11 @@ class TrialExecutionContext:
     metadata: TrialMetadata | None = None
 
 
-# Cap MLflow's HTTP retry budget for the whole runner process (and any child
-# it spawns, e.g. serving validation). The default of 7 retries with backoff
-# factor 2 sleeps 2*(2^0+...+2^6) = 254s before giving up on a retryable error
-# — longer than the validation timeout. 5 bounds the worst case to ~62s while
-# still tolerating genuine transient blips. ``setdefault`` respects an explicit
-# operator override.
-_RUNNER_HTTP_MAX_RETRIES = "5"
-
-
 def run_trial(path_or_project: str | Path, *, session: Session | None = None) -> TrialResult:
     """Run one project model through the data->fit->eval->log chain."""
 
-    os.environ.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", _RUNNER_HTTP_MAX_RETRIES)
+    # MLflow's HTTP retry budget is capped once, seam-wide, at import of
+    # automl.mlflow.client (HTTP_MAX_RETRIES) — no runner-specific override.
     context = _execution_context(path_or_project, session=session)
     with mlflow_client.bound_for(
         context.session,

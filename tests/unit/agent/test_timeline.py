@@ -47,9 +47,15 @@ def _session(tmp_path: Path, *, gcs_bucket: str = "bucket") -> Session:
     )
 
 
-def _write_tool_transcript(path: Path, *, tool_name: str, target: str) -> None:
+def _write_tool_transcript(
+    path: Path,
+    *,
+    tool_name: str,
+    target: str,
+    closing_message: str = "",
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    lines = [
         json.dumps(
             {
                 "type": "assistant",
@@ -64,9 +70,17 @@ def _write_tool_transcript(path: Path, *, tool_name: str, target: str) -> None:
                 },
             }
         )
-        + "\n",
-        encoding="utf-8",
-    )
+    ]
+    if closing_message:
+        lines.append(
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {"content": [{"type": "text", "text": closing_message}]},
+                }
+            )
+        )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def test_handle_event_appends_route_scoped_hook_event(tmp_path):
@@ -194,8 +208,11 @@ def test_publish_stages_and_logs_agent_artifacts(monkeypatch, tmp_path):
     assert gcs_writes[0].startswith("gs://bucket/root/qa/dry_run/demo/exp/runs/")
 
 
-def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(tmp_path):
+def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(
+    tmp_path, monkeypatch
+):
     from automl.agent.timeline import handle_event, publish
+    from automl.agent.timeline.steps import record_cli_step
     from automl.mlflow import trial as mlflow_trial
 
     active = _session(tmp_path, gcs_bucket="")
@@ -206,14 +223,26 @@ def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(tmp_p
             with trial.active(slug="baseline", strategy="baseline") as run_id:
                 trial.set_tags(run_id, {tags.TRIAL_NUMBER: "1", tags.TRIAL_ID: "1_baseline"})
                 trial.log_metric(run_id, "eval.test.auc", 0.71)
+                trial.log_metric(run_id, "timing.fit_seconds", 1.5)
+                trial.log_metric(run_id, "timing.total_seconds", 2.0)
             run = client.raw().get_run(run_id)
 
         start_s = float(run.info.start_time or 0) / 1000
         end_s = float(run.info.end_time or run.info.start_time or 0) / 1000
         proposer_transcript = tmp_path / "transcripts" / "proposer.jsonl"
         coder_transcript = tmp_path / "transcripts" / "coder.jsonl"
-        _write_tool_transcript(proposer_transcript, tool_name="Read", target="config.py")
-        _write_tool_transcript(coder_transcript, tool_name="Edit", target="model.py")
+        _write_tool_transcript(
+            proposer_transcript,
+            tool_name="Read",
+            target="config.py",
+            closing_message="## Proposal\n\nXGBoost baseline with WOE encoding.",
+        )
+        _write_tool_transcript(
+            coder_transcript,
+            tool_name="Edit",
+            target="model.py",
+            closing_message="## Trial report\n\nImplemented and ran; AUC 0.71.",
+        )
 
         handle_event(
             {
@@ -260,6 +289,18 @@ def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(tmp_p
             session=active,
         )
 
+        monkeypatch.setenv("AUTOML_SESSION_ID", "session-2")
+        monkeypatch.setenv("AUTOML_PROJECT_ROOT", str(tmp_path))
+        monkeypatch.setenv("AUTOML_PROJECT", "demo")
+        monkeypatch.setenv("AUTOML_EXPERIMENT_ID", "exp")
+        monkeypatch.setenv("AUTOML_NAMESPACE", "qa")
+        monkeypatch.setenv("AUTOML_INHERIT_DRY_RUN", "1")
+        record_cli_step(
+            "experiment proposer-context",
+            duration_s=3.25,
+            exit_code=0,
+        )
+
         published = publish(session_id="session-2", session=active)
 
         timeline_events = [
@@ -267,18 +308,40 @@ def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(tmp_p
             for line in Path(published["timeline_path"]).read_text(encoding="utf-8").splitlines()
         ]
         assert [
-            (event["event"], event["phase"], event["agent_id"]) for event in timeline_events
+            (event["event"], event["phase"], event["agent_id"])
+            for event in timeline_events
+            if event.get("agent_id")
         ] == [
             ("start", "proposer", "agent-p"),
             ("end", "proposer", "agent-p"),
             ("start", "coder", "agent-c"),
             ("end", "coder", "agent-c"),
         ]
+        assert [
+            (event["step"], event["duration_s"])
+            for event in timeline_events
+            if event.get("event") == "step"
+        ] == [("experiment proposer-context", 3.25)]
 
         trial_artifact = published["trial_artifacts"][0]
         assert trial_artifact["run_id"] == run_id
         assert trial_artifact["proposer_report_path"].endswith("/proposer/report.json")
         assert trial_artifact["coder_report_path"].endswith("/coder/report.json")
+        assert Path(trial_artifact["proposer_message_path"]).read_text(encoding="utf-8") == (
+            "## Proposal\n\nXGBoost baseline with WOE encoding.\n"
+        )
+        assert Path(trial_artifact["coder_message_path"]).read_text(encoding="utf-8") == (
+            "## Trial report\n\nImplemented and ran; AUC 0.71.\n"
+        )
+        coder_report = json.loads(
+            Path(trial_artifact["coder_report_path"]).read_text(encoding="utf-8")
+        )
+        assert coder_report["runner_phases_s"] == {"fit": 1.5}
+        session_summary = published["session_summary"]
+        assert session_summary["step_durations_s"] == {"experiment proposer-context": 3.25}
+        assert session_summary["publish_s"] >= 0.0
+        # Wall-clock not covered by agent spans or CLI steps (manager/API wait).
+        assert 0.0 <= session_summary["unattributed_s"] <= session_summary["total_s"]
         proposer_tool_events = json.loads(
             Path(trial_artifact["proposer_tool_events_path"]).read_text(encoding="utf-8")
         )
@@ -308,6 +371,8 @@ def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(tmp_p
             metrics = mlflow_trial.get_metrics(run_id)
         assert "agent/proposer/report.json" in artifact_paths
         assert "agent/coder/report.json" in artifact_paths
+        assert "agent/proposer/message.md" in artifact_paths
+        assert "agent/coder/message.md" in artifact_paths
         assert metrics["agent.proposer_seconds"] == 10.0
         assert metrics["agent.coder_seconds"] == pytest.approx(20.0, abs=0.01)
         assert metrics["agent.tool_calls"] == 2.0

@@ -132,8 +132,14 @@ def _summarize_events(
             item["tool_uses"]["proposer"] = proposer["tool_uses"]
         iterations.append(item)
 
+    _attach_runner_phases(iterations, session)
+    steps = _step_events(events)
     first = float(events[0].get("time_s") or 0.0) if events else 0.0
     last = float(events[-1].get("time_s") or first) if events else first
+    covered = [(float(span["start_s"]), float(span["end_s"])) for span in spans] + [
+        (float(step["time_s"]) - float(step["duration_s"]), float(step["time_s"]))
+        for step in steps
+    ]
     return {
         "schema_version": 1,
         "route": route,
@@ -145,14 +151,107 @@ def _summarize_events(
         "unmatched_start_count": sum(len(stack) for stack in starts.values()),
         "unmatched_end_count": unmatched_end_count,
         "total_s": max(0.0, last - first),
+        # Session wall-clock not covered by any agent span or CLI step:
+        # manager turns, API wait/retry time, and anything not instrumented.
+        # A large value here means the loop spent its time *between* the
+        # measured work (e.g. the 2026-06-02 run where manager API requests
+        # hung ~16 min per attempt and this was invisible in the timing).
+        "unattributed_s": _uncovered_seconds(first, last, covered),
         "phase_durations_s": phase_durations,
         "phase_tool_uses": phase_tool_uses,
+        "step_durations_s": _step_durations(steps),
+        "steps": steps,
         "runner_execution_total_s": sum(
             float(item.get("runner_execution_s") or 0.0) for item in iterations
         ),
         "iterations": iterations,
         "events": events,
     }
+
+
+def _step_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """CLI step events (``automl <noun> <verb>`` invocations) for the session."""
+    steps: list[dict[str, Any]] = []
+    for event in events:
+        if str(event.get("event") or "") != "step":
+            continue
+        step = str(event.get("step") or "")
+        if not step:
+            continue
+        steps.append(
+            {
+                "step": step,
+                "duration_s": float(event.get("duration_s") or 0.0),
+                "time_s": float(event.get("time_s") or 0.0),
+                "exit_code": int(event.get("exit_code") or 0),
+            }
+        )
+    return steps
+
+
+def _step_durations(steps: list[dict[str, Any]]) -> dict[str, float]:
+    durations: dict[str, float] = {}
+    for step in steps:
+        name = str(step.get("step") or "")
+        durations[name] = durations.get(name, 0.0) + float(step.get("duration_s") or 0.0)
+    return durations
+
+
+def _uncovered_seconds(
+    first: float,
+    last: float,
+    intervals: list[tuple[float, float]],
+) -> float:
+    """Length of the [first, last] window not covered by any interval."""
+    if last <= first:
+        return 0.0
+    clipped = sorted(
+        (max(first, start), min(last, end))
+        for start, end in intervals
+        if end > first and start < last
+    )
+    covered = 0.0
+    cursor = first
+    for start, end in clipped:
+        if end <= cursor:
+            continue
+        covered += end - max(cursor, start)
+        cursor = max(cursor, end)
+    return max(0.0, (last - first) - covered)
+
+
+def _attach_runner_phases(iterations: list[dict[str, Any]], session: Session | None) -> None:
+    """Surface the runner's internal phase timings onto each iteration.
+
+    The runner already records data/fit/eval/... durations as ``timing.*``
+    run metrics; folding them in here makes the published session report the
+    single end-to-end timing breakdown instead of one of several places.
+    """
+    if session is None or not iterations:
+        return
+    from automl.mlflow import trial as mlflow_trial
+
+    try:
+        with mlflow_client.bound_for(session, experiment_id=session.active_experiment_id):
+            for item in iterations:
+                run_id = str(item.get("run_id") or "")
+                if not run_id:
+                    continue
+                try:
+                    metrics = mlflow_trial.get_metrics(run_id)
+                except Exception:
+                    continue
+                phases = {
+                    key.removeprefix("timing.").removesuffix("_seconds"): float(value)
+                    for key, value in metrics.items()
+                    if key.startswith("timing.")
+                    and key.endswith("_seconds")
+                    and key != "timing.total_seconds"
+                }
+                if phases:
+                    item["runner_phases_s"] = phases
+    except Exception:
+        return
 
 
 def _read_trial_executions(session: Session | None) -> list[dict[str, Any]]:
@@ -320,6 +419,43 @@ def _read_tool_use_blocks(transcript_path: str) -> list[dict[str, Any]]:
             if isinstance(block, dict) and block.get("type") == "tool_use":
                 blocks.append(block)
     return blocks
+
+
+def _final_assistant_message(transcript_path: str) -> str:
+    """Full text of the last assistant turn in a transcript, ``""`` when unavailable.
+
+    This is the agent's closing free-flow report (untruncated), as opposed to
+    the hook event's ``last_assistant_message``, which is capped at 1000 chars.
+    """
+    if not transcript_path:
+        return ""
+    path = Path(transcript_path)
+    if not path.exists():
+        return ""
+    message = ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "assistant":
+            continue
+        payload = event.get("message")
+        if not isinstance(payload, dict):
+            continue
+        content = payload.get("content")
+        if not isinstance(content, list):
+            continue
+        text = "\n\n".join(
+            str(block.get("text") or "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        ).strip()
+        if text:
+            message = text
+    return message
 
 
 def _sanitize_tool_use(

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import automl.data as data
 from automl.errors import ValidationError
+from automl.mlflow import client as mlflow_client
 from automl.mlflow import tags as mlflow_tags
 from automl.mlflow import trial as mlflow_trial
 from automl.mlflow.trial.artifacts import runner as runner_artifacts
@@ -497,9 +498,10 @@ except Exception as exc:
     child_env = dict(os.environ)
     child_env["MLFLOW_TRACKING_URI"] = active.config.mlflow_tracking_uri
     child_env["PYTHONDONTWRITEBYTECODE"] = "1"
-    # Bound the child's retry backoff too (the runner sets this, but validation
-    # may also be invoked standalone). ``setdefault`` respects an operator override.
-    child_env.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", "5")
+    # Bound the child's retry backoff too: the parent env normally carries the
+    # seam-wide cap (set at automl.mlflow.client import), but validation may
+    # also be invoked standalone. ``setdefault`` respects an operator override.
+    child_env.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", mlflow_client.HTTP_MAX_RETRIES)
     existing_pythonpath = child_env.get("PYTHONPATH", "")
     pythonpath_parts = [str(active.config.repo_root)]
     if existing_pythonpath:

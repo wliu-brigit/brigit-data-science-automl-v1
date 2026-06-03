@@ -50,7 +50,7 @@ def load_trial_data_contract(run_id: str):
     if uri.startswith(f"runs:/{run_id}/"):
         path = uri.removeprefix(f"runs:/{run_id}/")
         try:
-            local_path = client.raw().download_artifacts(run_id, path)
+            local_path = client.download_artifact(run_id, path, required=True)
             with open(local_path, encoding="utf-8") as handle:
                 return TrialDataContract.from_dict(json.load(handle))
         except Exception as exc:

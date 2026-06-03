@@ -2,16 +2,30 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Iterator
 
 from automl.errors import StorageError
 
 if TYPE_CHECKING:
     from automl.project import Session
+
+
+# MLflow's HTTP client retries 408/429/5xx with exponential backoff; its default
+# budget (7 retries, factor 2) sleeps ~254s before surfacing an error. Tracking
+# servers below MLflow 3.12 return a retryable 500 — not 404 — for a *missing*
+# artifact (fixed upstream in 3.12.0, mlflow/mlflow#22310), so downloading an
+# absent artifact burned that whole budget while appearing to hang. One retry
+# keeps tolerance for a single transient blip and bounds the doomed case to a
+# few seconds (measured ~5s against the production server). Module scope so
+# every process that reaches MLflow through this seam (CLI verbs, agent hooks,
+# the runner) shares one budget; ``setdefault`` respects an operator override.
+HTTP_MAX_RETRIES = "1"
+os.environ.setdefault("MLFLOW_HTTP_REQUEST_MAX_RETRIES", HTTP_MAX_RETRIES)
 
 
 @dataclass(frozen=True)
@@ -169,6 +183,34 @@ def _experiment_route_url(route: str) -> str:
     return f"{base}/#/experiments/{experiment.experiment_id}"
 
 
+def download_artifact(
+    run_id: str,
+    artifact_path: str,
+    *,
+    required: bool = False,
+) -> str | None:
+    """Download one run artifact; return its local path, or ``None`` when absent.
+
+    Lists the artifact's parent directory first: ``list_artifacts`` reports a
+    missing file cleanly and fast, while a blind ``download_artifacts`` of an
+    absent path makes tracking servers below MLflow 3.12 return a retryable
+    500 that burns the whole HTTP retry budget before failing
+    (mlflow/mlflow#22310). With ``required=True`` absence raises the seam's
+    storage error instead; transport failures always propagate for the
+    caller's own wrapping.
+    """
+    mlflow_client = raw()
+    parent = PurePosixPath(artifact_path).parent.as_posix()
+    listed = mlflow_client.list_artifacts(run_id, None if parent == "." else parent)
+    if artifact_path not in {item.path for item in listed}:
+        if required:
+            raise StorageError(
+                f"MLflow artifact {artifact_path!r} not found on run {run_id!r}"
+            )
+        return None
+    return mlflow_client.download_artifacts(run_id, artifact_path)
+
+
 def log_artifact_file(run_id: str, artifact_path: str, local_path: Path) -> None:
     """Log a local file to a run artifact path through the MLflow seam."""
     parent = Path(artifact_path).parent.as_posix()
@@ -230,6 +272,7 @@ def _mlflow_experiment_id_for_run(run_id: str) -> str:
 
 __all__ = [
     "Bound",
+    "HTTP_MAX_RETRIES",
     "artifact_url",
     "bind",
     "bound",
@@ -237,6 +280,7 @@ __all__ = [
     "clear",
     "delete_experiment",
     "delete_run",
+    "download_artifact",
     "experiment_url",
     "get_experiment_by_name",
     "log_artifact_file",

@@ -14,7 +14,7 @@ ERROR_TRACEBACK_ARTIFACT = "logs/errors/traceback.txt"
 
 def load_error_report(run_id: str) -> dict:
     try:
-        path = client.raw().download_artifacts(run_id, ERROR_REPORT_ARTIFACT)
+        path = client.download_artifact(run_id, ERROR_REPORT_ARTIFACT, required=True)
         with open(path, encoding="utf-8") as handle:
             payload = json.load(handle)
     except Exception as exc:

@@ -115,7 +115,7 @@ def _read_bytes(run_id: str, uri: str) -> bytes:
     if uri.startswith(f"runs:/{run_id}/"):
         path = uri.removeprefix(f"runs:/{run_id}/")
         try:
-            local_path = client.raw().download_artifacts(run_id, path)
+            local_path = client.download_artifact(run_id, path, required=True)
             with open(local_path, "rb") as handle:
                 return handle.read()
         except Exception as exc:

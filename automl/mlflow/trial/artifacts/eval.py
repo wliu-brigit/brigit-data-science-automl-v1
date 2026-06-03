@@ -116,7 +116,7 @@ def _read_json_uri(run_id: str, uri: str) -> dict:
     if uri.startswith(f"runs:/{run_id}/"):
         path = uri.removeprefix(f"runs:/{run_id}/")
         try:
-            local_path = client.raw().download_artifacts(run_id, path)
+            local_path = client.download_artifact(run_id, path, required=True)
             with open(local_path, encoding="utf-8") as handle:
                 payload = json.load(handle)
             if not isinstance(payload, dict):

@@ -192,3 +192,50 @@ def test_automl_render_context_safe_commands_use_current_cli_surface():
     assert project_contract["primary_metric"] == "auc"
     assert project_contract["required_transformers"][0]["name"] == "homecredit_organization_woe"
     assert project_contract["required_transformers"][0]["columns"] == ["organization_type"]
+
+
+def _load_render_context_module():
+    module_path = REPO_ROOT / "agent-skills" / "skills" / "automl" / "scripts" / "render_context.py"
+    spec = importlib.util.spec_from_file_location("automl_skill_render_context", module_path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_automl_render_context_forwards_refresh_source_to_materialize():
+    module = _load_render_context_module()
+
+    context = module.build_context(
+        REPO_ROOT,
+        "experiment run --project example_homecredit --dry-run --refresh-source",
+    )
+
+    materialize = context["safe_commands"]["materialize_dataset"]
+    _assert_parses(materialize)
+    assert materialize.endswith(" data materialize --refresh-source")
+
+
+def test_automl_render_context_rejects_retired_refresh_data_flag():
+    module = _load_render_context_module()
+
+    context = module.build_context(
+        REPO_ROOT,
+        "experiment run --project example_homecredit --dry-run --refresh-data",
+    )
+
+    assert context["invocation"]["mode"] == "error"
+    assert "--refresh-data" in context["invocation"]["error"]
+
+
+def test_automl_render_context_resolves_repo_root_from_inside_project():
+    module = _load_render_context_module()
+
+    context = module.build_context(
+        REPO_ROOT / "projects" / "example_homecredit",
+        "experiment run --project example_homecredit --dry-run",
+    )
+
+    assert context["invocation"]["mode"] == "run"
+    assert context["project"]["root"] == str(REPO_ROOT)
+    assert context["route"] == "dry_run/example_homecredit/example-homecredit"

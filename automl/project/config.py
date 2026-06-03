@@ -27,7 +27,12 @@ PACKAGE_COMPONENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 RECIPE_FIELDS = ("task", "data_spec", "eval_spec", "run_config")
 
 
-def _find_repo_root(start: Path | None = None) -> Path:
+def find_repo_root(start: Path | None = None) -> Path:
+    """Walk up from ``start`` (default cwd) to the directory containing ``projects/``.
+
+    The single repo-root resolver: the CLI, skill glue scripts, and the runner
+    all resolve the root through this walk so they agree from any cwd.
+    """
     current = (start or Path.cwd()).resolve()
     for candidate in (current, *current.parents):
         if (candidate / PROJECTS_DIR).is_dir():
@@ -111,7 +116,7 @@ class ProjectConfig:
         if not name or not PACKAGE_COMPONENT_RE.fullmatch(name):
             raise ProjectError(f"invalid project name: {name!r}")
 
-        root = Path(repo_root).resolve() if repo_root is not None else _find_repo_root()
+        root = Path(repo_root).resolve() if repo_root is not None else find_repo_root()
         project_dir = root / PROJECTS_DIR / name
         if not project_dir.is_dir():
             raise ProjectError(f"project {name!r} not found at {project_dir}")

@@ -289,25 +289,34 @@ def _error_context(
             "experiment_id": "",
         },
         "project_contract": _project_contract_payload(None),
-        "data": {
-            "active_dataset_id": "",
-            "profile_available": False,
-        },
         "environment": {
             "allowed_dependencies": _load_allowed_dependencies(project_root),
         },
         "mlflow": {
             "tracking_uri": "",
-            "trial_count": 0,
-            "successful_trials": 0,
-            "failed_trials": 0,
         },
         "safe_commands": {},
     }
 
 
+def _resolve_repo_root(project_root: Path) -> Path:
+    """Resolve the repo root with the library's canonical walk-up.
+
+    ``--project-root`` is ``${AUTOML_PROJECT_ROOT:-.}``: the launcher passes the
+    repo root explicitly, but an interactive session passes its cwd, which may
+    be anywhere inside the repo (e.g. ``projects/<name>/``). Walking up here is
+    the same resolution every CLI verb gets via ``use_project``.
+    """
+    try:
+        from automl.project import find_repo_root
+
+        return find_repo_root(project_root)
+    except Exception:
+        return project_root.resolve()
+
+
 def build_context(project_root: Path, arguments: str) -> dict[str, Any]:
-    project_root = project_root.resolve()
+    project_root = _resolve_repo_root(project_root)
     preflight = _load_preflight(Path(__file__).resolve().parent)
     invocation = preflight.parse_arguments(arguments)
     requested_project = _text(invocation.get("project")).strip()
@@ -386,10 +395,8 @@ def build_context(project_root: Path, arguments: str) -> dict[str, Any]:
         "data",
         "materialize",
     ]
-    if invocation.get("refresh_data"):
-        prepare_args.append("--refresh-source")
     if invocation.get("refresh_source"):
-        prepare_args.append("--refresh-source")
+        materialize_dataset_args.append("--refresh-source")
 
     proposal_handoff_path = _proposal_handoff_path(route)
     timeline_paths = _timeline_paths(route)
@@ -448,18 +455,14 @@ def build_context(project_root: Path, arguments: str) -> dict[str, Any]:
         },
         "project_contract": _project_contract_payload(ctx),
         "models": _models_payload({"models": ctx.models} if ctx is not None else {}),
-        "data": {
-            "active_dataset_id": "",
-            "profile_available": False,
-        },
         "environment": {
             "allowed_dependencies": allowed_dependencies,
         },
+        # Routing truth only. The active dataset comes from running
+        # safe_commands.materialize_dataset; the current MLflow summary comes
+        # from safe_commands.loop_context. Neither is known at render time.
         "mlflow": {
             "tracking_uri": tracking_uri,
-            "trial_count": 0,
-            "successful_trials": 0,
-            "failed_trials": 0,
         },
         "safe_commands": {
             "validate": _shell_command(

@@ -23,7 +23,7 @@ Runs the controlled AutoML loop for an active repo-native project under `project
 
 !`uv run "${CLAUDE_SKILL_DIR}/scripts/render_context.py" --project-root "${AUTOML_PROJECT_ROOT:-.}" --arguments "$ARGUMENTS"`
 
-Treat the rendered context as the source of truth for invocation mode, execution semantics, dry-run routing, confirmation, active dataset, budgets, and current MLflow summary.
+Treat the rendered context as the source of truth for invocation mode, execution semantics, dry-run routing, confirmation, budgets, project contract, and safe commands. It does not carry runtime state: the active dataset is whatever `safe_commands.materialize_dataset` prints when it runs, and the current MLflow summary comes from `safe_commands.loop_context`.
 Claude's main-session model is selected before this skill starts. Use
 `uv run automl experiment run` from inside `projects/<project_name>` (or
 `uv run automl --project <project_name> experiment run` from an ambiguous repo root), or

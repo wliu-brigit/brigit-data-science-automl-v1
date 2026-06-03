@@ -8,15 +8,7 @@ from typing import Any
 from automl.errors import ProjectError
 
 from ._import import PROJECTS_DIR
-from .config import ProjectConfig
-
-
-def find_repo_root(start: Path | None = None) -> Path:
-    current = (start or Path.cwd()).resolve()
-    for candidate in (current, *current.parents):
-        if (candidate / PROJECTS_DIR).is_dir():
-            return candidate
-    raise ProjectError(f"could not find repo root containing {PROJECTS_DIR}/ from {current}")
+from .config import ProjectConfig, find_repo_root
 
 
 def list_projects(*, repo_root: Path | None = None) -> list[str]:

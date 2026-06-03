@@ -20,7 +20,7 @@ from automl.mlflow import client as mlflow_client
 from automl.mlflow import experiment as mlflow_experiment
 from automl.mlflow import tags as mlflow_tags
 from automl.mlflow import trial as mlflow_trial
-from automl.project import Session, session as active_project_session, use_project
+from automl.project import Session, find_repo_root, session as active_project_session, use_project
 from automl.trial.metadata import TrialMetadata
 from automl.trial.paths import trial_slug, verify_trial_dir
 from automl.utils.hashing import dataframe_content_hash
@@ -429,7 +429,7 @@ def _read_trial_metadata(path: str | Path) -> TrialMetadata:
 
 
 def _session_from_trial_path(path: Path, metadata: TrialMetadata) -> Session:
-    root = _find_repo_root(path)
+    root = find_repo_root(path)
     dry_run, namespace = _route_flags_from_trial_path(path, metadata)
     return use_project(
         metadata.project_name,
@@ -440,17 +440,9 @@ def _session_from_trial_path(path: Path, metadata: TrialMetadata) -> Session:
     )
 
 
-def _find_repo_root(path: Path) -> Path:
-    resolved = path.resolve()
-    for candidate in (resolved, *resolved.parents):
-        if (candidate / "projects").is_dir():
-            return candidate
-    raise ProjectError(f"could not find repo root containing projects/ from {path}")
-
-
 def _route_flags_from_trial_path(path: Path, metadata: TrialMetadata) -> tuple[bool, str]:
     trial_path = _trial_path(path).resolve()
-    project_dir = _find_repo_root(trial_path) / "projects" / metadata.project_name
+    project_dir = find_repo_root(trial_path) / "projects" / metadata.project_name
     try:
         route_parts = trial_path.relative_to(project_dir / "experiments").parts[:-1]
     except ValueError as exc:

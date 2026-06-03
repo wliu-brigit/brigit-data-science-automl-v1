@@ -17,7 +17,7 @@ from automl.errors import DataError
 from automl.mlflow import client as mlflow_client
 from automl.mlflow import experiment as mlflow_experiment
 from automl.mlflow.trial import artifacts as trial_artifacts
-from automl.mlflow.project import artifacts as project_artifacts
+from automl.mlflow.experiment import artifacts as experiment_artifacts
 from automl.project import Session, Splits
 from automl.project import session as active_project_session
 
@@ -25,7 +25,7 @@ from automl.project import session as active_project_session
 def list_datasets(*, session: Session | None = None) -> DatasetIndex:
     active = _session(session)
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
-        index = DatasetIndex.from_dict(project_artifacts.read_dataset_index())
+        index = DatasetIndex.from_dict(experiment_artifacts.read_dataset_index())
         return DatasetIndex(
             datasets=index.datasets,
             active_dataset_id=mlflow_experiment.get_active_dataset(
@@ -65,11 +65,11 @@ def load_dataset_by_id(
     active = _session(session)
     index = list_datasets(session=active)
     indexed = _dataset_by_id(index, dataset_id)
-    manifest = project_artifacts.read_dataset_manifest(indexed.manifest_gcs_uri)
+    manifest = experiment_artifacts.read_dataset_manifest(indexed.manifest_gcs_uri)
     dataset = Dataset.from_dict(manifest)
-    registry_frame = project_artifacts.read_registry(dataset.registry_gcs_uri)
+    registry_frame = experiment_artifacts.read_registry(dataset.registry_gcs_uri)
     registry = FeatureRegistry.from_dataframe(registry_frame)
-    df = project_artifacts.read_dataset_frame(dataset.data_gcs_uri)
+    df = experiment_artifacts.read_dataset_frame(dataset.data_gcs_uri)
     loaded = LoadedDataset(dataset=dataset, df=df, registry=registry)
     validate_loaded_dataset(loaded, dataset)
 

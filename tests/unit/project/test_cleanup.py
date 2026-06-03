@@ -135,14 +135,14 @@ def test_project_delete_preview_covers_whole_route_and_gates_cache_off_subroutes
     monkeypatch.setattr(
         cleanup_module,
         "_route_experiment_names",
-        lambda: ["qa/dry_run/home_credit/baseline", "qa/dry_run/home_credit/overview"],
+        lambda: ["qa/dry_run/home_credit/baseline", "qa/dry_run/home_credit/000_overview"],
     )
 
     report = delete("home_credit", scope="project", apply=False, session=active)
 
     assert set(report.plan.mlflow_experiment_targets) == {
         ("qa/dry_run/home_credit/baseline", ""),
-        ("qa/dry_run/home_credit/overview", ""),
+        ("qa/dry_run/home_credit/000_overview", ""),
     }
     # one wholesale project-route prefix (catches data/, overview/, every experiment)
     assert report.plan.gcs_prefix_patterns == [
@@ -159,14 +159,14 @@ def test_project_delete_base_route_includes_cache_and_uses_project_prefix(tmp_pa
     monkeypatch.setattr(
         cleanup_module,
         "_route_experiment_names",
-        lambda: ["home_credit/baseline", "home_credit/overview"],
+        lambda: ["home_credit/baseline", "home_credit/000_overview"],
     )
 
     report = delete("home_credit", scope="project", apply=False, session=active)
 
     assert set(report.plan.mlflow_experiment_targets) == {
         ("home_credit/baseline", ""),
-        ("home_credit/overview", ""),
+        ("home_credit/000_overview", ""),
     }
     assert report.plan.gcs_prefix_patterns == ["gs://automl-test-bucket/automl-root/home_credit/"]
     assert set(report.plan.local_paths) == {
@@ -184,7 +184,7 @@ def test_delete_qa_plan_targets_only_qa_namespaces(tmp_path, monkeypatch):
             "qa-smoke-1/home_credit/run-1",
             "qa/agent-e2e-1/dry_run/home_credit/example",
             "home_credit/baseline",  # not QA -> excluded
-            "dry_run/generic/overview",  # not QA -> excluded
+            "dry_run/generic/000_overview",  # not QA -> excluded
         ],
     )
 

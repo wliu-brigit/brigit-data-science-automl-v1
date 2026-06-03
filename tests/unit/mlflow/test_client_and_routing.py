@@ -347,7 +347,7 @@ def test_project_list_experiments_filters_under_current_route_root(
     mlflow_client = client.raw()
     mlflow_client.create_experiment(f"{route_root}route-exp")
     mlflow_client.create_experiment(f"{route_root}candidate")
-    mlflow_client.create_experiment(f"{route_root}overview")
+    mlflow_client.create_experiment(f"{route_root}000_overview")
     mlflow_client.create_experiment(f"{route_root}route-exp/nested")
     mlflow_client.create_experiment(f"other/{route_root}route-exp")
 

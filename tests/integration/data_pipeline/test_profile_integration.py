@@ -122,7 +122,7 @@ def _write_csv(tmp_path: Path) -> Path:
     return csv_path
 
 
-def test_profile_writes_project_overview_artifacts_for_materialized_dataset(tmp_path, fake_gcs):
+def test_profile_writes_experiment_overview_artifacts_for_materialized_dataset(tmp_path, fake_gcs):
     active = _session(tmp_path, _write_csv(tmp_path))
     loaded = materialize(session=active)
 

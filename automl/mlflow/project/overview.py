@@ -32,7 +32,7 @@ def ensure_overview() -> ProjectOverview:
                     tags.RUN_KIND: "project_overview",
                     tags.PROJECT_NAME: client.bound().project_name,
                     tags.CREATED_AT: created_at,
-                    "mlflow.runName": "overview",
+                    "mlflow.runName": "000_overview",
                 }
             ),
         )
@@ -50,7 +50,6 @@ def write_overview(overview: ProjectOverview) -> None:
     run_id = _ensure_overview_run_id()
     try:
         client.raw().set_tag(run_id, "project.current_experiment_id", overview.current_experiment_id or "")
-        client.raw().set_tag(run_id, "data.dataset_count", str(overview.dataset_count))
     except Exception as exc:
         raise StorageError("Failed to write project overview") from exc
 
@@ -64,7 +63,7 @@ def list_experiments() -> list[str]:
             if not name.startswith(root):
                 continue
             tail = name.removeprefix(root)
-            if not tail or "/" in tail or tail == "overview":
+            if not tail or "/" in tail or tail == "000_overview":
                 continue
             ids.append(tail)
         return sorted(ids)
@@ -76,7 +75,7 @@ def list_route_experiment_names() -> list[str]:
     """Full experiment names directly under the bound project route.
 
     Unlike :func:`list_experiments`, this is for cleanup: it **includes** the
-    ``overview`` experiment and **soft-deleted** experiments, so a project
+    ``000_overview`` experiment and **soft-deleted** experiments, so a project
     delete can cascade over everything in the container. The route prefix
     naturally excludes other namespace/dry_run containers.
     """
@@ -124,7 +123,7 @@ def _ensure_overview_run_id() -> str:
 
 
 def _ensure_overview_experiment() -> str:
-    name = _routing.experiment_route("overview")
+    name = _routing.experiment_route("000_overview")
     try:
         mlflow_client = client.raw()
         existing = mlflow_client.get_experiment_by_name(name)
@@ -152,7 +151,7 @@ def _overview_run():
 
 def _overview_experiment_id() -> str | None:
     try:
-        experiment = client.raw().get_experiment_by_name(_routing.experiment_route("overview"))
+        experiment = client.raw().get_experiment_by_name(_routing.experiment_route("000_overview"))
     except Exception as exc:
         raise StorageError("Failed to resolve project overview experiment") from exc
     if experiment is None:
@@ -166,7 +165,6 @@ def _overview_from_run(run) -> ProjectOverview:
         project_name=run_tags.get(tags.PROJECT_NAME, client.bound().project_name),
         created_at=run_tags.get(tags.CREATED_AT, ""),
         current_experiment_id=run_tags.get("project.current_experiment_id") or None,
-        dataset_count=int(run_tags.get("data.dataset_count", "0") or 0),
     )
 
 __all__ = [

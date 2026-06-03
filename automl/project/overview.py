@@ -11,7 +11,6 @@ class ProjectOverview:
     project_name: str = ""
     created_at: str = ""
     current_experiment_id: str | None = None
-    dataset_count: int = 0
 
 
 __all__ = ["ProjectOverview"]

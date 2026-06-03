@@ -148,12 +148,12 @@ def test_build_dataset_adds_split_id_and_feature_registry_for_homecredit_sample(
 @pytest.mark.parametrize(
     ("gcs_prefix", "namespace", "dry_run", "expected_base_path"),
     [
-        ("root", "", False, "root/demo/data/datasets/unmaterialized"),
-        ("root", "", True, "root/dry_run/demo/data/datasets/unmaterialized"),
-        ("root", "qa", True, "root/qa/dry_run/demo/data/datasets/unmaterialized"),
-        ("", "", False, "demo/data/datasets/unmaterialized"),
-        ("", "", True, "dry_run/demo/data/datasets/unmaterialized"),
-        ("", "qa", True, "qa/dry_run/demo/data/datasets/unmaterialized"),
+        ("root", "", False, "root/demo/source-exp/data/datasets/unmaterialized"),
+        ("root", "", True, "root/dry_run/demo/source-exp/data/datasets/unmaterialized"),
+        ("root", "qa", True, "root/qa/dry_run/demo/source-exp/data/datasets/unmaterialized"),
+        ("", "", False, "demo/source-exp/data/datasets/unmaterialized"),
+        ("", "", True, "dry_run/demo/source-exp/data/datasets/unmaterialized"),
+        ("", "qa", True, "qa/dry_run/demo/source-exp/data/datasets/unmaterialized"),
     ],
 )
 def test_dataset_route_uris_pin_current_project_suffix_strip_behavior(
@@ -226,7 +226,7 @@ def test_materialize_partial_dataset_objects_raise_data_error(tmp_path, monkeypa
     active = _route_session(tmp_path, gcs_prefix="", data_spec=spec)
 
     monkeypatch.setattr(
-        "automl.data.pipeline.project_artifacts.read_dataset_index",
+        "automl.data.pipeline.experiment_artifacts.read_dataset_index",
         lambda: {"datasets": []},
     )
     monkeypatch.setattr(

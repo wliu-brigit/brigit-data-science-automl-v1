@@ -161,18 +161,22 @@ def test_materialize_writes_dataset_index_and_loads_train_test_slices(tmp_path, 
     assert loaded.id.startswith("v1_")
     assert loaded.dataset in index.datasets
     assert index.active.id == loaded.id
-    assert loaded.dataset.manifest_gcs_uri.startswith("gs://automl-test-bucket/demo/data/datasets/")
+    assert loaded.dataset.manifest_gcs_uri.startswith(
+        "gs://automl-test-bucket/demo/baseline/data/datasets/"
+    )
     assert loaded.dataset.registry_gcs_uri.endswith("/feature_registry.csv")
     registry_bucket, registry_blob = gcs.parse_gcs_uri(loaded.dataset.registry_gcs_uri)
     assert (registry_bucket, registry_blob) in fake_gcs.store
     assert not registry_blob.endswith("registry.json")
-    assert ("automl-test-bucket", "demo/data/dataset_index.json") in fake_gcs.store
+    assert ("automl-test-bucket", "demo/baseline/data/dataset_index.json") in fake_gcs.store
     raw_index = json.loads(
-        fake_gcs.store[("automl-test-bucket", "demo/data/dataset_index.json")].decode("utf-8")
+        fake_gcs.store[("automl-test-bucket", "demo/baseline/data/dataset_index.json")].decode(
+            "utf-8"
+        )
     )
     assert "active_dataset_id" not in raw_index
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
-        experiment = mlflow_client.raw().get_experiment_by_name("demo/overview")
+        experiment = mlflow_client.raw().get_experiment_by_name("demo/baseline")
         assert experiment is not None
         runs = mlflow_client.raw().search_runs([experiment.experiment_id])
         local_path = mlflow_client.raw().download_artifacts(
@@ -210,18 +214,25 @@ def test_materialize_routes_dataset_objects_by_dry_run_and_namespace(tmp_path, f
     qa = materialize(session=replace(active, namespace="qa"))
     qa_dry = materialize(session=replace(active, namespace="qa", dry_run=True))
 
-    assert real.dataset.manifest_gcs_uri.startswith("gs://automl-test-bucket/demo/data/datasets/")
+    assert real.dataset.manifest_gcs_uri.startswith(
+        "gs://automl-test-bucket/demo/baseline/data/datasets/"
+    )
     assert dry.dataset.manifest_gcs_uri.startswith(
-        "gs://automl-test-bucket/dry_run/demo/data/datasets/"
+        "gs://automl-test-bucket/dry_run/demo/baseline/data/datasets/"
     )
-    assert qa.dataset.manifest_gcs_uri.startswith("gs://automl-test-bucket/qa/demo/data/datasets/")
+    assert qa.dataset.manifest_gcs_uri.startswith(
+        "gs://automl-test-bucket/qa/demo/baseline/data/datasets/"
+    )
     assert qa_dry.dataset.manifest_gcs_uri.startswith(
-        "gs://automl-test-bucket/qa/dry_run/demo/data/datasets/"
+        "gs://automl-test-bucket/qa/dry_run/demo/baseline/data/datasets/"
     )
-    assert ("automl-test-bucket", "demo/data/dataset_index.json") in fake_gcs.store
-    assert ("automl-test-bucket", "dry_run/demo/data/dataset_index.json") in fake_gcs.store
-    assert ("automl-test-bucket", "qa/demo/data/dataset_index.json") in fake_gcs.store
-    assert ("automl-test-bucket", "qa/dry_run/demo/data/dataset_index.json") in fake_gcs.store
+    assert ("automl-test-bucket", "demo/baseline/data/dataset_index.json") in fake_gcs.store
+    assert ("automl-test-bucket", "dry_run/demo/baseline/data/dataset_index.json") in fake_gcs.store
+    assert ("automl-test-bucket", "qa/demo/baseline/data/dataset_index.json") in fake_gcs.store
+    assert (
+        "automl-test-bucket",
+        "qa/dry_run/demo/baseline/data/dataset_index.json",
+    ) in fake_gcs.store
 
 
 @dataclass(frozen=True)
@@ -235,7 +246,7 @@ class TraceCSVSource(LocalCSVSource):
         return {"source.sql": self.trace_file}
 
 
-def test_materialize_logs_source_trace_artifacts_to_project_overview(tmp_path, fake_gcs):
+def test_materialize_logs_source_trace_artifacts_to_experiment_overview(tmp_path, fake_gcs):
     trace_file = tmp_path / "source.sql"
     trace_file.write_text("select 1", encoding="utf-8")
     spec = DataSpec(
@@ -250,9 +261,12 @@ def test_materialize_logs_source_trace_artifacts_to_project_overview(tmp_path, f
     loaded = materialize(session=active)
 
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
-        experiment = mlflow_client.raw().get_experiment_by_name("demo/overview")
+        experiment = mlflow_client.raw().get_experiment_by_name("demo/baseline")
         assert experiment is not None
-        runs = mlflow_client.raw().search_runs([experiment.experiment_id])
+        runs = mlflow_client.raw().search_runs(
+            [experiment.experiment_id],
+            filter_string="tags.`run.kind` = 'experiment_overview'",
+        )
         assert len(runs) == 1
         local_path = mlflow_client.raw().download_artifacts(
             runs[0].info.run_id,
@@ -323,5 +337,7 @@ def test_build_dataset_reads_gcs_parquet_source_without_materializing_objects(tm
     assert loaded.dataset.source_identity["kind"] == "gcs_parquet"
     assert loaded.dataset.hash_key == ("row_id",)
     assert "SPLITID" in loaded.df.columns
-    assert not any(blob.startswith("demo/data/datasets/") for bucket, blob in fake_gcs.store)
-    assert ("automl-test-bucket", "demo/data/dataset_index.json") not in fake_gcs.store
+    assert not any(
+        blob.startswith("demo/baseline/data/datasets/") for bucket, blob in fake_gcs.store
+    )
+    assert ("automl-test-bucket", "demo/baseline/data/dataset_index.json") not in fake_gcs.store

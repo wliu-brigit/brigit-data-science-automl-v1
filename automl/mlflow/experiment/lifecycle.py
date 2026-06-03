@@ -70,7 +70,7 @@ def ensure_overview(experiment_id: str | None = None) -> ExperimentOverview:
                     tags.PROJECT_NAME: bound.project_name,
                     "run.dry_run": str(bound.dry_run),
                     tags.CREATED_AT: created_at,
-                    "mlflow.runName": "experiment_overview",
+                    "mlflow.runName": "000_overview",
                 }
             ),
         )

@@ -20,7 +20,7 @@ def _http_session(project_name: str, experiment_id: str | None) -> Session:
 
 def test_session_mlflow_urls_reflect_self_even_when_another_session_is_bound(monkeypatch):
     client.clear()
-    numeric_ids = {"alpha/expA": "1", "beta/expB": "2", "beta/overview": "20"}
+    numeric_ids = {"alpha/expA": "1", "beta/expB": "2", "beta/000_overview": "20"}
 
     class _Experiment:
         def __init__(self, experiment_id: str) -> None:

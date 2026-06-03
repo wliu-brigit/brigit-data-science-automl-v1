@@ -50,12 +50,15 @@ class Dataset:
     split_id_col: str
     hash_key: tuple[str, ...]
     gcs_prefix: str = ""
+    experiment_id: str = ""
     schema_version: int = 1
 
     @property
     def gcs_base_path(self) -> str:
         parts = [
-            part.strip("/") for part in (self.gcs_prefix, self.project_name) if part.strip("/")
+            part.strip("/")
+            for part in (self.gcs_prefix, self.project_name, self.experiment_id)
+            if part.strip("/")
         ]
         parts.extend(["data", "datasets", self.id])
         return "/".join(parts)
@@ -91,6 +94,7 @@ class Dataset:
             split_id_col=str(payload.get("split_id_col", "SPLITID")),
             hash_key=tuple(str(item) for item in payload.get("hash_key", ())),
             gcs_prefix=str(payload.get("gcs_prefix", "")),
+            experiment_id=str(payload.get("experiment_id", "")),
             schema_version=int(payload.get("schema_version", 1)),
         )
 
@@ -102,6 +106,7 @@ class Dataset:
             "component_hashes": self.component_hashes.to_dict(),
             "gcs_bucket": self.gcs_bucket,
             "gcs_prefix": self.gcs_prefix,
+            "experiment_id": self.experiment_id,
             "project_name": self.project_name,
             "created_at": self.created_at,
             "source_identity": self.source_identity,

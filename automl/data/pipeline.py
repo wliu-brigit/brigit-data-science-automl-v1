@@ -14,11 +14,11 @@ import pandas as pd
 from automl.data.dataset import ComponentHashes, Dataset, DatasetIndex, LoadedDataset
 from automl.data.features import FeatureRegistry
 from automl.data.split import ROW_FALLBACK_HASH_KEY, add_split_id, hash_key_columns
-from automl.errors import DataError
+from automl.errors import DataError, ProjectError
 from automl.mlflow import client as mlflow_client
 from automl.mlflow import experiment as mlflow_experiment
 from automl.mlflow import routing as mlflow_routing
-from automl.mlflow.project import artifacts as project_artifacts
+from automl.mlflow.experiment import artifacts as experiment_artifacts
 from automl.project import Session
 from automl.project import session as active_project_session
 from automl.utils.hashing import dataframe_content_hash, json_hash, schema_hash
@@ -167,6 +167,7 @@ class DataPipeline:
             component_hashes=component_hashes,
             gcs_bucket=self.session.config.gcs_bucket,
             gcs_prefix=_dataset_gcs_prefix(self.session),
+            experiment_id=_dataset_experiment_id(self.session),
             project_name=self.session.project_name,
             created_at=datetime.now(UTC).isoformat(),
             source_identity=source_identity,
@@ -201,7 +202,7 @@ def _materialize_bound(*, active: Session, refresh_source: bool) -> LoadedDatase
     spec = active.config.require_data_spec()
     pipeline = spec.pipeline_cls(spec, active, refresh_source=refresh_source)
     loaded = pipeline.run()
-    index = DatasetIndex.from_dict(project_artifacts.read_dataset_index())
+    index = DatasetIndex.from_dict(experiment_artifacts.read_dataset_index())
     existing = _dataset_for_identity(index, loaded.dataset.identity_hash)
     dataset_id = existing.id if existing is not None else _next_dataset_id(index, loaded.dataset)
     dataset = replace(
@@ -213,11 +214,11 @@ def _materialize_bound(*, active: Session, refresh_source: bool) -> LoadedDatase
 
     object_state = _dataset_object_state(dataset)
     if existing is not None and all(object_state.values()):
-        manifest = project_artifacts.read_dataset_manifest(dataset.manifest_gcs_uri)
+        manifest = experiment_artifacts.read_dataset_manifest(dataset.manifest_gcs_uri)
         persisted = Dataset.from_dict(manifest)
         _validate_existing_dataset_matches_candidate(persisted, dataset)
         mlflow_experiment.set_active_dataset(dataset.id, experiment_id=active.active_experiment_id)
-        project_artifacts.log_dataset_catalog(
+        experiment_artifacts.log_dataset_catalog(
             index.to_dict(),
             active_dataset_id=dataset.id,
         )
@@ -229,16 +230,16 @@ def _materialize_bound(*, active: Session, refresh_source: bool) -> LoadedDatase
             f"partial dataset objects for {dataset.id}: present={present} missing={missing}"
         )
 
-    project_artifacts.write_dataset_frame(dataset.data_gcs_uri, loaded.df)
-    project_artifacts.write_registry(dataset.registry_gcs_uri, loaded.registry.to_dataframe())
-    project_artifacts.write_dataset_manifest(dataset.manifest_gcs_uri, dataset.to_dict())
+    experiment_artifacts.write_dataset_frame(dataset.data_gcs_uri, loaded.df)
+    experiment_artifacts.write_registry(dataset.registry_gcs_uri, loaded.registry.to_dataframe())
+    experiment_artifacts.write_dataset_manifest(dataset.manifest_gcs_uri, dataset.to_dict())
     _log_source_trace(dataset, spec.source.artifact_files(pipeline))
 
     datasets = tuple(item for item in index.datasets if item.id != dataset.id) + (dataset,)
     next_index = DatasetIndex(datasets=datasets)
-    project_artifacts.write_dataset_index(next_index.to_dict())
+    experiment_artifacts.write_dataset_index(next_index.to_dict())
     mlflow_experiment.set_active_dataset(dataset.id, experiment_id=active.active_experiment_id)
-    project_artifacts.log_dataset_catalog(
+    experiment_artifacts.log_dataset_catalog(
         next_index.to_dict(),
         active_dataset_id=dataset.id,
     )
@@ -257,6 +258,14 @@ def _dataset_gcs_prefix(active: Session) -> str:
     )
 
 
+def _dataset_experiment_id(active: Session) -> str:
+    """Datasets are experiment-owned; exploration sessions build unmaterialized ones."""
+    try:
+        return active.active_experiment_id
+    except ProjectError:
+        return ""
+
+
 def _log_source_trace(dataset: Dataset, source_files) -> None:
     with tempfile.TemporaryDirectory() as tmp_dir:
         identity_path = Path(tmp_dir) / "source_identity.json"
@@ -265,7 +274,7 @@ def _log_source_trace(dataset: Dataset, source_files) -> None:
             encoding="utf-8",
         )
         files = {"source_identity.json": identity_path, **dict(source_files)}
-        project_artifacts.log_source_trace(dataset.id, files)
+        experiment_artifacts.log_source_trace(dataset.id, files)
 
 
 def _dataset_for_identity(index: DatasetIndex, identity_hash: str) -> Dataset | None:

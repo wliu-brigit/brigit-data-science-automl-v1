@@ -181,12 +181,13 @@ def experiment_url(experiment_id: str | None = None) -> str:
 def project_url() -> str:
     """Return the MLflow UI URL for the project's overview experiment.
 
-    The ``<project>/overview`` experiment is this system's project-level MLflow
-    entity. Returns ``""`` for local stores or before that experiment exists.
+    The ``<project>/000_overview`` experiment is this system's project-level
+    MLflow entity. Returns ``""`` for local stores or before that experiment
+    exists.
     """
     from automl.mlflow import _routing
 
-    return _experiment_route_url(_routing.experiment_route("overview"))
+    return _experiment_route_url(_routing.experiment_route("000_overview"))
 
 
 def _experiment_route_url(route: str) -> str:

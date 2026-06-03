@@ -62,7 +62,7 @@ def test_project_list_experiments_returns_logical_active_ids(tmp_path):
     create(experiment_id="baseline")
     create(experiment_id="second")
     mlflow_client = client.raw()
-    mlflow_client.create_experiment("home_credit/overview")
+    mlflow_client.create_experiment("home_credit/000_overview")
     mlflow_client.create_experiment("home_credit/baseline/nested")
     mlflow_client.create_experiment("other_project/baseline")
 

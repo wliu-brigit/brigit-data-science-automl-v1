@@ -65,7 +65,7 @@ ChartFn = Callable[[pd.DataFrame, str, Path], None]
 
 def profile(dataset_id: str | None = None, *, session: Session | None = None) -> Profile:
     from automl.data.registry import list_datasets, load_dataset_by_id
-    from automl.mlflow.project import artifacts as project_artifacts
+    from automl.mlflow.experiment import artifacts as experiment_artifacts
 
     active = _session(session)
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
@@ -82,7 +82,7 @@ def profile(dataset_id: str | None = None, *, session: Session | None = None) ->
         with tempfile.TemporaryDirectory(prefix="automl-profile-") as tmp_dir:
             local_dir = Path(tmp_dir)
             manifest = _write_profile_artifacts(loaded, local_dir)
-            uris = project_artifacts.write_profile(loaded.id, local_dir=local_dir)
+            uris = experiment_artifacts.write_profile(loaded.id, local_dir=local_dir)
             return Profile(
                 dataset_id=loaded.id,
                 target_column=manifest["target_column"],
@@ -96,7 +96,7 @@ def profile(dataset_id: str | None = None, *, session: Session | None = None) ->
 
 def get_profile(dataset_id: str | None = None, *, session: Session | None = None) -> Profile | None:
     from automl.data.registry import list_datasets
-    from automl.mlflow.project import artifacts as project_artifacts
+    from automl.mlflow.experiment import artifacts as experiment_artifacts
 
     active = _session(session)
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
@@ -107,7 +107,7 @@ def get_profile(dataset_id: str | None = None, *, session: Session | None = None
             if dataset is None:
                 return None
             resolved_dataset_id = dataset.id
-        return project_artifacts.read_profile(resolved_dataset_id)
+        return experiment_artifacts.read_profile(resolved_dataset_id)
 
 
 def _write_profile_artifacts(loaded: LoadedDataset, output_dir: Path) -> dict[str, Any]:

@@ -150,7 +150,7 @@ def test_http_experiment_and_project_urls_resolve_numeric_experiment_id(monkeypa
     # construction and URL formatting still run for real.
     numeric_ids = {
         "dry_run/home_credit/baseline": "11",
-        "dry_run/home_credit/overview": "22",
+        "dry_run/home_credit/000_overview": "22",
     }
 
     class _Experiment:
@@ -179,7 +179,7 @@ def test_list_route_experiment_names_includes_overview_and_deleted(bound_file_ml
     from automl.mlflow import project as mlflow_project
 
     experiment.ensure()  # home_credit/baseline
-    mlflow_project.ensure_overview()  # home_credit/overview
+    mlflow_project.ensure_overview()  # home_credit/000_overview
     raw = client.raw()
     old_id = raw.create_experiment("home_credit/old-exp")
     raw.delete_experiment(old_id)  # soft-deleted -> must still be listed for cleanup
@@ -187,7 +187,7 @@ def test_list_route_experiment_names_includes_overview_and_deleted(bound_file_ml
 
     names = mlflow_project.list_route_experiment_names()
 
-    assert names == ["home_credit/baseline", "home_credit/old-exp", "home_credit/overview"]
+    assert names == ["home_credit/000_overview", "home_credit/baseline", "home_credit/old-exp"]
 
 
 def test_list_all_experiment_names_returns_full_names_including_deleted(bound_file_mlflow):

@@ -55,6 +55,11 @@ Render the summary payload sections that matter most, especially:
 - `winning_techniques`: techniques with evidence from top trials.
 - `recommendations_for_next_experiment`: concrete guidance for future proposal turns.
 
+For questions these CLI verbs don't cover, write ad-hoc **read-only** Python
+against the library (`automl.experiment`, `automl.trial`, `automl.mlflow`) with
+`uv run` — query, aggregate, and render freely, but never create, modify, or
+delete runs, datasets, or artifacts from inspect.
+
 Until a durable inspect writer script exists, do not claim `experiment_summary.json` has been saved to MLflow. The durable writer must write through `automl.mlflow.store` to the routed `experiment_overview`, not to local project state first.
 
 End with a suggested next action: another

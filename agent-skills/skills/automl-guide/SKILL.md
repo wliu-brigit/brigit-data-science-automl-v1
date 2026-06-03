@@ -125,7 +125,8 @@ Operational tasks belong in the matching skill:
 - "Profile the data" → `/brigit-automl:profile`
 - "Run the loop" → `/brigit-automl:automl experiment run --project <name>`
 - "Show me the leaderboard" → `/brigit-automl:inspect`
-- "Manually propose / run one trial" → `/brigit-automl:propose`, `/brigit-automl:coder`
+- "Run one steered iteration" → `/brigit-automl:automl experiment run --project <name> --max-iter 1 --instruction "..."`
+- "Author or promote a trial by hand" → notebooks 3/4 or `automl trial create --training-origin human` / `trial promote`
 
 If the user wants to *do* one of those, route them to that skill instead of
 walking them through it from here.

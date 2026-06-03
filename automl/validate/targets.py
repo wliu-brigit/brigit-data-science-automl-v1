@@ -58,7 +58,14 @@ def model(cls: type[Any], *, df, registry, session=None) -> ValidationReport:
     return ValidationReport(issues=issues)
 
 
-def project(*args, **kwargs) -> ValidationReport:
+def project(*args, live: bool = False, **kwargs) -> ValidationReport:
+    """Validate the active project.
+
+    Structural checks always run. ``live=True`` adds service connectivity
+    probes (GCS round-trip, MLflow query); the CLI always passes it so one
+    verb reports the whole picture, while library callers and unit tests
+    stay offline by default.
+    """
     del args
     from automl.project import checks as project_checks
 
@@ -83,6 +90,31 @@ def project(*args, **kwargs) -> ValidationReport:
             config=config,
         )
     )
+    issues.extend(
+        _safe(
+            "project.placeholder_values",
+            project_checks.placeholder_values,
+            config=config,
+        )
+    )
+    if live:
+        issues.extend(
+            _safe("project.connections.gcs", project_checks.gcs_connection, config=config)
+        )
+        issues.extend(
+            _safe(
+                "project.connections.mlflow",
+                project_checks.mlflow_connection,
+                config=config,
+            )
+        )
+        issues.extend(
+            _safe(
+                "project.connections.snowflake",
+                project_checks.snowflake_connection,
+                config=config,
+            )
+        )
     return ValidationReport(issues=issues)
 
 

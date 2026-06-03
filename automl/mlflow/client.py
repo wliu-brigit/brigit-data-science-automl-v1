@@ -126,6 +126,19 @@ def raw():
     return mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
 
 
+def check_connection(tracking_uri: str) -> None:
+    """Probe the tracking server with one cheap query; raise if unreachable.
+
+    Standalone on purpose: validation runs before any ``bind()``, so this takes
+    the tracking URI directly instead of going through ``bound()``. Auth comes
+    from the environment (``MLFLOW_TRACKING_USERNAME``/``PASSWORD``), same as
+    every other path through this seam.
+    """
+    import mlflow
+
+    mlflow.tracking.MlflowClient(tracking_uri=tracking_uri).search_experiments(max_results=1)
+
+
 def context_tags(tags: dict[str, str]) -> dict[str, str]:
     """Merge MLflow context-provider tags into ``tags`` for ``create_run``.
 

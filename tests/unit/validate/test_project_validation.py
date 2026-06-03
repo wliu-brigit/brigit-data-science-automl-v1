@@ -84,6 +84,104 @@ def test_validate_project_reports_missing_storage_env(tmp_path):
     assert "project.env.mlflow_tracking_uri" in checks
 
 
+def test_validate_project_reports_leftover_tbd_placeholders(tmp_path):
+    from automl.validate import project
+
+    session = _session(tmp_path)
+    session.config.config_path.write_text(
+        'TASK = BinaryClassification(target="<TBD_target_column>")\n'
+    )
+
+    report = project(session=session)
+
+    checks = {issue.check for issue in report.issues}
+    assert report.passed is False
+    assert "project.placeholders" in checks
+
+
+def test_validate_project_offline_by_default_skips_connection_probes(monkeypatch, tmp_path):
+    from automl.project import checks as project_checks
+    from automl.validate import project
+
+    def boom(**kwargs):
+        raise AssertionError("connection probe must not run without live=True")
+
+    monkeypatch.setattr(project_checks, "gcs_connection", boom)
+    monkeypatch.setattr(project_checks, "mlflow_connection", boom)
+    monkeypatch.setattr(project_checks, "snowflake_connection", boom)
+
+    report = project(session=_session(tmp_path))
+
+    assert report.passed is True
+
+
+def test_validate_project_live_reports_unreachable_services(monkeypatch, tmp_path):
+    from automl.mlflow import client as mlflow_client
+    from automl.utils.io import gcs
+    from automl.validate import project
+
+    def gcs_down(*args, **kwargs):
+        raise ConnectionError("bucket unreachable")
+
+    def mlflow_down(tracking_uri):
+        raise ConnectionError("tracking server unreachable")
+
+    monkeypatch.setattr(gcs, "write_json", gcs_down)
+    monkeypatch.setattr(mlflow_client, "check_connection", mlflow_down)
+
+    report = project(session=_session(tmp_path), live=True)
+
+    issues = {issue.check: issue for issue in report.issues}
+    assert report.passed is False
+    assert "bucket unreachable" in issues["project.connections.gcs"].message
+    assert "tracking server unreachable" in issues["project.connections.mlflow"].message
+
+
+def test_validate_project_live_passes_when_probes_succeed(monkeypatch, tmp_path):
+    from automl.mlflow import client as mlflow_client
+    from automl.utils.io import gcs
+    from automl.validate import project
+
+    monkeypatch.setattr(gcs, "write_json", lambda *args, **kwargs: None)
+    monkeypatch.setattr(gcs, "read_json", lambda *args, **kwargs: {})
+    monkeypatch.setattr(gcs, "delete_prefix", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(mlflow_client, "check_connection", lambda tracking_uri: None)
+
+    report = project(session=_session(tmp_path), live=True)
+
+    assert report.passed is True
+    assert report.issues == []
+
+
+def test_validate_project_live_marks_snowflake_pending(monkeypatch, tmp_path):
+    from automl.data import SnowflakeSource
+    from automl.mlflow import client as mlflow_client
+    from automl.utils.io import gcs
+    from automl.validate import project
+
+    monkeypatch.setattr(gcs, "write_json", lambda *args, **kwargs: None)
+    monkeypatch.setattr(gcs, "read_json", lambda *args, **kwargs: {})
+    monkeypatch.setattr(gcs, "delete_prefix", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(mlflow_client, "check_connection", lambda tracking_uri: None)
+
+    session = _session(tmp_path)
+    snowflake_spec = DataSpec(
+        source=SnowflakeSource(
+            base_table="demo.table",
+            base_data_sql="data/queries/base_data.sql",
+            training_data_sql="data/queries/training_data.sql",
+        )
+    )
+    object.__setattr__(session.config, "data_spec", snowflake_spec)
+
+    report = project(session=session, live=True)
+
+    issues = {issue.check: issue for issue in report.issues}
+    assert report.passed is True  # warning, not error
+    assert issues["project.connections.snowflake"].level == "warning"
+    assert "pending" in issues["project.connections.snowflake"].message
+
+
 def test_validate_project_wraps_crashed_domain_checks(monkeypatch, tmp_path):
     from automl import validate
     from automl.project import checks as project_checks

@@ -133,38 +133,34 @@ to this menu.
 
 ## Step 4 — Validate setup
 
-Once the env file and recipe files are filled in, run the structural check
-before any real trials:
+Once the env file and recipe files are filled in, hand off to the validate
+skill — tell the user: *"Let's validate the setup."* — then follow
+`/brigit-automl:validate`. It runs one command covering both structure and
+live connectivity:
 
 ```bash
 uv run automl --project <project_name> validate project
 ```
 
-This is a fast (<1s) check that verifies:
-- `config.py` defines `RUN_CONFIG` with `experiment_id`, `models`, and `per_trial_seconds`
-- `config.py` defines `TASK` (target column + task type) and `DATA` (DataSpec
-  with source and column roles); optional pipeline customization is declared as
-  a `DataPipeline` subclass via `DataSpec.pipeline_cls`
-- Snowflake projects have the base table filled in and no `<TBD>` placeholders
-  left in `data/queries/base_data.sql` or `data/queries/training_data.sql`
-- `config.py` defines `EVAL` with a valid `EvalSpec`
+That checks (check IDs in parentheses):
+- `config.py` defines `TASK`, `DATA`, `EVAL`, and `RUN_CONFIG` (`project.config.*`)
 - `.env` or the process environment defines `GCS_BUCKET`, `GCS_PREFIX`, and
-  `MLFLOW_TRACKING_URI`
-- Optional `validators.py` checks (if present) pass
+  `MLFLOW_TRACKING_URI` (`project.env.*`)
+- No scaffold `TBD_` placeholders remain in `config.py` or the Snowflake SQL
+  files (`project.placeholders`)
+- GCS is reachable with a write/read/delete probe under the project prefix
+  (`project.connections.gcs`)
+- The MLflow tracking server answers an authenticated query
+  (`project.connections.mlflow`)
+- Snowflake-backed projects get a pending-implementation warning; live
+  Snowflake connectivity is not checked yet (`project.connections.snowflake`)
 
-If `passed: false`, surface the JSON report verbatim and point the user at the
-matching reference doc by check ID:
-
-- `config.*` → `agent-skills/references/setup/run-config.md` (RUN_CONFIG fields)
-- `contracts.data_*` → `agent-skills/references/setup/data-pipeline.md` (DATA / DataSpec)
-- `contracts.eval_*` → `agent-skills/references/setup/evaluation-metric.md` (EVAL / EvalSpec)
-- `model.*` → `agent-skills/references/setup/model-contract.md`
+End with a short per-service report (config / env / placeholders / GCS /
+MLflow / Snowflake — pass, fail, or skipped), quoting failure messages
+verbatim. Point the user at the matching reference doc by check ID, as listed
+in `/brigit-automl:validate`.
 
 Do not auto-fix the user's project files. The user fixes; we re-run.
-
-This step intentionally does **not** verify live service connectivity (GCS
-read/write, MLflow auth, Snowflake query). That happens during the real
-dry-run in Step 5, where any service error surfaces with full context.
 
 ## Step 5 — Hand-off
 
@@ -189,5 +185,6 @@ uv run automl --project <project_name> experiment run
 - Surface service errors verbatim — don't paraphrase or guess at fixes.
 - GCS and MLflow are required; Snowflake is conditional on the active
   project's source.
-- Validation in Step 4 is structural only; live-connectivity validation
-  happens via the dry-run in Step 5.
+- Validation in Step 4 covers structure and live GCS/MLflow connectivity; the
+  Step 5 dry-run remains the deeper end-to-end check (data pipeline, trial
+  runner, MLflow logging).

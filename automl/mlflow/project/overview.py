@@ -27,12 +27,14 @@ def ensure_overview() -> ProjectOverview:
     try:
         run = client.raw().create_run(
             experiment_id,
-            tags={
-                tags.RUN_KIND: "project_overview",
-                tags.PROJECT_NAME: client.bound().project_name,
-                tags.CREATED_AT: created_at,
-                "mlflow.runName": "overview",
-            },
+            tags=client.context_tags(
+                {
+                    tags.RUN_KIND: "project_overview",
+                    tags.PROJECT_NAME: client.bound().project_name,
+                    tags.CREATED_AT: created_at,
+                    "mlflow.runName": "overview",
+                }
+            ),
         )
         client.raw().set_terminated(run.info.run_id, status="FINISHED")
         client.remember_run_experiment(run.info.run_id, str(experiment_id))

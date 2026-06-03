@@ -126,6 +126,22 @@ def raw():
     return mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
 
 
+def context_tags(tags: dict[str, str]) -> dict[str, str]:
+    """Merge MLflow context-provider tags into ``tags`` for ``create_run``.
+
+    The fluent API resolves provider tags — ``mlflow.user`` (credentials
+    username, else OS user), ``mlflow.source.name``/``type``, and
+    ``mlflow.source.git.commit`` — at run start, but the low-level
+    ``create_run`` this seam uses attaches only the tags it is given, so runs
+    showed no "created by" while their logged models did. Run the same
+    resolution here; providers that cannot resolve are skipped by MLflow
+    (user falls back to ``unknown``), and caller tags win conflicts.
+    """
+    from mlflow.tracking.context import registry
+
+    return registry.resolve_tags(tags)
+
+
 def remember_run_experiment(run_id: str, mlflow_experiment_id: str) -> None:
     """Record run ownership for URL helpers when later bound to an HTTP UI."""
     _RUN_EXPERIMENT_IDS[run_id] = mlflow_experiment_id
@@ -278,6 +294,7 @@ __all__ = [
     "bound",
     "bound_for",
     "clear",
+    "context_tags",
     "delete_experiment",
     "delete_run",
     "download_artifact",

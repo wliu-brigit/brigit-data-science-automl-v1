@@ -63,14 +63,16 @@ def ensure_overview(experiment_id: str | None = None) -> ExperimentOverview:
     try:
         run = client.raw().create_run(
             numeric_experiment_id,
-            tags={
-                tags.RUN_KIND: "experiment_overview",
-                tags.EXPERIMENT_ID: str(resolved_experiment_id),
-                tags.PROJECT_NAME: bound.project_name,
-                "run.dry_run": str(bound.dry_run),
-                tags.CREATED_AT: created_at,
-                "mlflow.runName": "experiment_overview",
-            },
+            tags=client.context_tags(
+                {
+                    tags.RUN_KIND: "experiment_overview",
+                    tags.EXPERIMENT_ID: str(resolved_experiment_id),
+                    tags.PROJECT_NAME: bound.project_name,
+                    "run.dry_run": str(bound.dry_run),
+                    tags.CREATED_AT: created_at,
+                    "mlflow.runName": "experiment_overview",
+                }
+            ),
         )
         client.raw().set_terminated(run.info.run_id, status="FINISHED")
         client.remember_run_experiment(run.info.run_id, str(numeric_experiment_id))

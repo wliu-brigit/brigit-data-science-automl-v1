@@ -51,15 +51,17 @@ def start(
     resolved_experiment_id = experiment_id or bound.experiment_id
     try:
         mlflow_client = client.raw()
-        run_tags = {
-            tags.RUN_KIND: "trial",
-            tags.PROJECT_NAME: bound.project_name,
-            tags.EXPERIMENT_ID: str(resolved_experiment_id),
-            tags.EXPERIMENT_OVERVIEW_RUN_ID: parent_run_id or overview.run_id,
-            tags.TRIAL_SLUG: slug,
-            tags.TRIAL_STATUS: "RUNNING",
-            "mlflow.runName": slug,
-        }
+        run_tags = client.context_tags(
+            {
+                tags.RUN_KIND: "trial",
+                tags.PROJECT_NAME: bound.project_name,
+                tags.EXPERIMENT_ID: str(resolved_experiment_id),
+                tags.EXPERIMENT_OVERVIEW_RUN_ID: parent_run_id or overview.run_id,
+                tags.TRIAL_SLUG: slug,
+                tags.TRIAL_STATUS: "RUNNING",
+                "mlflow.runName": slug,
+            }
+        )
         run = mlflow_client.create_run(numeric_experiment_id, tags=run_tags)
         run_id = run.info.run_id
         mlflow_client.log_param(run_id, tags.TRIAL_STRATEGY, str(strategy))

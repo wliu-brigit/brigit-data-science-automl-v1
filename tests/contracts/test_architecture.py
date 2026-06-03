@@ -36,6 +36,7 @@ EXPECTED_DIRS = [
 
 ALLOWED_TOP_LEVEL = {
     "__init__.py",
+    "ARCHITECTURE.md",
     "agent",
     "cli",
     "data",

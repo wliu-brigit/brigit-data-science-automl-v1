@@ -30,6 +30,17 @@ project (gitignored); `fraud_anomaly_detection/` is touched **only** for the
 scaffold-contract updates listed in Task 8; pre-existing warehouse tables
 are never replaced without the explicit flag.
 
+**Carried in from the step-1 review session (2026-06-04):** when rewriting
+`SnowflakeSource`, give it the construction-time key validation the file
+sources have — and prefer enforcing it once in the `DataSource` base (a
+base-class hook) over copy-pasting the `__post_init__` property-touch idiom
+a third time, so every future source inherits the construction-edge
+guarantee. Also reconcile in Task 4 (pipeline adopts source-provided
+SPLIT_PCT): `add_split_pct`'s internal collision guard checks the uppercase
+column name against a frame `standardize_columns` has lowercased — dead on
+the pipeline path; pick one altitude for the collision check while this
+area is being rewritten.
+
 ---
 
 ## PART 1 — the seam (commit 1)

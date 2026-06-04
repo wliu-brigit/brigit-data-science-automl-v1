@@ -218,7 +218,7 @@ def _unique_key_cardinality(loaded: LoadedDataset) -> list[dict[str, Any]]:
     key = list(loaded.dataset.unique_key)
     if not key or any(column not in loaded.df.columns for column in key):
         return []
-    n_distinct = int(len(loaded.df.drop_duplicates(subset=key)))
+    n_distinct = int(len(loaded.df)) - int(loaded.df.duplicated(subset=key).sum())
     return [
         {
             "kind": "unique_key_cardinality",

@@ -74,7 +74,40 @@ def test_validate_split_pct_rejects_bad_columns(values, match):
         validate_split_pct(df)
 
 
+def test_validate_split_pct_rejects_nullable_integer_with_missing_values():
+    df = _frame()
+    df[SPLIT_PCT_COL] = pd.array([0, 50, 99, None], dtype="Int64")
+    with pytest.raises(DataError, match="missing values"):
+        validate_split_pct(df)
+
+
+def test_validate_unique_key_rejects_null_key_values_even_without_duplicates():
+    df = _frame().iloc[:3].copy()  # txn_id 1, 2, 3 — no duplicates
+    df.loc[2, "txn_id"] = None
+    with pytest.raises(DataError, match="null"):
+        validate_unique_key(df, unique_key=("txn_id",))
+
+
 def test_split_report_counts_buckets():
     df = add_split_pct(_frame(), split_group_key=("txn_id",))
     report = split_report(df)
     assert int(report["rows"].sum()) == len(df)
+
+
+def test_normalize_key_sorts_and_rejects_bad_declarations():
+    # _normalize_key is module-internal by settled decision (2026-06-04); these
+    # tests pin its invariants because dataset identity depends on them:
+    # sorted output keeps composite-key declaration order out of identity hashes.
+    from automl.data.split import _normalize_key
+
+    assert _normalize_key("TXN_ID", field_name="unique_key") == ("TXN_ID",)
+    assert _normalize_key(("user_id", "txn_id"), field_name="unique_key") == ("txn_id", "user_id")
+    assert _normalize_key(("txn_id", "user_id"), field_name="unique_key") == ("txn_id", "user_id")
+    with pytest.raises(ValueError, match="duplicate"):
+        _normalize_key(("a", "a"), field_name="unique_key")
+    with pytest.raises(ValueError, match="non-empty"):
+        _normalize_key((), field_name="unique_key")
+    with pytest.raises(ValueError, match="non-empty"):
+        _normalize_key(("a", "  "), field_name="unique_key")
+    with pytest.raises(ValueError, match="split_group_key"):
+        _normalize_key(123, field_name="split_group_key")

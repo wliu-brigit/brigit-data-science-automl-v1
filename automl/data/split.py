@@ -71,11 +71,17 @@ def validate_unique_key(
     unique_key: tuple[str, ...],
     source_label: str = "data",
 ) -> None:
-    """Hard ingestion-edge check: unique_key columns present and duplicate-free."""
+    """Hard ingestion-edge check: unique_key columns present, non-null, duplicate-free."""
     missing = [column for column in unique_key if column not in df.columns]
     if missing:
         raise DataError(
             f"unique_key column(s) {missing} not in {source_label} columns: {list(df.columns)}"
+        )
+    null_rows = df[list(unique_key)].isna().any(axis=1)
+    if bool(null_rows.any()):
+        raise DataError(
+            f"unique_key {unique_key} has {int(null_rows.sum())} row(s) with null key values in "
+            f"{source_label}; a stable row identifier must be non-null"
         )
     duplicated = df.duplicated(subset=list(unique_key))
     if bool(duplicated.any()):
@@ -105,6 +111,12 @@ def validate_split_pct(
     series = df[split_pct_col]
     if not pd.api.types.is_integer_dtype(series):
         raise DataError(f"{split_pct_col} must be an integer column, got dtype {series.dtype}")
+    if bool(series.isna().any()):
+        # nullable Int64 passes the dtype check, and between(...).all() skips NA —
+        # without this check, NA-bucket rows silently vanish from every split slice.
+        raise DataError(
+            f"{split_pct_col} has {int(series.isna().sum())} missing values in {source_label}"
+        )
     if len(series) and not series.between(0, 99).all():
         raise DataError(f"{split_pct_col} values must be in 0–99")
 

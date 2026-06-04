@@ -36,6 +36,16 @@ vocabulary). **wendao has wiped old MLflow/GCS state manually** — the code
 never deletes or migrates anything (ground rule). Old records are
 unreadable by the new code on purpose; that is the forward-only posture.
 
+**Carried in from the step-1 review session (2026-06-04):** before keys land
+on the dataset record, unify `unique_key` normalization across data and eval —
+data's `_normalize_key` sorts and rejects duplicates/blanks; eval's
+`_normalize_unique_key` (eval_dataset.py) preserves order and checks nothing.
+One shared normalizer (eval may import from `automl.data.split`; the domains
+are co-dependent core), or a documented decision that eval preserves declared
+order. While in those files, consider collapsing the ~5 copies of the
+present+duplicate-free key check (eval_dataset/_load/base) onto
+`split.validate_unique_key`.
+
 ---
 
 ## The recipe (settled field list)

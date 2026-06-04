@@ -29,7 +29,9 @@ class LocalCSVSource(DataSource):
         *,
         project_dir: str | Path | None = None,
         nrows: int | None = None,
+        refresh_source: bool = False,
     ) -> pd.DataFrame:
+        del refresh_source  # layer-1 verbs are no-ops for file sources
         path = Path(self.csv_path)
         csv_path = path if path.is_absolute() else Path(project_dir or Path.cwd()) / path
         return pd.read_csv(csv_path, nrows=nrows)

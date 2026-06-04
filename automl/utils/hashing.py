@@ -20,11 +20,16 @@ def json_hash(value: Any) -> str:
 
 
 def dataframe_content_hash(df: pd.DataFrame) -> str:
-    """Hash ordered columns, dtype strings, and row content for a DataFrame."""
+    """Hash ordered columns, dtype strings, and the multiset of row hashes.
+
+    Row hashes are sorted before fingerprinting so identity is insensitive
+    to row order (a Snowflake SELECT has no order guarantee); duplicates
+    still count, and no data is reordered.
+    """
     payload = {
         "columns": list(df.columns),
         "dtypes": [str(dtype) for dtype in df.dtypes],
-        "row_hashes": pd.util.hash_pandas_object(df, index=False).astype("uint64").tolist(),
+        "row_hashes": sorted(pd.util.hash_pandas_object(df, index=False).astype("uint64").tolist()),
     }
     return json_hash(payload)
 

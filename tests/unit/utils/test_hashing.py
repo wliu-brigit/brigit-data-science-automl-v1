@@ -36,11 +36,28 @@ def test_schema_hash_is_sensitive_to_column_order_and_dtype_strings():
 def test_dataframe_content_hash_is_sensitive_to_rows_columns_and_dtypes():
     df = pd.DataFrame({"id": pd.Series([1, 2], dtype="int64"), "value": ["a", "b"]})
     reordered_columns = df[["value", "id"]]
-    reordered_rows = df.iloc[[1, 0]].reset_index(drop=True)
+    changed_rows = pd.DataFrame({"id": pd.Series([1, 3], dtype="int64"), "value": ["a", "b"]})
     changed_dtype = pd.DataFrame(
         {"id": pd.Series([1.0, 2.0], dtype="float64"), "value": ["a", "b"]}
     )
 
     assert dataframe_content_hash(df) != dataframe_content_hash(reordered_columns)
-    assert dataframe_content_hash(df) != dataframe_content_hash(reordered_rows)
+    assert dataframe_content_hash(df) != dataframe_content_hash(changed_rows)
     assert dataframe_content_hash(df) != dataframe_content_hash(changed_dtype)
+
+
+def test_content_hash_is_row_order_insensitive():
+    df = pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+    shuffled = df.sample(frac=1, random_state=7).reset_index(drop=True)
+    assert dataframe_content_hash(df) == dataframe_content_hash(shuffled)
+
+
+def test_content_hash_still_counts_duplicates():
+    once = pd.DataFrame({"a": [1, 2]})
+    twice = pd.DataFrame({"a": [1, 1, 2]})
+    assert dataframe_content_hash(once) != dataframe_content_hash(twice)
+
+
+def test_content_hash_still_sees_column_order_and_dtypes():
+    df = pd.DataFrame({"a": [1], "b": [2]})
+    assert dataframe_content_hash(df) != dataframe_content_hash(df[["b", "a"]])

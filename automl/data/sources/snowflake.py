@@ -28,6 +28,7 @@ class SnowflakeSource(DataSource):
         *,
         project_dir: str | Path | None = None,
         nrows: int | None = None,
+        refresh_source: bool = False,
     ) -> pd.DataFrame:
         raise NotImplementedError(
             "SnowflakeSource is a pending source implementation; live Snowflake loading is not "

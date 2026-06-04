@@ -31,7 +31,9 @@ class GCSParquetSource(DataSource):
         *,
         project_dir: str | Path | None = None,
         nrows: int | None = None,
+        refresh_source: bool = False,
     ) -> pd.DataFrame:
+        del refresh_source  # layer-1 verbs are no-ops for file sources
         df = gcs.read_parquet(self.gcs_uri)
         if nrows is not None:
             return df.head(nrows)

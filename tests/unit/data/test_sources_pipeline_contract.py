@@ -308,6 +308,15 @@ def test_strict_constant_drop_preserves_constant_target_hash_and_metadata_column
     assert {"row_id", "target", "metadata_constant"}.issubset(registry_names)
 
 
+def test_build_dataset_errors_on_zero_rows(tmp_path):
+    csv_path = tmp_path / "empty.csv"
+    csv_path.write_text("row_id,TARGET,x\n", encoding="utf-8")  # header only
+    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10)
+
+    with pytest.raises(DataError, match="0 rows"):
+        build_dataset(session=_session_for(spec))
+
+
 def test_build_dataset_errors_on_duplicate_unique_key(tmp_path):
     csv_path = tmp_path / "dups.csv"
     pd.DataFrame({"row_id": [1, 1, 2], "x": [0.1, 0.2, 0.3], "TARGET": [0, 1, 0]}).to_csv(

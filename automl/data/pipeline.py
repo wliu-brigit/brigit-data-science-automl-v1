@@ -52,6 +52,11 @@ class DataPipeline:
             df,
             protected_cols=(target_column, *unique_key, *split_group_key, *metadata_cols),
         )
+        if df.empty:
+            raise DataError(
+                f"materialized frame has 0 rows from {self.spec.source.kind}; an empty "
+                "dataset is never useful — check the source data and quality thresholds"
+            )
         df = add_split_pct(
             df, split_group_key=split_group_key, split_pct_col=self.split_pct_col
         )

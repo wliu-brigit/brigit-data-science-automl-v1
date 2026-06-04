@@ -55,6 +55,17 @@ rule).
      it; throwaway experiments use a gitignored `dev_`-prefixed project.
    - Settled calls from the 2026-06-04 conversation are in each plan's
      header — don't reopen them in passing.
+   - **Stage commits explicitly — never `git add -A <dir>`.** The `git add`
+     lines in the plans are illustrative, not commands to run verbatim: a
+     blanket add sweeps pre-existing working-tree edits and untracked files
+     into a step commit (this happened in step 1 — d43d1ff carries unrelated
+     example_homecredit edits). Commit exactly the files your step changed;
+     anything else in the tree is not yours to commit.
+   - More generally: plan steps that touch shared state (git, MLflow, GCS,
+     warehouse) get a judgment check before running, not just a deviation
+     note after. When a plan instruction is unreasonable on contact with
+     reality, stop and fix the plan or ask — executing it and logging the
+     deviation is not a substitute.
 6. **Close out:** full suite green
    (`uv run pytest tests/unit tests/contracts tests/integration`), all plan
    checkboxes ticked, commits made per the plan. Update this table (status →

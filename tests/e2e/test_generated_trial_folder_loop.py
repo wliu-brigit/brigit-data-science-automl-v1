@@ -18,7 +18,7 @@ from automl.mlflow import trial as mlflow_trial
 from automl.project import clear_session, use_project
 from automl.runner import run_trial
 from automl.trial import TrialStatus, create
-from automl.validate import proposal as validate_proposal
+from automl.agent import validate_proposal
 
 pytestmark = [pytest.mark.e2e, pytest.mark.qa]
 

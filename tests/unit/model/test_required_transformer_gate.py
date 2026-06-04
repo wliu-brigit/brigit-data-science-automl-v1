@@ -9,7 +9,7 @@ from sklearn.preprocessing import StandardScaler
 from automl.data import FeatureRegistry
 from automl.model import BaseModel, RequiredTransformer
 from automl.project import ProjectConfig, Session
-from automl.validate import model as validate_model
+from automl.model import validate_model
 
 pytestmark = pytest.mark.unit
 

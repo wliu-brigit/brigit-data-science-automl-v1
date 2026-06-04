@@ -1,4 +1,4 @@
-"""Agent-domain validation checks."""
+"""Agent-domain validation checks and recipe."""
 
 from __future__ import annotations
 
@@ -8,7 +8,14 @@ from typing import Any
 from automl.agent.proposal import DISALLOWED, Proposal, proposal_field_names
 from automl.project.dependencies import allowed_dependencies
 from automl.utils.slug import SLUG_RE
-from automl.validate.base import Issue
+from automl.validate.base import Issue, ValidationReport, run_check
+
+
+def validate_proposal(*, proposal: dict, session=None) -> ValidationReport:
+    """Validate a proposal payload against the Proposal schema."""
+    return ValidationReport(
+        issues=run_check("proposal.schema", proposal_schema, proposal=proposal, session=session)
+    )
 
 
 def proposal_schema(proposal: dict[str, Any], *, session=None) -> list[Issue]:
@@ -169,4 +176,4 @@ def _valid_seed_hint(value: str) -> bool:
     )
 
 
-__all__ = ["proposal_schema"]
+__all__ = ["proposal_schema", "validate_proposal"]

@@ -1,4 +1,4 @@
-"""Project domain validation checks."""
+"""Project domain validation checks and recipe."""
 
 from __future__ import annotations
 
@@ -6,7 +6,64 @@ from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-from automl.validate.base import Issue
+from automl.validate.base import Issue, ValidationReport, run_check
+
+
+def validate_project(*, session=None, live: bool = False) -> ValidationReport:
+    """Validate the active project.
+
+    Structural checks always run. ``live=True`` adds service connectivity
+    probes (GCS round-trip, MLflow query); the CLI always passes it so one
+    verb reports the whole picture, while library callers and unit tests
+    stay offline by default.
+    """
+    active = session
+    if active is None:
+        from automl.project.session import session as active_project_session
+
+        active = active_project_session()
+    config = active.config
+    issues: list[Issue] = []
+    issues.extend(
+        run_check(
+            "project.config_required_fields",
+            config_required_fields,
+            config=config,
+        )
+    )
+    issues.extend(
+        run_check(
+            "project.environment_fields",
+            environment_fields,
+            config=config,
+        )
+    )
+    issues.extend(
+        run_check(
+            "project.placeholder_values",
+            placeholder_values,
+            config=config,
+        )
+    )
+    if live:
+        issues.extend(
+            run_check("project.connections.gcs", gcs_connection, config=config)
+        )
+        issues.extend(
+            run_check(
+                "project.connections.mlflow",
+                mlflow_connection,
+                config=config,
+            )
+        )
+        issues.extend(
+            run_check(
+                "project.connections.snowflake",
+                snowflake_connection,
+                config=config,
+            )
+        )
+    return ValidationReport(issues=issues)
 
 
 def config_required_fields(*, config: Any) -> Iterable[Issue]:
@@ -128,4 +185,5 @@ __all__ = [
     "mlflow_connection",
     "placeholder_values",
     "snowflake_connection",
+    "validate_project",
 ]

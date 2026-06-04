@@ -13,6 +13,7 @@ from automl.project import (
     ProjectConfig,
     RunConfig,
     Session,
+    validate_project,
 )
 
 pytestmark = pytest.mark.unit
@@ -50,19 +51,22 @@ def _session(tmp_path, *, missing_env: bool = False, partial: bool = False) -> S
     return Session(config=config, experiment_id="baseline")
 
 
-def test_validate_project_passes_complete_config(tmp_path):
-    from automl.validate import project
+def test_validate_project_requires_active_project():
+    from automl.errors import ProjectError
 
-    report = project(session=_session(tmp_path))
+    with pytest.raises(ProjectError, match="no active project"):
+        validate_project()
+
+
+def test_validate_project_passes_complete_config(tmp_path):
+    report = validate_project(session=_session(tmp_path))
 
     assert report.passed is True
     assert report.issues == []
 
 
 def test_validate_project_reports_missing_recipe_fields(tmp_path):
-    from automl.validate import project
-
-    report = project(session=_session(tmp_path, partial=True))
+    report = validate_project(session=_session(tmp_path, partial=True))
 
     checks = {issue.check for issue in report.issues}
     assert report.passed is False
@@ -73,9 +77,7 @@ def test_validate_project_reports_missing_recipe_fields(tmp_path):
 
 
 def test_validate_project_reports_missing_storage_env(tmp_path):
-    from automl.validate import project
-
-    report = project(session=_session(tmp_path, missing_env=True))
+    report = validate_project(session=_session(tmp_path, missing_env=True))
 
     checks = {issue.check for issue in report.issues}
     assert report.passed is False
@@ -85,14 +87,13 @@ def test_validate_project_reports_missing_storage_env(tmp_path):
 
 
 def test_validate_project_reports_leftover_tbd_placeholders(tmp_path):
-    from automl.validate import project
 
     session = _session(tmp_path)
     session.config.config_path.write_text(
         'TASK = BinaryClassification(target="<TBD_target_column>")\n'
     )
 
-    report = project(session=session)
+    report = validate_project(session=session)
 
     checks = {issue.check for issue in report.issues}
     assert report.passed is False
@@ -101,7 +102,6 @@ def test_validate_project_reports_leftover_tbd_placeholders(tmp_path):
 
 def test_validate_project_offline_by_default_skips_connection_probes(monkeypatch, tmp_path):
     from automl.project import checks as project_checks
-    from automl.validate import project
 
     def boom(**kwargs):
         raise AssertionError("connection probe must not run without live=True")
@@ -110,7 +110,7 @@ def test_validate_project_offline_by_default_skips_connection_probes(monkeypatch
     monkeypatch.setattr(project_checks, "mlflow_connection", boom)
     monkeypatch.setattr(project_checks, "snowflake_connection", boom)
 
-    report = project(session=_session(tmp_path))
+    report = validate_project(session=_session(tmp_path))
 
     assert report.passed is True
 
@@ -118,7 +118,6 @@ def test_validate_project_offline_by_default_skips_connection_probes(monkeypatch
 def test_validate_project_live_reports_unreachable_services(monkeypatch, tmp_path):
     from automl.mlflow import client as mlflow_client
     from automl.utils.io import gcs
-    from automl.validate import project
 
     def gcs_down(*args, **kwargs):
         raise ConnectionError("bucket unreachable")
@@ -129,7 +128,7 @@ def test_validate_project_live_reports_unreachable_services(monkeypatch, tmp_pat
     monkeypatch.setattr(gcs, "write_json", gcs_down)
     monkeypatch.setattr(mlflow_client, "check_connection", mlflow_down)
 
-    report = project(session=_session(tmp_path), live=True)
+    report = validate_project(session=_session(tmp_path), live=True)
 
     issues = {issue.check: issue for issue in report.issues}
     assert report.passed is False
@@ -140,14 +139,13 @@ def test_validate_project_live_reports_unreachable_services(monkeypatch, tmp_pat
 def test_validate_project_live_passes_when_probes_succeed(monkeypatch, tmp_path):
     from automl.mlflow import client as mlflow_client
     from automl.utils.io import gcs
-    from automl.validate import project
 
     monkeypatch.setattr(gcs, "write_json", lambda *args, **kwargs: None)
     monkeypatch.setattr(gcs, "read_json", lambda *args, **kwargs: {})
     monkeypatch.setattr(gcs, "delete_prefix", lambda *args, **kwargs: 0)
     monkeypatch.setattr(mlflow_client, "check_connection", lambda tracking_uri: None)
 
-    report = project(session=_session(tmp_path), live=True)
+    report = validate_project(session=_session(tmp_path), live=True)
 
     assert report.passed is True
     assert report.issues == []
@@ -157,7 +155,6 @@ def test_validate_project_live_marks_snowflake_pending(monkeypatch, tmp_path):
     from automl.data import SnowflakeSource
     from automl.mlflow import client as mlflow_client
     from automl.utils.io import gcs
-    from automl.validate import project
 
     monkeypatch.setattr(gcs, "write_json", lambda *args, **kwargs: None)
     monkeypatch.setattr(gcs, "read_json", lambda *args, **kwargs: {})
@@ -174,7 +171,7 @@ def test_validate_project_live_marks_snowflake_pending(monkeypatch, tmp_path):
     )
     object.__setattr__(session.config, "data_spec", snowflake_spec)
 
-    report = project(session=session, live=True)
+    report = validate_project(session=session, live=True)
 
     issues = {issue.check: issue for issue in report.issues}
     assert report.passed is True  # warning, not error
@@ -183,7 +180,6 @@ def test_validate_project_live_marks_snowflake_pending(monkeypatch, tmp_path):
 
 
 def test_validate_project_wraps_crashed_domain_checks(monkeypatch, tmp_path):
-    from automl import validate
     from automl.project import checks as project_checks
 
     def boom(**kwargs):
@@ -191,7 +187,7 @@ def test_validate_project_wraps_crashed_domain_checks(monkeypatch, tmp_path):
 
     monkeypatch.setattr(project_checks, "config_required_fields", boom)
 
-    report = validate.project(session=_session(tmp_path))
+    report = validate_project(session=_session(tmp_path))
 
     assert report.passed is False
     assert report.issues[0].check == "project.config_required_fields.crashed"

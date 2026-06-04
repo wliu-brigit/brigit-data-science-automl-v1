@@ -6,7 +6,7 @@ from automl.data import DataSpec, LocalCSVSource, build_dataset
 from automl.eval import Auc, EvalSpec
 from automl.model import BaseModel
 from automl.project import ProjectConfig, Session
-from automl.validate import model as validate_model
+from automl.model import validate_model
 from projects.example_homecredit.config import PROJECT_CONFIG
 from projects.example_homecredit.model import MODEL_CLASS
 

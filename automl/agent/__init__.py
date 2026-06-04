@@ -19,6 +19,7 @@ _LAZY_EXPORTS = {
     ),
     "handle_event": ("automl.agent.timeline", "handle_event"),
     "publish": ("automl.agent.timeline", "publish"),
+    "validate_proposal": ("automl.agent.checks", "validate_proposal"),
 }
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "gather_proposer_context",
     "handle_event",
     "publish",
+    "validate_proposal",
 ]
 
 

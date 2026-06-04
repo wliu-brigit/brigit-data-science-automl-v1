@@ -1,14 +1,15 @@
-"""Validate framework public API."""
+"""Validate vocabulary public API.
 
-from automl.validate.base import Issue, Severity, Target, ValidationReport
-from automl.validate.targets import model, project, proposal
+A true leaf: value objects plus the crash-safe check runner. Validation
+recipes live with their domains — ``automl.model.validate_model``,
+``automl.project.validate_project``, ``automl.agent.validate_proposal``.
+"""
+
+from automl.validate.base import Issue, Severity, ValidationReport, run_check
 
 __all__ = [
     "Issue",
     "Severity",
-    "Target",
     "ValidationReport",
-    "model",
-    "project",
-    "proposal",
+    "run_check",
 ]

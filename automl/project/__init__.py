@@ -1,5 +1,6 @@
 """Project domain exports."""
 
+from .checks import validate_project
 from .config import ProjectConfig
 from .dependencies import allowed_dependencies, parse_dependency_name
 from .metadata import find_repo_root, infer_project_name, list_projects, project_metadata
@@ -33,4 +34,5 @@ __all__ = [
     "session",
     "update_session",
     "use_project",
+    "validate_project",
 ]

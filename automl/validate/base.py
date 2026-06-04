@@ -1,13 +1,19 @@
-"""Validate framework value objects."""
+"""Validate vocabulary: check-result value objects and the check runner.
+
+This module is a leaf — it imports nothing from the rest of the library.
+Domains define their own checks (functions yielding ``Issue``s) and their own
+validation recipes (which checks to run, in what order), composing them with
+``run_check`` into a ``ValidationReport``.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping
 
 
 Severity = Literal["error", "warning"]
-Target = Literal["project", "model", "proposal"]
 
 
 @dataclass(frozen=True)
@@ -62,10 +68,24 @@ class ValidationReport:
         }
 
 
+def run_check(name: str, fn: Callable[..., Iterable[Issue]], **kwargs) -> list[Issue]:
+    """Run one check, reporting a crashed check as an error issue."""
+    try:
+        return list(fn(**kwargs))
+    except Exception as exc:  # noqa: BLE001 - validation must report crashed checks
+        return [
+            Issue(
+                level="error",
+                check=f"{name}.crashed",
+                message=f"check {name!r} raised {type(exc).__name__}: {exc}",
+            )
+        ]
+
+
 def _optional_str(value: object) -> str | None:
     if value in (None, ""):
         return None
     return str(value)
 
 
-__all__ = ["Issue", "Severity", "Target", "ValidationReport"]
+__all__ = ["Issue", "Severity", "ValidationReport", "run_check"]

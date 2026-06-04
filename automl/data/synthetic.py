@@ -1,10 +1,10 @@
-"""Synthetic validation fixtures."""
+"""Synthetic data fixtures for offline validation."""
 
 from __future__ import annotations
 
 import pandas as pd
 
-from automl.data import FeatureRegistry
+from automl.data.features import FeatureRegistry
 
 
 def make_synthetic_fixture(rows: int = 50):

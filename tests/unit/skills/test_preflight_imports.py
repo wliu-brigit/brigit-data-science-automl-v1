@@ -57,6 +57,7 @@ def test_agent_facade_public_exports_still_resolve():
         gather_proposer_context,
         handle_event,
         publish,
+        validate_proposal,
     )
 
     assert agent.__all__ == [
@@ -66,6 +67,7 @@ def test_agent_facade_public_exports_still_resolve():
         "gather_proposer_context",
         "handle_event",
         "publish",
+        "validate_proposal",
     ]
     assert DISALLOWED
     assert Proposal.__name__ == "Proposal"
@@ -73,3 +75,4 @@ def test_agent_facade_public_exports_still_resolve():
     assert gather_proposer_context.__name__ == "gather_proposer_context"
     assert handle_event.__name__ == "handle_event"
     assert publish.__name__ == "publish"
+    assert validate_proposal.__name__ == "validate_proposal"

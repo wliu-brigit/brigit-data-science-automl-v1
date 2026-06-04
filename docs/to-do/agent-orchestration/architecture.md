@@ -121,9 +121,10 @@ coder and the runner is the **`BaseModel` contract**, not co-location.
 **Dependency rule (the target, not today's state):** the agentic system *should*
 depend only *down* on the library + substrates; only adapters (CLI / plugin)
 *should* depend up. This is **not yet true** — `automl/__init__.py` re-exports
-`Proposal` from `agent/`, and `validate/targets.py` imports
-`agent.checks.proposal_schema` while `agent/checks.py` imports back from
-`validate/` (a real cycle). Cutting those up-edges is part of the refactor (§12).
+`Proposal` from `agent/`. (The other up-edge that used to live here — the
+`validate ↔ agent` cycle via `validate/targets.py` — was resolved 2026-06-04:
+validation recipes moved into their domains and `validate/` is now a true
+leaf.) Cutting the remaining re-export is part of the refactor (§12).
 
 ---
 
@@ -394,10 +395,11 @@ be a file until it grows.)
   → an engine/coordination home) and `serving_validation.py` (~590 lines, spawns a
   subprocess for serving-parity) is *trial-time validation* — neither is "the
   chain" nor "compute substrate." Each needs a deliberate home.
-- **Proposal-validation is a *cycle*, not a one-way seam:** `validate/targets.py`
-  imports `agent.checks.proposal_schema` **and** `agent/checks.py` imports back
-  from `validate/base.py`. Untangling it (plus the `automl/__init__.py`
-  `Proposal` re-export) is what restores the §5 dependency rule.
+- **Proposal-validation is a one-way seam now (resolved 2026-06-04):** the old
+  `validate ↔ agent` cycle is gone — `agent/checks.py` owns the
+  `validate_proposal` recipe and imports only the `validate/base.py` vocabulary
+  (a leaf). What remains for the §5 dependency rule is the
+  `automl/__init__.py` `Proposal` re-export.
 - The `trial` run.py-template embeds `from automl import runner`
   (`trial/template.py`) — a real coupling to decouple.
 - `investigator` is **not built yet** (only `proposer`/`coder` exist); it's
@@ -472,8 +474,9 @@ These are the specs the first commits need — the top of the implementation pla
   whole premise is testability.
 - **I. N-safe session lock + its home.** Counting semaphore + per-holder liveness
   (`runner/session_lock.py` is one-per-route today).
-- **J. `validate ↔ agent` cycle** + the `automl/__init__.py` `Proposal` re-export —
-  prerequisite for the §5 dependency rule.
+- **J. The `automl/__init__.py` `Proposal` re-export** — prerequisite for the §5
+  dependency rule. (The other half of this item, the `validate ↔ agent` cycle,
+  was resolved 2026-06-04 — recipes moved into domains, `validate/` is a leaf.)
 - **K. Contract versioning.** Reading historical mlflow runs across a contract
   change (no-backcompat covers config, not durable-state reads).
 - **L. Saturn image-equivalence + data seam** (§10), `serving_validation` home, and

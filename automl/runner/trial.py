@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import automl.data as data
-import automl.validate as validate
 from automl.data import DatasetRef, SliceContract, TrialDataContract, TrialRef
 from automl.eval import evaluate, prepare_eval_dataset
 from automl.eval.base import scalar_metric_records
@@ -20,6 +19,7 @@ from automl.mlflow import client as mlflow_client
 from automl.mlflow import experiment as mlflow_experiment
 from automl.mlflow import tags as mlflow_tags
 from automl.mlflow import trial as mlflow_trial
+from automl.model import validate_model
 from automl.project import Session, find_repo_root, session as active_project_session, use_project
 from automl.trial.metadata import TrialMetadata
 from automl.trial.paths import trial_slug, verify_trial_dir
@@ -91,7 +91,7 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
         sample = loaded_fit.df.head(200)
         with timing.phase("pre_fit_validation"):
             require_validation_passed(
-                validate.model(
+                validate_model(
                     model_cls,
                     df=sample,
                     registry=loaded_fit.registry,

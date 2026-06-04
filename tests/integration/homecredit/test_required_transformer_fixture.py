@@ -10,7 +10,7 @@ from sklearn.preprocessing import StandardScaler
 from automl.data import build_dataset
 from automl.model import BaseModel
 from automl.project import clear_session, use_project
-from automl.validate import model as validate_model
+from automl.model import validate_model
 from projects.example_homecredit.model import HomeCreditLogisticModel
 
 pytestmark = pytest.mark.integration

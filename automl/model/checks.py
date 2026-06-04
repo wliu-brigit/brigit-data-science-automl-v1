@@ -1,4 +1,4 @@
-"""Validation checks for model classes."""
+"""Validation checks and the validation recipe for model classes."""
 
 from __future__ import annotations
 
@@ -6,10 +6,61 @@ from collections.abc import Iterable
 from typing import Any
 
 from automl.model.base import BaseModel
-from automl.validate.base import Issue
+from automl.validate.base import Issue, ValidationReport, run_check
 
 
 REQUIRED_POST_FIT_ATTRS = ("feature_registry", "preprocessor", "model", "name")
+
+
+def validate_model(cls: type[Any], *, df, registry, session=None) -> ValidationReport:
+    """Validate a model class end to end: contract, fit, predict, post-fit state."""
+    issues: list[Issue] = []
+    issues.extend(run_check("model.subclass_basemodel", subclass_basemodel, cls=cls))
+    if any(issue.level == "error" for issue in issues):
+        return ValidationReport(issues=issues)
+
+    instance, error, error_stage = _try_fit(cls, df, registry, seed=0)
+    issues.extend(
+        run_check(
+            "model.fit_succeeds",
+            fit_succeeds,
+            cls=cls,
+            instance=instance,
+            error=error,
+            error_stage=error_stage,
+        )
+    )
+    if error is None:
+        issues.extend(
+            run_check("model.predict_succeeds", predict_succeeds, instance=instance, df=df)
+        )
+    if not any(issue.level == "error" for issue in issues):
+        issues.extend(
+            run_check("model.post_fit_attrs_set", post_fit_attrs_set, cls=cls, instance=instance)
+        )
+        issues.extend(
+            run_check(
+                "model.required_transformers",
+                check_required_transformers,
+                instance=instance,
+                session=session,
+            )
+        )
+    return ValidationReport(issues=issues)
+
+
+def _try_fit(cls: type[Any], df, registry, *, seed: int) -> tuple[Any | None, BaseException | None, str | None]:
+    try:
+        instance = cls()
+    except Exception as exc:  # noqa: BLE001
+        return None, exc, "construct"
+    try:
+        fitted = instance.fit(df, registry, seed=seed)
+        if fitted is not None:
+            instance = fitted
+    except Exception as exc:  # noqa: BLE001
+        return instance, exc, "fit"
+    return instance, None, None
 
 
 def subclass_basemodel(*, cls: type[Any]) -> Iterable[Issue]:
@@ -176,4 +227,5 @@ __all__ = [
     "post_fit_attrs_set",
     "predict_succeeds",
     "subclass_basemodel",
+    "validate_model",
 ]

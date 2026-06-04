@@ -9,12 +9,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from automl.agent import Proposal
+from automl.agent import Proposal, validate_proposal
+from automl.data.synthetic import make_synthetic_fixture
 from automl.errors import ProjectError
-from automl.validate import model as validate_model
-from automl.validate import project as validate_project
-from automl.validate import proposal as validate_proposal
-from automl.validate.synthetic import make_synthetic_fixture
+from automl.model import validate_model
+from automl.project import validate_project
 
 from ._common import print_json, session_from_args
 

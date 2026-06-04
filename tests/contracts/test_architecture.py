@@ -313,7 +313,7 @@ def test_layer_dependency_contracts_are_present():
         "test_leaf_utilities_do_not_import_automl_domains",
         "test_project_domain_does_not_import_downstream_runtime_domains",
         "test_trial_domain_does_not_import_runner_domain",
-        "test_domains_do_not_import_validate_target_orchestrators",
+        "test_validate_is_a_leaf",
         "test_runner_imports_only_approved_pure_trial_leaves",
         "test_domains_do_not_import_private_mlflow_routing",
     }
@@ -363,18 +363,15 @@ def test_trial_domain_does_not_import_runner_domain():
     assert offenders == []
 
 
-def test_domains_do_not_import_validate_target_orchestrators():
-    # Runner is an orchestration layer and may invoke validate targets;
-    # domain check modules may depend only on validate value types.
-    orchestration_domains = {"runner"}
+def test_validate_is_a_leaf():
+    # The validate package holds only the vocabulary (Issue, ValidationReport,
+    # run_check); validation recipes live with their domains. It must not
+    # import anything else from the library.
     offenders = []
-    for domain in AUTOML_DOMAINS:
-        if domain == "validate" or domain in orchestration_domains:
-            continue
-        for file_path in sorted((AUTOML_ROOT / domain).rglob("*.py")):
-            for imported in _imports_in(file_path):
-                if imported in {"automl.validate", "automl.validate.targets"}:
-                    offenders.append((_relative(file_path), imported))
+    for file_path in sorted((AUTOML_ROOT / "validate").rglob("*.py")):
+        for imported in _imports_in(file_path):
+            if imported.startswith("automl") and not imported.startswith("automl.validate"):
+                offenders.append((_relative(file_path), imported))
 
     assert offenders == []
 

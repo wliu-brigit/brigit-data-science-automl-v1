@@ -17,7 +17,7 @@ from automl.project import clear_session, use_project
 from automl.runner import run_trial
 from automl.trial import TrialStatus
 from automl.utils.io import gcs
-from automl.validate import proposal as validate_proposal
+from automl.agent import validate_proposal
 
 pytestmark = [pytest.mark.e2e, pytest.mark.qa]
 

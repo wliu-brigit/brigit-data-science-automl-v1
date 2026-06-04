@@ -1,13 +1,9 @@
 import pandas as pd
 import pytest
 
-from automl import validate
 from automl.data import FeatureRegistry
-from automl.errors import ProjectError
-from automl.model import BaseModel
+from automl.model import BaseModel, validate_model
 from automl.validate import ValidationReport
-from automl.validate import model as validate_model
-from automl.validate.synthetic import make_synthetic_fixture
 
 pytestmark = pytest.mark.unit
 
@@ -77,17 +73,3 @@ def test_validate_model_reports_subclass_fit_predict_and_post_fit_failures():
     assert any(issue.check == "model.predict_succeeds" for issue in predict_broken.issues)
     assert any("predict exploded" in issue.message for issue in predict_broken.issues)
     assert any(issue.check == "model.post_fit_attrs_set" for issue in missing_attrs.issues)
-
-
-def test_make_synthetic_fixture_returns_binary_target_and_registry():
-    df, registry = make_synthetic_fixture(rows=12)
-
-    assert len(df) == 12
-    assert set(df["target"]).issubset({0, 1})
-    assert registry.get("target").target is True
-    assert registry.get("value").model is True
-
-
-def test_project_and_proposal_validation_surfaces_are_not_silent_noops():
-    with pytest.raises(ProjectError, match="no active project"):
-        validate.project()

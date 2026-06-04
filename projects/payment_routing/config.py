@@ -3,8 +3,8 @@
 TASK.target and DATA.source.base_table are intentional <TBD_...> placeholders
 held over until the project is configured for a specific Snowflake table.
 Run ``uv run automl validate project --project payment_routing`` to see what needs
-filling in. The detector in ``automl/validate/builtin/contract_checks.py``
-keys on the ``<TBD`` prefix.
+filling in — remaining placeholders are reported as ``project.placeholders``
+errors.
 """
 
 from __future__ import annotations

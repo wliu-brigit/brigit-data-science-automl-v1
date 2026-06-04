@@ -122,8 +122,8 @@ import graph itself documents the architecture.
 
 Today's layers, from the bottom up:
 
-- **Leaves** — `utils` and `errors` depend on nothing internal; anything may use
-  them.
+- **Leaves** — `utils`, `errors`, and `validate` (the shared check-result
+  vocabulary) depend on nothing internal; anything may use them.
 - **Persistence seam + core domains** — `mlflow` (the single place that talks to
   MLflow) together with `data`, `eval`, `project`, and `trial`. The domains ride
   on the seam *and* the seam reaches back into them, so they form a co-dependent
@@ -197,6 +197,14 @@ Each domain defines its own contract — what a valid project, proposal, or
 model is — and validation checks against those contracts at the edges:
 where input enters the system and where one layer hands off to another. We
 don't scatter defensive checks through the middle of the code.
+
+The split follows the layering: `automl/validate` is a leaf holding only the
+shared vocabulary (`Issue`, `ValidationReport`, `run_check`); each domain owns
+both its checks *and* its recipe — which checks make a full validation, in
+what order — in its `checks.py` (`model.validate_model`,
+`project.validate_project`, `agent.validate_proposal`). Surfaces that need
+every target (the CLI's `validate` verbs, the runner) import the recipes from
+the domains; nothing imports upward.
 
 **Why:** contracts at the edges catch bad state where it's cheapest to
 explain, and keep the interior code free to assume its inputs are valid —

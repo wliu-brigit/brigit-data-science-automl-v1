@@ -165,10 +165,11 @@ The generated package name should be deterministic enough for debugging and uniq
 
 ### Validation
 
-The validation contract should stay conceptually the same:
+The validation contract should stay conceptually the same (the recipe lives
+in the model domain — `automl.model.validate_model` — since 2026-06-04):
 
 ```python
-validate.model(Model, sample_from=project)
+validate_model(Model, sample_from=project)
 ```
 
 The loading step changes. Instead of validating a class extracted from a notebook or a single loose file, helper APIs can load `source/model.py` from a source directory, retrieve `Model`, and pass it into the existing validation contract.

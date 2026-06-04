@@ -5,7 +5,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from automl.validate import Issue, ValidationReport, proposal
+from automl.agent import validate_proposal
+from automl.validate import Issue, ValidationReport
 
 pytestmark = pytest.mark.unit
 
@@ -42,7 +43,7 @@ def test_validation_report_round_trips_schema_and_locations():
 def test_validate_proposal_wraps_agent_schema(monkeypatch):
     monkeypatch.setattr("automl.agent.checks.allowed_dependencies", lambda session=None: ["pandas"])
 
-    report = proposal(proposal=_valid_payload())
+    report = validate_proposal(proposal=_valid_payload())
 
     assert report.passed
     assert report.to_json()["issues"] == []
@@ -51,7 +52,7 @@ def test_validate_proposal_wraps_agent_schema(monkeypatch):
 def test_validate_proposal_reports_dependency_errors(monkeypatch):
     monkeypatch.setattr("automl.agent.checks.allowed_dependencies", lambda session=None: ["pandas"])
 
-    report = proposal(proposal=_valid_payload(required_dependencies=["lightgbm"]))
+    report = validate_proposal(proposal=_valid_payload(required_dependencies=["lightgbm"]))
 
     assert not report.passed
     assert report.issues[0].check == "proposal.dep_not_allowed"

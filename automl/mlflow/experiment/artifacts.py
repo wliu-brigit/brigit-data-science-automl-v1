@@ -14,65 +14,63 @@ from pathlib import Path
 from typing import Mapping
 
 from automl.errors import StorageError
-from automl.mlflow import _routing
 from automl.mlflow import client
 from automl.mlflow.experiment import logging as experiment_logging
 from automl.mlflow.experiment.lifecycle import ensure_overview
 from automl.utils.io import gcs
 
 
-def dataset_index_uri(experiment_id: str | None = None) -> str:
-    return _experiment_uri("data/dataset_index.json", experiment_id)
-
-
-def read_dataset_index(experiment_id: str | None = None) -> dict:
-    uri = dataset_index_uri(experiment_id)
-    try:
-        if not gcs.blob_exists(uri):
-            return {"schema_version": 1, "datasets": []}
-    except Exception as exc:
-        raise StorageError(f"Failed to read dataset index {uri!r}") from exc
-    try:
-        return gcs.read_json(uri)
-    except Exception as exc:
-        raise StorageError(f"Failed to read dataset index {uri!r}") from exc
-
-
-def write_dataset_index(payload: dict, experiment_id: str | None = None) -> None:
-    uri = dataset_index_uri(experiment_id)
-    try:
-        gcs.write_json(uri, payload, overwrite=True)
-    except Exception as exc:
-        raise StorageError(f"Failed to write dataset index {uri!r}") from exc
-
-
-def log_dataset_catalog(
+def write_dataset_record(
     payload: dict,
     *,
-    active_dataset_id: str,
+    dataset_id: str,
     experiment_id: str | None = None,
-) -> None:
-    """Mirror the small dataset catalog pointers onto the experiment overview run."""
-    document = dict(payload)
-    document["schema_version"] = int(document.get("schema_version", 1))
-    document["active_dataset_id"] = active_dataset_id
-    experiment_logging.log_json("datasets/index", document, experiment_id=experiment_id)
-    latest = _latest_dataset_payload(document, active_dataset_id)
-    experiment_logging.log_json("datasets/latest", latest, experiment_id=experiment_id)
+) -> str:
+    """Log datasets/<id>/dataset.json on the experiment overview run; return its runs:/ URI."""
+    segment = _clean_artifact_segment(dataset_id)
+    experiment_logging.log_json(f"datasets/{segment}/dataset", payload, experiment_id=experiment_id)
+    run_id = _ensure_overview_run_id(experiment_id)
+    return f"runs:/{run_id}/datasets/{segment}/dataset.json"
 
 
-def read_dataset_manifest(uri: str) -> dict:
+def read_dataset_record(dataset_id: str, experiment_id: str | None = None) -> dict | None:
+    """Read one version's dataset.json; None when the record doesn't exist."""
+    run_id = _overview_run_id_or_none(experiment_id)
+    if run_id is None:
+        return None
+    segment = _clean_artifact_segment(dataset_id)
     try:
-        return gcs.read_json(uri)
+        local_path = client.download_artifact(run_id, f"datasets/{segment}/dataset.json")
     except Exception as exc:
-        raise StorageError(f"Failed to read dataset manifest {uri!r}") from exc
+        raise StorageError(f"Failed to read dataset record for {dataset_id!r}") from exc
+    if local_path is None:
+        return None
+    with open(local_path, encoding="utf-8") as handle:
+        record = json.load(handle)
+    # The record never stores a pointer to itself; the reader derives it so
+    # Dataset.record_uri is always populated on anything read back.
+    record["record_uri"] = f"runs:/{run_id}/datasets/{segment}/dataset.json"
+    return record
 
 
-def write_dataset_manifest(uri: str, payload: dict) -> None:
+def list_dataset_records(experiment_id: str | None = None) -> list[dict]:
+    """All version records, sorted by id. The folder structure IS the index."""
+    run_id = _overview_run_id_or_none(experiment_id)
+    if run_id is None:
+        return []
     try:
-        gcs.write_json(uri, payload, overwrite=True)
-    except Exception as exc:
-        raise StorageError(f"Failed to write dataset manifest {uri!r}") from exc
+        entries = client.raw().list_artifacts(run_id, "datasets")
+    except Exception:
+        return []
+    records: list[dict] = []
+    for entry in entries:
+        if not entry.is_dir:
+            continue
+        dataset_id = Path(entry.path).name
+        record = read_dataset_record(dataset_id, experiment_id)
+        if record is not None:
+            records.append(record)
+    return sorted(records, key=lambda record: str(record.get("id", "")))
 
 
 def write_dataset_frame(uri: str, df) -> None:
@@ -177,16 +175,6 @@ def log_source_trace(
     return uris
 
 
-def _experiment_uri(path: str, experiment_id: str | None = None) -> str:
-    bound = client.bound()
-    if not bound.bucket:
-        raise StorageError("GCS bucket required for experiment artifacts")
-    root = bound.gcs_prefix.strip("/")
-    route = _routing.experiment_route(experiment_id)
-    prefix = "/".join(part for part in (root, route) if part)
-    return f"gs://{bound.bucket}/{prefix}/{path.strip('/')}"
-
-
 def _ensure_overview_run_id(experiment_id: str | None = None) -> str:
     ensure_overview(experiment_id)
     return experiment_logging._overview_run_id(experiment_id)
@@ -221,22 +209,6 @@ def _read_local_manifest(path: Path) -> dict:
     return payload if isinstance(payload, dict) else {"schema_version": 1}
 
 
-def _latest_dataset_payload(index_payload: dict, active_dataset_id: str) -> dict:
-    datasets = index_payload.get("datasets")
-    if not isinstance(datasets, list):
-        datasets = []
-    active = None
-    for item in datasets:
-        if isinstance(item, dict) and item.get("id") == active_dataset_id:
-            active = item
-            break
-    return {
-        "schema_version": int(index_payload.get("schema_version", 1)),
-        "dataset_id": active_dataset_id,
-        "dataset": active or {},
-    }
-
-
 def _clean_artifact_segment(value: str) -> str:
     cleaned = value.strip("/")
     if not cleaned or "/" in cleaned:
@@ -252,17 +224,14 @@ def _clean_artifact_file_name(value: str) -> str:
 
 
 __all__ = [
-    "dataset_index_uri",
-    "log_dataset_catalog",
+    "list_dataset_records",
     "log_source_trace",
     "read_dataset_frame",
-    "read_dataset_index",
-    "read_dataset_manifest",
+    "read_dataset_record",
     "read_registry",
     "read_profile",
     "write_dataset_frame",
-    "write_dataset_index",
-    "write_dataset_manifest",
+    "write_dataset_record",
     "write_registry",
     "write_profile",
 ]

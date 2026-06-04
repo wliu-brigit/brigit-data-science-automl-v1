@@ -38,7 +38,7 @@ class TrialRef:
 @dataclass(frozen=True)
 class DatasetRef:
     id: str
-    manifest_uri: str
+    record_uri: str
     identity_hash: str
     target_column: str
     split_pct_col: str
@@ -49,7 +49,7 @@ class DatasetRef:
     def from_dataset(cls, dataset: Dataset) -> "DatasetRef":
         return cls(
             id=dataset.id,
-            manifest_uri=dataset.manifest_gcs_uri,
+            record_uri=dataset.record_uri,
             identity_hash=dataset.identity_hash,
             target_column=dataset.target_column,
             split_pct_col=dataset.split_pct_col,
@@ -61,7 +61,7 @@ class DatasetRef:
     def from_dict(cls, payload: Mapping[str, Any]) -> "DatasetRef":
         return cls(
             id=str(payload.get("id", "")),
-            manifest_uri=str(payload.get("manifest_uri", "")),
+            record_uri=str(payload.get("record_uri", "")),
             identity_hash=str(payload.get("identity_hash", "")),
             target_column=str(payload.get("target_column", "")),
             split_pct_col=str(payload.get("split_pct_col", "")),
@@ -184,7 +184,7 @@ def verify_trial_tag_lineage(contract: TrialDataContract, run_id: str) -> None:
     expected = {
         "data.dataset_id": contract.dataset.id,
         "data.identity_hash": contract.dataset.identity_hash,
-        "data.manifest_uri": contract.dataset.manifest_uri,
+        "data.record_uri": contract.dataset.record_uri,
     }
     for slice_contract in contract.slices:
         if slice_contract.name is None:

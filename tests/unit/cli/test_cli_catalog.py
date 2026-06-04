@@ -616,7 +616,7 @@ def test_experiment_trial_data_eval_validate_catalog_verbs(monkeypatch, tmp_path
     assert validate_model_calls[0]["kwargs"]["session"] is active
 
 
-def test_data_materialize_prints_dataset_manifest_not_loaded_rows(monkeypatch, tmp_path, capsys):
+def test_data_materialize_prints_dataset_record_not_loaded_rows(monkeypatch, tmp_path, capsys):
     from automl.cli import main
     from automl.data import ComponentHashes, Dataset
 
@@ -629,8 +629,10 @@ def test_data_materialize_prints_dataset_manifest_not_loaded_rows(monkeypatch, t
     def fake_materialize(**kwargs):
         assert kwargs["include_rows"] is False
         assert kwargs["session"] is active
+        assert kwargs["refresh_data"] is False
+        assert kwargs["refresh_source"] is False
         return Dataset(
-            id="v1_manifest",
+            id="v1_record",
             identity_hash="sha256:identity",
             component_hashes=ComponentHashes(
                 source_identity="sha256:source",
@@ -657,7 +659,7 @@ def test_data_materialize_prints_dataset_manifest_not_loaded_rows(monkeypatch, t
 
     output = capsys.readouterr().out
     payload = json.loads(output)
-    assert payload["id"] == "v1_manifest"
+    assert payload["id"] == "v1_record"
     assert payload["n_rows"] == 1
     assert "secret_row_value" not in output
 
@@ -1032,6 +1034,7 @@ def test_experiment_run_forwards_refresh_and_confirmation_flags(monkeypatch, tmp
                 "7",
                 "--time-budget",
                 "1.5",
+                "--refresh-data",
                 "--refresh-source",
                 "--auto-confirm",
                 "--instruction",
@@ -1053,6 +1056,7 @@ def test_experiment_run_forwards_refresh_and_confirmation_flags(monkeypatch, tmp
         "7",
         "--time-budget",
         "1.5",
+        "--refresh-data",
         "--refresh-source",
         "--auto-confirm",
         "--instruction",

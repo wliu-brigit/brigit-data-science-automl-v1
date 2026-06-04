@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import tempfile
 from dataclasses import replace
@@ -11,8 +12,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from automl.data.dataset import ComponentHashes, Dataset, DatasetIndex, LoadedDataset
+from automl.data.dataset import ComponentHashes, Dataset, LoadedDataset
 from automl.data.features import FeatureRegistry
+from automl.data.recipe import compute_recipe, recipe_diff
 from automl.data.split import add_split_pct, validate_split_pct, validate_unique_key
 from automl.errors import DataError, ProjectError
 from automl.mlflow import client as mlflow_client
@@ -23,6 +25,8 @@ from automl.project import Session
 from automl.project import session as active_project_session
 from automl.utils.hashing import dataframe_content_hash, json_hash, schema_hash
 from automl.utils.io import gcs
+
+logger = logging.getLogger(__name__)
 
 
 class DataPipeline:
@@ -37,6 +41,7 @@ class DataPipeline:
         raw = self.spec.source.load(
             project_dir=self.session.config.project_dir,
             nrows=self.spec.dry_run_rows if self.session.dry_run else None,
+            refresh_source=self.refresh_source,
         )
         df, original_names = self.standardize_columns(raw)
         self._check_split_pct_collision(original_names)
@@ -215,63 +220,117 @@ def build_dataset(*, session: Session | None = None) -> LoadedDataset:
 
 def materialize(
     *,
+    refresh_data: bool = False,
     refresh_source: bool = False,
     include_rows: bool = True,
     session: Session | None = None,
 ) -> LoadedDataset | Dataset:
-    """Materialize data; include_rows controls return shape only, not persistence."""
+    """Attach to the active pinned dataset, or (re-)derive it on explicit refresh.
+
+    refresh_source implies refresh_data: rebuilding layer 1 only matters if
+    layer 2 is re-derived from it. Neither flag is ever passed by the agent
+    loop — humans ask for refreshes (design §14).
+    """
+    refresh_data = refresh_data or refresh_source
     active = _session(session)
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
-        loaded = _materialize_bound(active=active, refresh_source=refresh_source)
-    return loaded if include_rows else loaded.dataset
+        result = _materialize_bound(
+            active=active,
+            refresh_data=refresh_data,
+            refresh_source=refresh_source,
+            include_rows=include_rows,
+        )
+    return result
 
 
-def _materialize_bound(*, active: Session, refresh_source: bool) -> LoadedDataset:
+def _materialize_bound(
+    *, active: Session, refresh_data: bool, refresh_source: bool, include_rows: bool
+) -> LoadedDataset | Dataset:
     spec = active.config.require_data_spec()
+    recipe = compute_recipe(spec, active)
+
+    if not refresh_data:
+        attached = _attach_active(active, recipe)
+        if attached is not None:
+            if not include_rows:
+                return attached
+            from automl.data.registry import load_dataset_by_id
+
+            return load_dataset_by_id(attached.id, session=active)
+
     pipeline = spec.pipeline_cls(spec, active, refresh_source=refresh_source)
     loaded = pipeline.run()
-    index = DatasetIndex.from_dict(experiment_artifacts.read_dataset_index())
-    existing = _dataset_for_identity(index, loaded.dataset.identity_hash)
-    dataset_id = existing.id if existing is not None else _next_dataset_id(index, loaded.dataset)
+    records = experiment_artifacts.list_dataset_records()
+    existing = _record_for_identity(records, loaded.dataset.identity_hash)
+
+    if existing is not None:
+        # Content unchanged: attach; update the recorded recipe last-wins
+        # (the user explicitly refreshed — "this recipe currently produces
+        # this content" is honest provenance, design §3).
+        dataset = replace(
+            Dataset.from_dict(existing),
+            recipe=recipe,
+        )
+        record_uri = experiment_artifacts.write_dataset_record(
+            dataset.to_dict(), dataset_id=dataset.id
+        )
+        dataset = replace(dataset, record_uri=record_uri)
+        mlflow_experiment.set_active_dataset(dataset.id, experiment_id=active.active_experiment_id)
+        logger.info("content unchanged — attached to %s (recipe updated)", dataset.id)
+        loaded = LoadedDataset(dataset=dataset, df=loaded.df, registry=loaded.registry)
+        return loaded if include_rows else dataset
+
     dataset = replace(
         loaded.dataset,
-        id=dataset_id,
-        created_at=existing.created_at if existing else loaded.dataset.created_at,
+        id=_next_dataset_id(records, loaded.dataset),
+        recipe=recipe,
     )
-    loaded = LoadedDataset(dataset=dataset, df=loaded.df, registry=loaded.registry)
-
     object_state = _dataset_object_state(dataset)
-    if existing is not None and all(object_state.values()):
-        manifest = experiment_artifacts.read_dataset_manifest(dataset.manifest_gcs_uri)
-        persisted = Dataset.from_dict(manifest)
-        _validate_existing_dataset_matches_candidate(persisted, dataset)
-        mlflow_experiment.set_active_dataset(dataset.id, experiment_id=active.active_experiment_id)
-        experiment_artifacts.log_dataset_catalog(
-            index.to_dict(),
-            active_dataset_id=dataset.id,
-        )
-        return LoadedDataset(dataset=persisted, df=loaded.df, registry=loaded.registry)
-    if any(object_state.values()) and not all(object_state.values()):
+    if any(object_state.values()):
         present = [name for name, exists in object_state.items() if exists]
-        missing = [name for name, exists in object_state.items() if not exists]
         raise DataError(
-            f"partial dataset objects for {dataset.id}: present={present} missing={missing}"
+            f"GCS objects already present for new dataset {dataset.id}: {present} — "
+            "refusing to overwrite; wipe state manually if this is intentional"
         )
-
     experiment_artifacts.write_dataset_frame(dataset.data_gcs_uri, loaded.df)
     experiment_artifacts.write_registry(dataset.registry_gcs_uri, loaded.registry.to_dataframe())
-    experiment_artifacts.write_dataset_manifest(dataset.manifest_gcs_uri, dataset.to_dict())
-    _log_source_trace(dataset, spec.source.artifact_files(pipeline))
-
-    datasets = tuple(item for item in index.datasets if item.id != dataset.id) + (dataset,)
-    next_index = DatasetIndex(datasets=datasets)
-    experiment_artifacts.write_dataset_index(next_index.to_dict())
-    mlflow_experiment.set_active_dataset(dataset.id, experiment_id=active.active_experiment_id)
-    experiment_artifacts.log_dataset_catalog(
-        next_index.to_dict(),
-        active_dataset_id=dataset.id,
+    record_uri = experiment_artifacts.write_dataset_record(
+        dataset.to_dict(), dataset_id=dataset.id
     )
-    return loaded
+    dataset = replace(dataset, record_uri=record_uri)  # in memory only; the reader re-derives it
+    _log_source_trace(dataset, spec.source.artifact_files(pipeline))
+    mlflow_experiment.set_active_dataset(dataset.id, experiment_id=active.active_experiment_id)
+    logger.info("minted %s and set it active", dataset.id)
+    loaded = LoadedDataset(dataset=dataset, df=loaded.df, registry=loaded.registry)
+    return loaded if include_rows else dataset
+
+
+def _attach_active(active: Session, recipe: dict) -> Dataset | None:
+    """The default fast path: resolve pointer -> record -> recipe compare."""
+    active_id = mlflow_experiment.get_active_dataset(experiment_id=active.active_experiment_id)
+    if active_id is None:
+        return None
+    record = experiment_artifacts.read_dataset_record(active_id)
+    if record is None:
+        return None
+    dataset = Dataset.from_dict(record)
+    drift = recipe_diff(dataset.recipe, recipe)
+    if drift:
+        logger.warning(
+            "recipe drift: %s changed since %s — running against %s as pinned; "
+            "pass --refresh-data to re-derive%s",
+            ", ".join(drift),
+            dataset.id,
+            dataset.id,
+            (
+                " (base_table.sql changed: only --refresh-source rebuilds the base table)"
+                if any(field.startswith("source.base_table_sql") for field in drift)
+                else ""
+            ),
+        )
+    else:
+        logger.info("attached to %s (pinned)", dataset.id)
+    return dataset
 
 
 def _session(explicit: Session | None) -> Session:
@@ -305,17 +364,17 @@ def _log_source_trace(dataset: Dataset, source_files) -> None:
         experiment_artifacts.log_source_trace(dataset.id, files)
 
 
-def _dataset_for_identity(index: DatasetIndex, identity_hash: str) -> Dataset | None:
-    for dataset in index.datasets:
-        if dataset.identity_hash == identity_hash:
-            return dataset
+def _record_for_identity(records: list[dict], identity_hash: str) -> dict | None:
+    for record in records:
+        if record.get("identity_hash") == identity_hash:
+            return record
     return None
 
 
-def _next_dataset_id(index: DatasetIndex, dataset: Dataset) -> str:
+def _next_dataset_id(records: list[dict], dataset: Dataset) -> str:
     max_version = 0
-    for current in index.datasets:
-        match = re.match(r"^v(\d+)_", current.id)
+    for record in records:
+        match = re.match(r"^v(\d+)_", str(record.get("id", "")))
         if match:
             max_version = max(max_version, int(match.group(1)))
     return f"v{max_version + 1}_{dataset.identity_hash.removeprefix('sha256:')[:8]}"
@@ -325,30 +384,7 @@ def _dataset_object_state(dataset: Dataset) -> dict[str, bool]:
     return {
         "data": gcs.blob_exists(dataset.data_gcs_uri),
         "registry": gcs.blob_exists(dataset.registry_gcs_uri),
-        "manifest": gcs.blob_exists(dataset.manifest_gcs_uri),
     }
-
-
-def _validate_existing_dataset_matches_candidate(existing: Dataset, candidate: Dataset) -> None:
-    mismatches: list[str] = []
-    for field in (
-        "id",
-        "identity_hash",
-        "component_hashes",
-        "source_identity",
-        "n_rows",
-        "n_columns",
-        "target_column",
-        "split_pct_col",
-        "unique_key",
-        "split_group_key",
-    ):
-        if getattr(existing, field) != getattr(candidate, field):
-            mismatches.append(field)
-    if mismatches:
-        raise DataError(
-            f"existing dataset {candidate.id} does not match candidate fields: {mismatches}"
-        )
 
 
 def _normalize_column(name: str) -> str:

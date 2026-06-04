@@ -20,8 +20,20 @@ DATA = DataSpec(
 The framework reads `DATA` at startup to build a `DataPipeline`, which owns
 the dataset materialization lifecycle:
 
-- `automl.data.materialize(refresh_source=False)` prepares or attaches to the
-  latest immutable dataset for the active session.
+- `automl.data.materialize(refresh_data=False, refresh_source=False)`
+  **attaches to the pinned active dataset by default** — no source read, no
+  GCS write. Editing a source file surfaces as nothing until you pass
+  `--refresh-data`; this is uniform across sources (deliberate: warehouse
+  pulls are minutes, and loop iterations must compare against one pinned
+  snapshot). The version in use is printed on every call.
+  - `--refresh-data` re-derives the dataset from the source; content identity
+    decides whether a new version actually mints (unchanged bytes attach to
+    the existing version).
+  - `--refresh-source` rebuilds the source's upstream first (the Snowflake
+    base table; a no-op for file sources) and implies `--refresh-data`.
+  - If the config has drifted from the recipe recorded on the pinned dataset,
+    every call emits a **loud warning naming the changed fields** and still
+    attaches as pinned — the harness makes drift visible; only you resolve it.
 - `automl.data.load_dataset(split_name=...)` loads the active materialized
   dataset, optionally sliced by the project run config split name.
 - `automl.data.load_dataset_by_id(dataset_id, split_name=...)` and
@@ -97,7 +109,8 @@ an ambiguous one.
 Provide two SQL files in `projects/<project_name>/data/queries/`:
 
 - `base_data.sql` — DDL that creates or refreshes the upstream table. Run only
-  when `refresh_source=True` is passed to `automl.data.materialize`.
+  when `refresh_source=True` is passed to `automl.data.materialize` (or the
+  base table doesn't exist yet).
 - `training_data.sql` — query that pulls training rows. Must reference
   `{database}.{schema}.{base_table}`.
 

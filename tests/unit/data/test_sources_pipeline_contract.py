@@ -13,7 +13,7 @@ from automl.data import (
     TrialRef,
     build_dataset,
 )
-from automl.data.pipeline import _validate_existing_dataset_matches_candidate, materialize
+from automl.data.pipeline import materialize
 from automl.errors import DataError
 from automl.project import (
     BinaryClassification,
@@ -176,7 +176,6 @@ def test_dataset_route_uris_pin_current_project_suffix_strip_behavior(
         dataset.registry_gcs_uri
         == f"gs://automl-test-bucket/{expected_base_path}/feature_registry.csv"
     )
-    assert dataset.manifest_gcs_uri == f"gs://automl-test-bucket/{expected_base_path}/manifest.json"
 
 
 def test_standardize_columns_keeps_suffix_collisions_unique(tmp_path):
@@ -219,31 +218,23 @@ def test_build_dataset_raises_data_error_when_target_is_missing(tmp_path):
         build_dataset(session=_session_for(spec))
 
 
-def test_materialize_partial_dataset_objects_raise_data_error(tmp_path, monkeypatch):
+def test_materialize_refuses_to_overwrite_present_gcs_objects(tmp_path, monkeypatch):
     csv_path = tmp_path / "partial.csv"
     csv_path.write_text("row_id,target,value\n1,0,10\n2,1,20\n", encoding="utf-8")
     spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10)
     active = _route_session(tmp_path, gcs_prefix="", data_spec=spec)
 
     monkeypatch.setattr(
-        "automl.data.pipeline.experiment_artifacts.read_dataset_index",
-        lambda: {"datasets": []},
+        "automl.data.pipeline.experiment_artifacts.list_dataset_records",
+        lambda: [],
     )
     monkeypatch.setattr(
         "automl.data.pipeline._dataset_object_state",
-        lambda dataset: {"data": True, "registry": False, "manifest": False},
+        lambda dataset: {"data": True, "registry": False},
     )
 
-    with pytest.raises(DataError, match="partial dataset objects"):
-        materialize(session=active)
-
-
-def test_existing_dataset_identity_mismatch_raises_data_error(tmp_path):
-    dataset = _route_dataset(tmp_path, gcs_prefix="")
-    candidate = dataset.__class__.from_dict({**dataset.to_dict(), "n_rows": dataset.n_rows + 1})
-
-    with pytest.raises(DataError, match="existing dataset .* does not match candidate fields"):
-        _validate_existing_dataset_matches_candidate(dataset, candidate)
+    with pytest.raises(DataError, match="refusing to overwrite"):
+        materialize(session=active, refresh_data=True)
 
 
 def test_quality_filtering_drops_constant_and_high_null_columns_but_preserves_protected(
@@ -365,7 +356,7 @@ def test_trial_data_contract_round_trips_distinct_trial_id_and_run_id():
         ),
         dataset=DatasetRef(
             id="v1_abcdef12",
-            manifest_uri="gs://bucket/demo/data/datasets/v1_abcdef12/manifest.json",
+            record_uri="runs:/overview-run/datasets/v1_abcdef12/dataset.json",
             identity_hash="sha256:identity",
             target_column="target",
             split_pct_col="SPLIT_PCT",

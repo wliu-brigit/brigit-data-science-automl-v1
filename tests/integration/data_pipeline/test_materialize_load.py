@@ -1,4 +1,5 @@
 import json
+import logging
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -10,13 +11,17 @@ from automl.data import (
     GCSParquetSource,
     LocalCSVSource,
     build_dataset,
+    compute_recipe,
     list_datasets,
     load_dataset,
     load_dataset_by_id,
     materialize,
+    recipe_diff,
 )
 from automl.errors import DataError
 from automl.mlflow import client as mlflow_client
+from automl.mlflow import experiment as mlflow_experiment
+from automl.mlflow.experiment import artifacts as experiment_artifacts
 from automl.project import (
     BinaryClassification,
     ModelRoute,
@@ -150,7 +155,7 @@ def _write_tiny_csv(tmp_path: Path) -> Path:
     return csv_path
 
 
-def test_materialize_writes_dataset_index_and_loads_train_test_slices(tmp_path, fake_gcs):
+def test_materialize_writes_dataset_record_and_loads_train_test_slices(tmp_path, fake_gcs):
     active = _session(tmp_path, _write_tiny_csv(tmp_path))
 
     loaded = materialize(session=active)
@@ -159,23 +164,25 @@ def test_materialize_writes_dataset_index_and_loads_train_test_slices(tmp_path, 
     test = load_dataset_by_id(loaded.id, split_name="test", session=active)
 
     assert loaded.id.startswith("v1_")
-    assert loaded.dataset in index.datasets
     assert index.active.id == loaded.id
-    assert loaded.dataset.manifest_gcs_uri.startswith(
+    assert loaded.dataset.data_gcs_uri.startswith(
         "gs://automl-test-bucket/demo/baseline/data/datasets/"
     )
     assert loaded.dataset.registry_gcs_uri.endswith("/feature_registry.csv")
     registry_bucket, registry_blob = gcs.parse_gcs_uri(loaded.dataset.registry_gcs_uri)
     assert (registry_bucket, registry_blob) in fake_gcs.store
     assert not registry_blob.endswith("registry.json")
-    assert ("automl-test-bucket", "demo/baseline/data/dataset_index.json") in fake_gcs.store
-    raw_index = json.loads(
-        fake_gcs.store[("automl-test-bucket", "demo/baseline/data/dataset_index.json")].decode(
-            "utf-8"
-        )
+    # the record is the only metadata: nothing lands in GCS beyond bytes
+    assert ("automl-test-bucket", "demo/baseline/data/dataset_index.json") not in fake_gcs.store
+    assert not any(
+        blob.endswith("manifest.json")
+        for bucket, blob in fake_gcs.store
+        if bucket == "automl-test-bucket"
     )
-    assert "active_dataset_id" not in raw_index
+    assert loaded.dataset.record_uri.startswith("runs:/")
+    assert loaded.dataset.record_uri.endswith(f"datasets/{loaded.id}/dataset.json")
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
+        record = experiment_artifacts.read_dataset_record(loaded.id)
         experiment = mlflow_client.raw().get_experiment_by_name("demo/baseline")
         assert experiment is not None
         runs = mlflow_client.raw().search_runs([experiment.experiment_id])
@@ -183,22 +190,12 @@ def test_materialize_writes_dataset_index_and_loads_train_test_slices(tmp_path, 
             runs[0].info.run_id,
             f"datasets/{loaded.id}/source_trace/source_identity.json",
         )
-        latest_path = mlflow_client.raw().download_artifacts(
-            runs[0].info.run_id,
-            "datasets/latest.json",
-        )
-        index_path = mlflow_client.raw().download_artifacts(
-            runs[0].info.run_id,
-            "datasets/index.json",
-        )
+    assert record["id"] == loaded.id
+    assert record["recipe"]["target"] == "target"
+    assert record["record_uri"] == loaded.dataset.record_uri
     source_identity = json.loads(Path(local_path).read_text(encoding="utf-8"))
     assert source_identity["kind"] == "local_csv"
     assert source_identity["csv_path"] == str(active.config.data_spec.source.csv_path)
-    latest = json.loads(Path(latest_path).read_text(encoding="utf-8"))
-    assert latest["dataset_id"] == loaded.id
-    overview_index = json.loads(Path(index_path).read_text(encoding="utf-8"))
-    assert overview_index["active_dataset_id"] == loaded.id
-    assert [item["id"] for item in overview_index["datasets"]] == [loaded.id]
     assert set(train.df["SPLIT_PCT"]).isdisjoint(set(test.df["SPLIT_PCT"]))
     assert train.n_rows + test.n_rows == loaded.n_rows
     assert train.split_name == "train"
@@ -214,25 +211,21 @@ def test_materialize_routes_dataset_objects_by_dry_run_and_namespace(tmp_path, f
     qa = materialize(session=replace(active, namespace="qa"))
     qa_dry = materialize(session=replace(active, namespace="qa", dry_run=True))
 
-    assert real.dataset.manifest_gcs_uri.startswith(
+    assert real.dataset.data_gcs_uri.startswith(
         "gs://automl-test-bucket/demo/baseline/data/datasets/"
     )
-    assert dry.dataset.manifest_gcs_uri.startswith(
+    assert dry.dataset.data_gcs_uri.startswith(
         "gs://automl-test-bucket/dry_run/demo/baseline/data/datasets/"
     )
-    assert qa.dataset.manifest_gcs_uri.startswith(
+    assert qa.dataset.data_gcs_uri.startswith(
         "gs://automl-test-bucket/qa/demo/baseline/data/datasets/"
     )
-    assert qa_dry.dataset.manifest_gcs_uri.startswith(
+    assert qa_dry.dataset.data_gcs_uri.startswith(
         "gs://automl-test-bucket/qa/dry_run/demo/baseline/data/datasets/"
     )
-    assert ("automl-test-bucket", "demo/baseline/data/dataset_index.json") in fake_gcs.store
-    assert ("automl-test-bucket", "dry_run/demo/baseline/data/dataset_index.json") in fake_gcs.store
-    assert ("automl-test-bucket", "qa/demo/baseline/data/dataset_index.json") in fake_gcs.store
-    assert (
-        "automl-test-bucket",
-        "qa/dry_run/demo/baseline/data/dataset_index.json",
-    ) in fake_gcs.store
+    for dataset in (real.dataset, dry.dataset, qa.dataset, qa_dry.dataset):
+        bucket, blob = gcs.parse_gcs_uri(dataset.data_gcs_uri)
+        assert (bucket, blob) in fake_gcs.store
 
 
 @dataclass(frozen=True)
@@ -285,7 +278,6 @@ def test_materialize_reuses_existing_complete_dataset_without_rewriting_objects(
     tracked_uris = (
         first.dataset.data_gcs_uri,
         first.dataset.registry_gcs_uri,
-        first.dataset.manifest_gcs_uri,
     )
     write_counts = {uri: fake_gcs.write_count(*gcs.parse_gcs_uri(uri)) for uri in tracked_uris}
 
@@ -297,27 +289,143 @@ def test_materialize_reuses_existing_complete_dataset_without_rewriting_objects(
     } == write_counts
 
 
-def test_materialize_refuses_partial_existing_dataset_objects(tmp_path, fake_gcs):
+def test_materialize_refuses_to_overwrite_existing_gcs_objects(tmp_path, fake_gcs):
+    # MLflow state gone (fresh tracking dir) but GCS bytes still present: the
+    # mint path must refuse to clobber rather than overwrite (ground rule).
+    csv_path = _write_tiny_csv(tmp_path)
+    active = _session(tmp_path, csv_path)
+    materialize(session=active)
+
+    fresh_mlflow = replace(
+        active,
+        config=replace(active.config, mlflow_tracking_uri=(tmp_path / "mlruns2").as_uri()),
+    )
+    with pytest.raises(DataError, match="refusing to overwrite"):
+        materialize(session=fresh_mlflow)
+
+
+def test_load_dataset_runs_l2_validation_and_rejects_corrupt_record(tmp_path, fake_gcs):
     active = _session(tmp_path, _write_tiny_csv(tmp_path))
     loaded = materialize(session=active)
-    registry_bucket, registry_blob = gcs.parse_gcs_uri(loaded.dataset.registry_gcs_uri)
-    del fake_gcs.store[(registry_bucket, registry_blob)]
-
-    with pytest.raises(DataError, match="partial dataset objects"):
-        materialize(session=active)
-
-
-def test_load_dataset_runs_l2_validation_and_rejects_corrupt_manifest(tmp_path, fake_gcs):
-    active = _session(tmp_path, _write_tiny_csv(tmp_path))
-    loaded = materialize(session=active)
-    manifest_uri = loaded.dataset.manifest_gcs_uri
-    bucket, blob = gcs.parse_gcs_uri(manifest_uri)
-    manifest = json.loads(fake_gcs.store[(bucket, blob)].decode("utf-8"))
-    manifest["component_hashes"]["data_content"] = "sha256:corrupt"
-    fake_gcs.store[(bucket, blob)] = json.dumps(manifest).encode("utf-8")
+    with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
+        record = experiment_artifacts.read_dataset_record(loaded.id)
+        record["component_hashes"]["data_content"] = "sha256:corrupt"
+        experiment_artifacts.write_dataset_record(record, dataset_id=loaded.id)
 
     with pytest.raises(DataError, match="data_content"):
         load_dataset_by_id(loaded.id, session=active)
+
+
+def test_first_materialize_mints_v1_and_sets_pointer(tmp_path, fake_gcs):
+    active = _session(tmp_path, _write_tiny_csv(tmp_path))
+
+    loaded = materialize(session=active)
+
+    assert loaded.dataset.id.startswith("v1_")
+    with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
+        assert (
+            mlflow_experiment.get_active_dataset(experiment_id=active.active_experiment_id)
+            == loaded.dataset.id
+        )
+        assert experiment_artifacts.read_dataset_record(loaded.dataset.id)["recipe"]["target"]
+
+
+def test_second_materialize_attaches_without_reading_the_source(tmp_path, fake_gcs):
+    csv_path = _write_tiny_csv(tmp_path)
+    active = _session(tmp_path, csv_path)
+    materialize(session=active)
+
+    csv_path.unlink()  # source gone — fast path must not touch it
+    again = materialize(session=active, include_rows=False)
+
+    assert again.id.startswith("v1_")
+
+
+def test_recipe_drift_warns_with_field_diff_and_attaches_pinned(tmp_path, fake_gcs, caplog):
+    csv_path = _write_tiny_csv(tmp_path)
+    active = _session(tmp_path, csv_path)
+    materialize(session=active)
+
+    drifted_spec = DataSpec(
+        source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"),
+        exclude_cols=("amount",),
+    )
+    drifted = _session_for_spec(tmp_path, drifted_spec)
+    with caplog.at_level(logging.WARNING):
+        result = materialize(session=drifted, include_rows=False)
+        repeat = materialize(session=drifted, include_rows=False)
+
+    assert result.id.startswith("v1_")  # still pinned
+    assert repeat.id == result.id
+    assert "recipe drift" in caplog.text and "exclude_cols" in caplog.text
+    # the warning repeats on every call while drifted — never blocks, never acts
+    assert caplog.text.count("recipe drift") == 2
+
+
+def test_refresh_data_rederives_and_attaches_when_content_unchanged(tmp_path, fake_gcs):
+    active = _session(tmp_path, _write_tiny_csv(tmp_path))
+
+    first = materialize(session=active, include_rows=False)
+    second = materialize(session=active, refresh_data=True, include_rows=False)
+
+    assert second.id == first.id  # content identity dedups
+
+
+def test_refresh_source_without_refresh_data_still_rederives(tmp_path, fake_gcs):
+    csv_path = _write_tiny_csv(tmp_path)
+    active = _session(tmp_path, csv_path)
+    first = materialize(session=active, include_rows=False)
+
+    pd.DataFrame(
+        {"row_id": [11], "target": [1], "amount": [42]}
+    ).to_csv(csv_path, mode="a", header=False, index=False)
+    second = materialize(session=active, refresh_source=True, include_rows=False)
+
+    assert second.id.startswith("v2_")
+    assert second.id != first.id
+
+
+def test_refresh_data_mints_new_version_when_content_changed(tmp_path, fake_gcs):
+    csv_path = _write_tiny_csv(tmp_path)
+    active = _session(tmp_path, csv_path)
+    first = materialize(session=active, include_rows=False)
+
+    pd.DataFrame(
+        {"row_id": [11], "target": [1], "amount": [42]}
+    ).to_csv(csv_path, mode="a", header=False, index=False)
+    second = materialize(session=active, refresh_data=True, include_rows=False)
+
+    assert second.id.startswith("v2_")
+    with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
+        # both records remain readable; pointer moved
+        assert experiment_artifacts.read_dataset_record(first.id) is not None
+        assert (
+            mlflow_experiment.get_active_dataset(experiment_id=active.active_experiment_id)
+            == second.id
+        )
+
+
+def test_attach_after_refresh_updates_recorded_recipe_last_wins(tmp_path, fake_gcs):
+    csv_path = _write_tiny_csv(tmp_path)
+    active = _session(tmp_path, csv_path)
+    first = materialize(session=active, include_rows=False)
+
+    # Drift the recipe in a way that does NOT change content identity:
+    # the tiny CSV has no nulls, so this threshold changes no column decision.
+    drifted_spec = DataSpec(
+        source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"),
+        null_drop_threshold=0.98,
+    )
+    drifted = _session_for_spec(tmp_path, drifted_spec)
+    drifted_loaded = build_dataset(session=drifted)
+    assert drifted_loaded.dataset.identity_hash == first.identity_hash  # premise
+
+    result = materialize(session=drifted, refresh_data=True, include_rows=False)
+
+    assert result.id == first.id
+    with mlflow_client.bound_for(drifted, experiment_id=drifted.active_experiment_id):
+        record = experiment_artifacts.read_dataset_record(result.id)
+    assert recipe_diff(record["recipe"], compute_recipe(drifted_spec, drifted)) == []
 
 
 def test_build_dataset_reads_gcs_parquet_source_without_materializing_objects(tmp_path, fake_gcs):
@@ -340,4 +448,3 @@ def test_build_dataset_reads_gcs_parquet_source_without_materializing_objects(tm
     assert not any(
         blob.startswith("demo/baseline/data/datasets/") for bucket, blob in fake_gcs.store
     )
-    assert ("automl-test-bucket", "demo/baseline/data/dataset_index.json") not in fake_gcs.store

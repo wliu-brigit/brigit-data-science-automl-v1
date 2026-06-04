@@ -21,7 +21,16 @@ def add_parser(subparsers) -> None:
     profile_parser.set_defaults(func=_profile)
 
     materialize_parser = data_sub.add_parser("materialize")
-    materialize_parser.add_argument("--refresh-source", action="store_true")
+    materialize_parser.add_argument(
+        "--refresh-data",
+        action="store_true",
+        help="re-derive the dataset from the source (default attaches to the pinned active dataset)",
+    )
+    materialize_parser.add_argument(
+        "--refresh-source",
+        action="store_true",
+        help="rebuild the source's upstream (Snowflake base table) first; implies --refresh-data",
+    )
     materialize_parser.set_defaults(func=_materialize)
 
 
@@ -37,6 +46,7 @@ def _profile(args: argparse.Namespace) -> int:
 
 def _materialize(args: argparse.Namespace) -> int:
     dataset = materialize(
+        refresh_data=args.refresh_data,
         refresh_source=args.refresh_source,
         include_rows=False,
         session=session_from_args(args),

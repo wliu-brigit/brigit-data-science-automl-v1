@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 import pandas as pd
@@ -52,6 +52,8 @@ class Dataset:
     split_group_key: tuple[str, ...]
     gcs_prefix: str = ""
     experiment_id: str = ""
+    recipe: Mapping[str, Any] = field(default_factory=dict)  # readable dict, design §3
+    record_uri: str = ""  # runs:/<overview_run>/datasets/<id>/dataset.json, set at persist
     schema_version: int = 1
 
     @property
@@ -71,10 +73,6 @@ class Dataset:
     @property
     def registry_gcs_uri(self) -> str:
         return f"gs://{self.gcs_bucket}/{self.gcs_base_path}/feature_registry.csv"
-
-    @property
-    def manifest_gcs_uri(self) -> str:
-        return f"gs://{self.gcs_bucket}/{self.gcs_base_path}/manifest.json"
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "Dataset":
@@ -97,6 +95,8 @@ class Dataset:
             split_group_key=tuple(str(item) for item in payload.get("split_group_key", ())),
             gcs_prefix=str(payload.get("gcs_prefix", "")),
             experiment_id=str(payload.get("experiment_id", "")),
+            recipe=dict(payload.get("recipe", {})),
+            record_uri=str(payload.get("record_uri", "")),
             schema_version=int(payload.get("schema_version", 1)),
         )
 
@@ -118,9 +118,11 @@ class Dataset:
             "split_pct_col": self.split_pct_col,
             "unique_key": list(self.unique_key),
             "split_group_key": list(self.split_group_key),
+            "recipe": dict(self.recipe),
             "data_gcs_uri": self.data_gcs_uri,
             "registry_gcs_uri": self.registry_gcs_uri,
-            "manifest_gcs_uri": self.manifest_gcs_uri,
+            # record_uri deliberately absent: the persisted record never
+            # stores a pointer to itself; read_dataset_record injects it.
         }
 
 
@@ -158,9 +160,10 @@ class LoadedSlice:
 
 @dataclass(frozen=True)
 class DatasetIndex:
+    """In-memory view assembled from the per-version records; never persisted."""
+
     datasets: tuple[Dataset, ...]
     active_dataset_id: str | None = None
-    schema_version: int = 1
 
     @property
     def active(self) -> Dataset | None:
@@ -170,20 +173,6 @@ class DatasetIndex:
             if dataset.id == self.active_dataset_id:
                 return dataset
         return None
-
-    @classmethod
-    def from_dict(cls, payload: Mapping[str, Any]) -> "DatasetIndex":
-        return cls(
-            datasets=tuple(Dataset.from_dict(item) for item in payload.get("datasets", ())),
-            active_dataset_id=payload.get("active_dataset_id"),
-            schema_version=int(payload.get("schema_version", 1)),
-        )
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "schema_version": self.schema_version,
-            "datasets": [dataset.to_dict() for dataset in self.datasets],
-        }
 
     def to_dataframe(self) -> pd.DataFrame:
         return pd.DataFrame([dataset.to_dict() for dataset in self.datasets])

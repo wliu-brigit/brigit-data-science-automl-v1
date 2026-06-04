@@ -17,7 +17,7 @@ def log_data_contract(run_id: str, contract: TrialDataContract) -> None:
     tag_payload: dict[str, object] = {
         "data.dataset_id": contract.dataset.id,
         "data.identity_hash": contract.dataset.identity_hash,
-        "data.manifest_uri": contract.dataset.manifest_uri,
+        "data.record_uri": contract.dataset.record_uri,
     }
     for slice_contract in contract.slices:
         if slice_contract.name is None:

@@ -216,7 +216,7 @@ def test_automl_render_context_forwards_refresh_source_to_materialize():
     assert materialize.endswith(" data materialize --refresh-source")
 
 
-def test_automl_render_context_rejects_retired_refresh_data_flag():
+def test_automl_render_context_forwards_refresh_data_to_materialize():
     module = _load_render_context_module()
 
     context = module.build_context(
@@ -224,8 +224,9 @@ def test_automl_render_context_rejects_retired_refresh_data_flag():
         "experiment run --project example_homecredit --dry-run --refresh-data",
     )
 
-    assert context["invocation"]["mode"] == "error"
-    assert "--refresh-data" in context["invocation"]["error"]
+    materialize = context["safe_commands"]["materialize_dataset"]
+    _assert_parses(materialize)
+    assert materialize.endswith(" data materialize --refresh-data")
 
 
 def test_automl_render_context_resolves_repo_root_from_inside_project():

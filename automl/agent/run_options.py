@@ -13,6 +13,7 @@ class ExperimentRunOptions:
     namespace: str = ""
     max_iter: int | None = None
     time_budget: float | None = None
+    refresh_data: bool = False
     refresh_source: bool = False
     auto_confirm: bool = False
     instructions: tuple[str, ...] = ()
@@ -32,6 +33,7 @@ def add_experiment_run_options(
     parser.add_argument("--time-budget", type=float, default=None)
     if include_confirmation:
         parser.add_argument("--auto-confirm", action="store_true")
+    parser.add_argument("--refresh-data", action="store_true")
     parser.add_argument("--refresh-source", action="store_true")
     parser.add_argument("--instruction", "--constraint", action="append", default=[])
 
@@ -43,6 +45,7 @@ def options_from_namespace(args: argparse.Namespace) -> ExperimentRunOptions:
         namespace=str(getattr(args, "namespace", "") or ""),
         max_iter=getattr(args, "max_iter", None),
         time_budget=getattr(args, "time_budget", None),
+        refresh_data=bool(getattr(args, "refresh_data", False)),
         refresh_source=bool(getattr(args, "refresh_source", False)),
         auto_confirm=bool(getattr(args, "auto_confirm", False)),
         instructions=tuple(
@@ -63,6 +66,8 @@ def skill_command_args(options: ExperimentRunOptions, *, project: str) -> list[s
         args.extend(["--max-iter", str(options.max_iter)])
     if options.time_budget is not None:
         args.extend(["--time-budget", str(options.time_budget)])
+    if options.refresh_data:
+        args.append("--refresh-data")
     if options.refresh_source:
         args.append("--refresh-source")
     if options.auto_confirm:

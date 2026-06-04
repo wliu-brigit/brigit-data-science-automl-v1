@@ -43,7 +43,7 @@ def log_manifest(
         "data": {
             "dataset_id": contract.dataset.id,
             "identity_hash": contract.dataset.identity_hash,
-            "manifest_uri": contract.dataset.manifest_uri,
+            "record_uri": contract.dataset.record_uri,
             "contract_artifact": "data/contract.json",
         },
         "model": {"pyfunc_uri": f"runs:/{run_id}/model"},

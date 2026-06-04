@@ -395,6 +395,8 @@ def build_context(project_root: Path, arguments: str) -> dict[str, Any]:
         "data",
         "materialize",
     ]
+    if invocation.get("refresh_data"):
+        materialize_dataset_args.append("--refresh-data")
     if invocation.get("refresh_source"):
         materialize_dataset_args.append("--refresh-source")
 

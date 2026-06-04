@@ -25,13 +25,12 @@ from automl.project import session as active_project_session
 def list_datasets(*, session: Session | None = None) -> DatasetIndex:
     active = _session(session)
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
-        index = DatasetIndex.from_dict(experiment_artifacts.read_dataset_index())
+        records = experiment_artifacts.list_dataset_records()
         return DatasetIndex(
-            datasets=index.datasets,
+            datasets=tuple(Dataset.from_dict(record) for record in records),
             active_dataset_id=mlflow_experiment.get_active_dataset(
                 experiment_id=active.active_experiment_id
             ),
-            schema_version=index.schema_version,
         )
 
 
@@ -63,10 +62,11 @@ def load_dataset_by_id(
     if split_name is not None and split_range is not None:
         raise ValueError("split_name and split_range are mutually exclusive")
     active = _session(session)
-    index = list_datasets(session=active)
-    indexed = _dataset_by_id(index, dataset_id)
-    manifest = experiment_artifacts.read_dataset_manifest(indexed.manifest_gcs_uri)
-    dataset = Dataset.from_dict(manifest)
+    with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
+        record = experiment_artifacts.read_dataset_record(dataset_id)
+    if record is None:
+        raise KeyError(f"dataset {dataset_id!r} not found")
+    dataset = Dataset.from_dict(record)
     registry_frame = experiment_artifacts.read_registry(dataset.registry_gcs_uri)
     registry = FeatureRegistry.from_dataframe(registry_frame)
     df = experiment_artifacts.read_dataset_frame(dataset.data_gcs_uri)
@@ -135,13 +135,6 @@ def load_dataset_by_trial(
 
 def _session(explicit: Session | None) -> Session:
     return explicit if explicit is not None else active_project_session()
-
-
-def _dataset_by_id(index: DatasetIndex, dataset_id: str) -> Dataset:
-    for dataset in index.datasets:
-        if dataset.id == dataset_id:
-            return dataset
-    raise KeyError(f"dataset {dataset_id!r} not found")
 
 
 def _resolve_ranges(

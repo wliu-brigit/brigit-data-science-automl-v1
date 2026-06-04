@@ -23,7 +23,7 @@ def test_trial_run_manifest_round_trips_current_runner_payload_shape():
         "data": {
             "dataset_id": "dataset-v1",
             "identity_hash": "sha256:abc",
-            "manifest_uri": "gs://bucket/manifest.json",
+            "record_uri": "runs:/overview-run/datasets/dataset-v1/dataset.json",
             "contract_artifact": "data/contract.json",
         },
         "model": {"pyfunc_uri": "runs:/run-123/model"},

@@ -150,7 +150,7 @@ def test_l4_trial_tag_lineage_verifies_dataset_and_slice_tags(monkeypatch):
     good_tags = {
         "data.dataset_id": contract.dataset.id,
         "data.identity_hash": contract.dataset.identity_hash,
-        "data.manifest_uri": contract.dataset.manifest_uri,
+        "data.record_uri": contract.dataset.record_uri,
         "data.slice.train.content_hash": contract.slice("train").content_hash,
     }
     monkeypatch.setattr(mlflow_trial, "get_tags", lambda run_id: good_tags, raising=False)

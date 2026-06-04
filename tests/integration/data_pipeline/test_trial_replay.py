@@ -175,7 +175,7 @@ def _write_trial_contract(active: Session, loaded, *, corrupt_tag: bool = False)
                     "data.identity_hash": "sha256:corrupt"
                     if corrupt_tag
                     else contract.dataset.identity_hash,
-                    "data.manifest_uri": contract.dataset.manifest_uri,
+                    "data.record_uri": contract.dataset.record_uri,
                     "data.slice.train.content_hash": contract.slice("train").content_hash,
                 },
             )

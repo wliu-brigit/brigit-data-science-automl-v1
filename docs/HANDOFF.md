@@ -8,7 +8,7 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
 
 ## Where things stand
 
-- **Active effort — APPROVED, ready to implement:**
+- **Active effort — APPROVED, plans written, ready to execute:**
   [`execution/snowflake-source-and-split-keys/`](execution/snowflake-source-and-split-keys/)
   — the full design for the real `SnowflakeSource` plus the data-layer
   contract work it surfaced: `unique_key`/`split_group_key`, `SPLIT_PCT`
@@ -16,8 +16,10 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
   `--refresh-data`/`--refresh-source`, dataset records relocating GCS →
   MLflow (`dataset.json`), order-insensitive identity, connector-python,
   and flexible `Where(...)` predicate splits. **`design.md` is the source
-  of truth — read it before touching code.** 4-step plan in §14; open
-  items in §15.
+  of truth**; implementation plans for all four §14 steps live in
+  [`plans/`](execution/snowflake-source-and-split-keys/plans/README.md) —
+  status ledger + fresh-session protocol there. §15 open items were
+  resolved 2026-06-04 and recorded in the plan headers.
 - **Working tree (uncommitted):** the design dossier
   (`docs/execution/snowflake-source-and-split-keys/`); the scaffolded
   `projects/fraud_anomaly_detection/` (all `<TBD` placeholders — the
@@ -26,9 +28,10 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
 
 ## Next actions
 
-1. **Commit the design dossier** (docs-only change).
-2. **Start step 1** of [`design.md`](execution/snowflake-source-and-split-keys/design.md)
-   §14 (keys & naming cleanup — no Snowflake yet).
+1. **Commit the design dossier + plans** (docs-only change).
+2. **Execute step 1** following the protocol in
+   [`plans/README.md`](execution/snowflake-source-and-split-keys/plans/README.md)
+   (one step per session, in order; the ledger there tracks status).
 3. Before/with step 2: **wendao manually wipes old MLflow/GCS state** for a
    clean slate — the implementation must never delete or migrate old state
    itself (design §14 ground rule).

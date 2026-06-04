@@ -11,8 +11,9 @@ This README is intentionally **thin and decision-free**: it states the
 [`design.md`](design.md).
 
 **Status:** APPROVED 2026-06-04 after four review rounds + final alignment
-pass. Implementation not started — next session begins step 1 of the plan in
-[`design.md`](design.md) §14.
+pass. Implementation plans for all four §14 steps are written and reviewed —
+**executing? start at [`plans/README.md`](plans/README.md)** (the status
+ledger + fresh-session protocol; one step per session, in order).
 
 ## The problem (high level)
 

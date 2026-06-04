@@ -41,7 +41,7 @@ class DatasetRef:
     manifest_uri: str
     identity_hash: str
     target_column: str
-    split_id_col: str
+    split_pct_col: str
     n_rows: int
     n_columns: int
 
@@ -52,7 +52,7 @@ class DatasetRef:
             manifest_uri=dataset.manifest_gcs_uri,
             identity_hash=dataset.identity_hash,
             target_column=dataset.target_column,
-            split_id_col=dataset.split_id_col,
+            split_pct_col=dataset.split_pct_col,
             n_rows=dataset.n_rows,
             n_columns=dataset.n_columns,
         )
@@ -64,7 +64,7 @@ class DatasetRef:
             manifest_uri=str(payload.get("manifest_uri", "")),
             identity_hash=str(payload.get("identity_hash", "")),
             target_column=str(payload.get("target_column", "")),
-            split_id_col=str(payload.get("split_id_col", "")),
+            split_pct_col=str(payload.get("split_pct_col", "")),
             n_rows=int(payload.get("n_rows", 0)),
             n_columns=int(payload.get("n_columns", 0)),
         )
@@ -145,7 +145,7 @@ def validate_trial_data_contract(contract: TrialDataContract, dataset: Dataset) 
         "id": (contract.dataset.id, dataset.id),
         "identity_hash": (contract.dataset.identity_hash, dataset.identity_hash),
         "target_column": (contract.dataset.target_column, dataset.target_column),
-        "split_id_col": (contract.dataset.split_id_col, dataset.split_id_col),
+        "split_pct_col": (contract.dataset.split_pct_col, dataset.split_pct_col),
         "n_rows": (contract.dataset.n_rows, dataset.n_rows),
         "n_columns": (contract.dataset.n_columns, dataset.n_columns),
     }

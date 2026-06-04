@@ -195,9 +195,9 @@ def test_load_dataset_by_id_accepts_disjoint_multi_range(tmp_path, fake_gcs):
 
     assert sliced.split_name is None
     assert sliced.split_ranges == ((80, 90), (95, 100))
-    assert set(sliced.df["SPLITID"]).issubset(expected_buckets)
+    assert set(sliced.df["SPLIT_PCT"]).issubset(expected_buckets)
     assert sliced.df.to_dict("records") == loaded.df[
-        loaded.df["SPLITID"].isin(expected_buckets)
+        loaded.df["SPLIT_PCT"].isin(expected_buckets)
     ].reset_index(drop=True).to_dict("records")
 
 

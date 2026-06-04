@@ -17,7 +17,7 @@ from automl.data.profile import Profile, get_profile, profile
 from automl.data.registry import list_datasets, load_dataset, load_dataset_by_id, load_dataset_by_trial
 from automl.data.sources import DataSource, GCSParquetSource, LocalCSVSource, SnowflakeSource
 from automl.data.spec import DataSpec
-from automl.data.split import HashKey, add_split_id, hash_key_columns, split_report
+from automl.data.split import HashKey, add_split_pct, hash_key_columns, split_report
 
 __all__ = [
     "ComponentHashes",
@@ -39,7 +39,7 @@ __all__ = [
     "SliceContract",
     "TrialDataContract",
     "TrialRef",
-    "add_split_id",
+    "add_split_pct",
     "build_dataset",
     "get_profile",
     "hash_key_columns",

@@ -87,7 +87,7 @@ def _loaded_slice() -> LoadedSlice:
             "target": [0, 0, 1, 1],
             "score": [0.05, 0.4, 0.6, 0.95],
             "amount": [10.0, 20.0, 30.0, 40.0],
-            "SPLITID": [51, 52, 53, 54],
+            "SPLIT_PCT": [51, 52, 53, 54],
         }
     )
     dataset = Dataset(
@@ -101,7 +101,7 @@ def _loaded_slice() -> LoadedSlice:
         n_rows=len(df),
         n_columns=len(df.columns),
         target_column="target",
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
         hash_key=("row_id",),
     )
     registry = FeatureRegistry().build_from_df(df, target_column="target")

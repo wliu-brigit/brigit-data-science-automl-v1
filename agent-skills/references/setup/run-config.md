@@ -26,7 +26,7 @@ RUN_CONFIG = RunConfig(
 | Field | What goes here |
 |---|---|
 | `experiment_id` | One modeling cycle within the project, such as `2026-Q2` or `2026-05-07`. Use only letters, numbers, `_`, `-`, and `.`; slashes, spaces, and URI punctuation are rejected. Lex-sortable strings are recommended. |
-| `splits` | Train/test split ranges as `Splits(train=[(start, end)], test=[(start, end)])` where ranges are over the SPLITID column (0-99). |
+| `splits` | Train/test split ranges as `Splits(train=[(start, end)], test=[(start, end)])` where ranges are over the SPLIT_PCT column (0-99). |
 | `models` | Per-role model routing for the manager, proposer, and coder agents via `ModelsConfig` with `ModelRoute(model, effort)` for each. |
 | `per_trial_seconds` | Timeout budget for a single trial execution. |
 

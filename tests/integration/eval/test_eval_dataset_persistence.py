@@ -56,7 +56,7 @@ def _dataset() -> Dataset:
         n_rows=4,
         n_columns=4,
         target_column="target",
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
         hash_key=("row_id",),
     )
 
@@ -67,7 +67,7 @@ def _loaded_slice() -> LoadedSlice:
             "row_id": [1, 2],
             "target": [0, 1],
             "score": [0.1, 0.9],
-            "SPLITID": [51, 52],
+            "SPLIT_PCT": [51, 52],
         }
     )
     return LoadedSlice(

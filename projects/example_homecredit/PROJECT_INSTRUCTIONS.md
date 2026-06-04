@@ -22,7 +22,7 @@ validation, logging, reproducibility, and MLflow artifact organization.
 - Dry runs use the first 100 rows via `DATA.dry_run_rows`.
 - Full-data runs can use `GCSParquetSource` by setting
   `EXAMPLE_HOMECREDIT_GCS_URI` to a prepared parquet file in GCS.
-- `SPLITID` is derived by stable hash from `SK_ID_CURR`.
+- `SPLIT_PCT` is derived by stable hash from `SK_ID_CURR`.
 - `config.py` owns the default `EVAL`; custom evaluation helpers should live
   under a project-local `eval/` package only when needed.
 - Missingness is meaningful in Home Credit data, so tree models or explicit

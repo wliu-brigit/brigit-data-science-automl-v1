@@ -23,7 +23,7 @@ def compute_eval_dataset_identity(
     target_column: str,
     hash_key: Sequence[str],
     of_dataset_id: str | None = None,
-    split_id_col: str | None = None,
+    split_pct_col: str | None = None,
     buckets: Sequence[Sequence[int]] | None = None,
     frame: pd.DataFrame | None = None,
 ) -> str:
@@ -31,14 +31,14 @@ def compute_eval_dataset_identity(
     if kind == "split_view":
         if not of_dataset_id:
             raise ValueError("of_dataset_id required for split_view eval datasets")
-        if not split_id_col:
-            raise ValueError("split_id_col required for split_view eval datasets")
+        if not split_pct_col:
+            raise ValueError("split_pct_col required for split_view eval datasets")
         normalized_buckets = _normalize_buckets(buckets)
         payload = {
             "schema_version": 1,
             "kind": kind,
             "of_dataset_id": of_dataset_id,
-            "split_id_col": split_id_col,
+            "split_pct_col": split_pct_col,
             "buckets": normalized_buckets,
             "target_column": target_column,
             "hash_key": normalized_hash_key,
@@ -95,7 +95,7 @@ class EvalDataset:
     namespace: str
     of_dataset_id: str = ""
     split: str = ""
-    split_id_col: str = ""
+    split_pct_col: str = ""
     buckets: tuple[tuple[int, int], ...] = ()
     content_hash: str = ""
     schema_hash: str = ""
@@ -112,7 +112,7 @@ class EvalDataset:
         session: Session,
         of_dataset_id: str,
         split: str,
-        split_id_col: str,
+        split_pct_col: str,
         buckets: Sequence[Sequence[int]],
         target_column: str,
         hash_key: Sequence[str],
@@ -122,7 +122,7 @@ class EvalDataset:
         dataset_id = compute_eval_dataset_identity(
             kind="split_view",
             of_dataset_id=of_dataset_id,
-            split_id_col=split_id_col,
+            split_pct_col=split_pct_col,
             buckets=normalized_buckets,
             target_column=target_column,
             hash_key=normalized_hash_key,
@@ -133,7 +133,7 @@ class EvalDataset:
             kind="split_view",
             of_dataset_id=of_dataset_id,
             split=split,
-            split_id_col=split_id_col,
+            split_pct_col=split_pct_col,
             buckets=normalized_buckets,
             target_column=target_column,
             hash_key=normalized_hash_key,
@@ -210,7 +210,7 @@ class EvalDataset:
             namespace=str(payload.get("namespace", "")),
             of_dataset_id=str(payload.get("of_dataset_id", "")),
             split=str(payload.get("split", "")),
-            split_id_col=str(payload.get("split_id_col", "")),
+            split_pct_col=str(payload.get("split_pct_col", "")),
             buckets=tuple(tuple(int(item) for item in pair) for pair in payload.get("buckets", ())),
             content_hash=str(payload.get("content_hash", "")),
             schema_hash=str(payload.get("schema_hash", "")),
@@ -242,7 +242,7 @@ class EvalDataset:
                 {
                     "of_dataset_id": self.of_dataset_id,
                     "split": self.split,
-                    "split_id_col": self.split_id_col,
+                    "split_pct_col": self.split_pct_col,
                     "buckets": [list(pair) for pair in self.buckets],
                 }
             )

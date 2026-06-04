@@ -71,7 +71,7 @@ def test_homecredit_data_model_breadth_external_gate():
         )
         assert multi.split_name is None
         assert multi.split_ranges == ((80, 90), (95, 100))
-        assert set(multi.df["SPLITID"]).issubset(set(range(80, 90)) | set(range(95, 100)))
+        assert set(multi.df["SPLIT_PCT"]).issubset(set(range(80, 90)) | set(range(95, 100)))
 
         result = run_trial("example_homecredit", session=active)
 

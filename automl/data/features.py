@@ -78,14 +78,14 @@ class FeatureRegistry:
         target_column: str,
         metadata_cols: Iterable[str] = (),
         exclude_cols: Iterable[str] = (),
-        split_id_col: str = "SPLITID",
+        split_pct_col: str = "SPLIT_PCT",
         original_names: dict[str, str] | None = None,
     ) -> "FeatureRegistry":
         metadata = set(metadata_cols)
         excluded = set(exclude_cols)
         for column in df.columns:
             is_target = column == target_column
-            is_metadata = column in metadata or column == split_id_col
+            is_metadata = column in metadata or column == split_pct_col
             is_excluded = column in excluded
             series = df[column]
             self._entries[column] = FeatureEntry(

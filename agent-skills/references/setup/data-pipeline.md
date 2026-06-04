@@ -73,7 +73,7 @@ Whatever source you pick, the loaded dataframe must include:
   standardization.
 - Any columns listed as `exclude_cols` or `metadata_cols`.
 
-The pipeline adds or refreshes `SPLITID` as a uniformly distributed integer
+The pipeline adds or refreshes `SPLIT_PCT` as a uniformly distributed integer
 0-99 column during materialization. If the source declares `hash_key`, the
 split buckets are derived from those stable key columns; otherwise the
 pipeline uses a deterministic row-content fallback.
@@ -112,7 +112,7 @@ DATA = DataSpec(
 
 `hash_key` is a stable column name, or a list of column names, available in
 the raw file. During materialization, the pipeline computes
-`SPLITID = stable_hash(hash_key) % 100`, so rows with the same hash-key values
+`SPLIT_PCT = stable_hash(hash_key) % 100`, so rows with the same hash-key values
 land in the same split across runs.
 
 ## GCS parquet
@@ -169,7 +169,7 @@ sequence before publishing an immutable dataset:
   standardized columns.
 - Apply quality filters while preserving target, hash-key, and metadata
   columns.
-- Add deterministic `SPLITID` buckets.
+- Add deterministic `SPLIT_PCT` buckets.
 - Build the `FeatureRegistry` from the filtered dataframe and declared column
   roles.
 - Compute the immutable `Dataset` identity and component hashes.

@@ -137,8 +137,8 @@ def test_build_dataset_adds_split_id_and_feature_registry_for_homecredit_sample(
     assert loaded.n_rows == 25
     assert loaded.dataset.target_column == "target"
     assert loaded.dataset.hash_key == ("sk_id_curr",)
-    assert "SPLITID" in loaded.df.columns
-    assert set(loaded.df["SPLITID"]).issubset(set(range(100)))
+    assert "SPLIT_PCT" in loaded.df.columns
+    assert set(loaded.df["SPLIT_PCT"]).issubset(set(range(100)))
     assert loaded.registry.get("target").target is True
     assert loaded.registry.get("sk_id_curr").model is False
     assert loaded.registry.get("ext_source_1").model is True
@@ -273,7 +273,7 @@ def test_quality_filtering_drops_constant_and_high_null_columns_but_preserves_pr
     assert "strict_constant" not in loaded.df.columns
     assert "strict_constant" not in set(loaded.registry.to_dataframe()["name"])
     assert "mostly_null" not in loaded.df.columns
-    assert {"row_id", "target", "metadata_all_null", "usable", "SPLITID"}.issubset(
+    assert {"row_id", "target", "metadata_all_null", "usable", "SPLIT_PCT"}.issubset(
         loaded.df.columns
     )
     assert loaded.registry.get("metadata_all_null").model is False
@@ -317,7 +317,7 @@ def test_build_dataset_without_hash_key_uses_deterministic_row_fallback(tmp_path
     second = build_dataset(session=_session_for(spec))
 
     assert first.dataset.hash_key == ("__row_fallback__",)
-    assert first.df["SPLITID"].tolist() == second.df["SPLITID"].tolist()
+    assert first.df["SPLIT_PCT"].tolist() == second.df["SPLIT_PCT"].tolist()
 
 
 def test_trial_data_contract_round_trips_distinct_trial_id_and_run_id():
@@ -333,7 +333,7 @@ def test_trial_data_contract_round_trips_distinct_trial_id_and_run_id():
             manifest_uri="gs://bucket/demo/data/datasets/v1_abcdef12/manifest.json",
             identity_hash="sha256:identity",
             target_column="target",
-            split_id_col="SPLITID",
+            split_pct_col="SPLIT_PCT",
             n_rows=10,
             n_columns=4,
         ),

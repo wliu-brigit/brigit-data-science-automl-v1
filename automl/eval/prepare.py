@@ -116,7 +116,7 @@ def _prepare_split_view(
         session=active,
         of_dataset_id=parent.id,
         split=split,
-        split_id_col=parent.split_id_col,
+        split_pct_col=parent.split_pct_col,
         buckets=buckets,
         target_column=parent.target_column,
         hash_key=parent.hash_key,

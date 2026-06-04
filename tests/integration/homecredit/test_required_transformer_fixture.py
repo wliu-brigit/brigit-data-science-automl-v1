@@ -27,7 +27,7 @@ class OmittingRequiredTransformerModel(BaseModel):
         self.feature_columns = [
             column
             for column in df_train.select_dtypes(include="number").columns
-            if column not in {self.target_column, "SPLITID", "SK_ID_CURR", "sk_id_curr"}
+            if column not in {self.target_column, "SPLIT_PCT", "SK_ID_CURR", "sk_id_curr"}
         ]
         self.feature_cols = list(self.feature_columns)
         self.feature_registry.set_flag(self.feature_registry.get_by_flag("feature"), "model", False)

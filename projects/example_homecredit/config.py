@@ -33,9 +33,9 @@ RUN_CONFIG = RunConfig(
     experiment_id="example-homecredit",
     splits=Splits(train=[(0, 80)], test=[(80, 100)]),
     models=ModelsConfig(
-        manager=ModelRoute("sonnet", "medium"),
-        proposer=ModelRoute("sonnet", "medium"),
-        coder=ModelRoute("sonnet", "medium"),
+        manager=ModelRoute("opus", "high"),
+        proposer=ModelRoute("opus", "high"),
+        coder=ModelRoute("opus", "high"),
     ),
     per_trial_seconds=600,
     train_split="train",

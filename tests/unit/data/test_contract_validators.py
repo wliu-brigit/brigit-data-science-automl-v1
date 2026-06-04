@@ -31,14 +31,14 @@ def _loaded_dataset() -> LoadedDataset:
             "row_id": [1, 2, 3, 4],
             "target": [0, 1, 0, 1],
             "amount": [10.0, 20.0, 30.0, 40.0],
-            "SPLITID": [10, 20, 90, 95],
+            "SPLIT_PCT": [10, 20, 90, 95],
         }
     )
     registry = FeatureRegistry().build_from_df(
         df,
         target_column="target",
         metadata_cols=("row_id",),
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
     )
     dataset = Dataset(
         id="v1_abc12345",
@@ -57,14 +57,14 @@ def _loaded_dataset() -> LoadedDataset:
         n_rows=len(df),
         n_columns=len(df.columns),
         target_column="target",
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
         hash_key=("row_id",),
     )
     return LoadedDataset(dataset=dataset, df=df, registry=registry)
 
 
 def _contract(loaded: LoadedDataset) -> TrialDataContract:
-    train_df = loaded.df[loaded.df["SPLITID"].isin(range(0, 50))].reset_index(drop=True)
+    train_df = loaded.df[loaded.df["SPLIT_PCT"].isin(range(0, 50))].reset_index(drop=True)
     return TrialDataContract(
         trial=TrialRef(
             project_name="demo",
@@ -91,7 +91,7 @@ def _contract(loaded: LoadedDataset) -> TrialDataContract:
         ("id", lambda dataset: replace(dataset, id="different")),
         ("identity_hash", lambda dataset: replace(dataset, identity_hash="sha256:different")),
         ("target_column", lambda dataset: replace(dataset, target_column="label")),
-        ("split_id_col", lambda dataset: replace(dataset, split_id_col="split")),
+        ("split_pct_col", lambda dataset: replace(dataset, split_pct_col="split")),
         ("n_rows", lambda dataset: replace(dataset, n_rows=dataset.n_rows + 1)),
         ("n_columns", lambda dataset: replace(dataset, n_columns=dataset.n_columns + 1)),
     ],

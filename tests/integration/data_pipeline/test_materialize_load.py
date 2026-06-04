@@ -199,7 +199,7 @@ def test_materialize_writes_dataset_index_and_loads_train_test_slices(tmp_path, 
     overview_index = json.loads(Path(index_path).read_text(encoding="utf-8"))
     assert overview_index["active_dataset_id"] == loaded.id
     assert [item["id"] for item in overview_index["datasets"]] == [loaded.id]
-    assert set(train.df["SPLITID"]).isdisjoint(set(test.df["SPLITID"]))
+    assert set(train.df["SPLIT_PCT"]).isdisjoint(set(test.df["SPLIT_PCT"]))
     assert train.n_rows + test.n_rows == loaded.n_rows
     assert train.split_name == "train"
     assert test.split_name == "test"
@@ -336,7 +336,7 @@ def test_build_dataset_reads_gcs_parquet_source_without_materializing_objects(tm
 
     assert loaded.dataset.source_identity["kind"] == "gcs_parquet"
     assert loaded.dataset.hash_key == ("row_id",)
-    assert "SPLITID" in loaded.df.columns
+    assert "SPLIT_PCT" in loaded.df.columns
     assert not any(
         blob.startswith("demo/baseline/data/datasets/") for bucket, blob in fake_gcs.store
     )

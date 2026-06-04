@@ -18,14 +18,14 @@ def _loaded() -> LoadedDataset:
             "target": [0, 1, 0, 1],
             "amount": [10.0, None, 30.0, 40.0],
             "segment": ["a", "b", "a", "c"],
-            "SPLITID": [10, 20, 90, 95],
+            "SPLIT_PCT": [10, 20, 90, 95],
         }
     )
     registry = FeatureRegistry().build_from_df(
         df,
         target_column="target",
         metadata_cols=("row_id",),
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
     )
     dataset = Dataset(
         id="v1_profile",
@@ -44,7 +44,7 @@ def _loaded() -> LoadedDataset:
         n_rows=len(df),
         n_columns=len(df.columns),
         target_column="target",
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
         hash_key=("row_id",),
     )
     return LoadedDataset(dataset=dataset, df=df, registry=registry)

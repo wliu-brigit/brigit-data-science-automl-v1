@@ -29,7 +29,7 @@ def _dataset() -> Dataset:
         n_rows=1,
         n_columns=2,
         target_column="target",
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
         hash_key=("row_id",),
     )
 

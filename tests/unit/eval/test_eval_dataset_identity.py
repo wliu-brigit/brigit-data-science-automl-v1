@@ -46,7 +46,7 @@ def test_split_view_identity_is_recipe_based_not_frame_based():
     first = eval_dataset_module.compute_eval_dataset_identity(
         kind="split_view",
         of_dataset_id="dataset-v1",
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
         buckets=((80, 90), (95, 100)),
         target_column="target",
         hash_key=("row_id",),
@@ -54,7 +54,7 @@ def test_split_view_identity_is_recipe_based_not_frame_based():
     second = eval_dataset_module.compute_eval_dataset_identity(
         kind="split_view",
         of_dataset_id="dataset-v1",
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
         buckets=((80, 90), (95, 100)),
         target_column="target",
         hash_key=("row_id",),
@@ -62,7 +62,7 @@ def test_split_view_identity_is_recipe_based_not_frame_based():
     same_rows_different_recipe = eval_dataset_module.compute_eval_dataset_identity(
         kind="split_view",
         of_dataset_id="dataset-v1",
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
         buckets=((80, 100),),
         target_column="target",
         hash_key=("row_id",),
@@ -76,7 +76,7 @@ def test_split_view_identity_sorts_and_rejects_overlapping_buckets():
     ordered = eval_dataset_module.compute_eval_dataset_identity(
         kind="split_view",
         of_dataset_id="dataset-v1",
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
         buckets=((10, 20), (30, 40)),
         target_column="target",
         hash_key=("row_id",),
@@ -84,7 +84,7 @@ def test_split_view_identity_sorts_and_rejects_overlapping_buckets():
     reversed_order = eval_dataset_module.compute_eval_dataset_identity(
         kind="split_view",
         of_dataset_id="dataset-v1",
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
         buckets=((30, 40), (10, 20)),
         target_column="target",
         hash_key=("row_id",),
@@ -95,7 +95,7 @@ def test_split_view_identity_sorts_and_rejects_overlapping_buckets():
         eval_dataset_module.compute_eval_dataset_identity(
             kind="split_view",
             of_dataset_id="dataset-v1",
-            split_id_col="SPLITID",
+            split_pct_col="SPLIT_PCT",
             buckets=((10, 20), (15, 30)),
             target_column="target",
             hash_key=("row_id",),
@@ -128,7 +128,7 @@ def test_eval_dataset_manifest_round_trips_route_and_kind(tmp_path):
         session=active,
         of_dataset_id="dataset-v1",
         split="test",
-        split_id_col="SPLITID",
+        split_pct_col="SPLIT_PCT",
         buckets=((50, 100),),
         target_column="target",
         hash_key=("row_id",),

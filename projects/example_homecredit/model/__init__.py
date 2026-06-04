@@ -40,7 +40,7 @@ class HomeCreditLogisticModel(BaseModel):
         numeric_columns = self._numeric_feature_columns(
             df_train,
             self.feature_registry,
-            exclude={target, "SPLITID", *required_columns},
+            exclude={target, "SPLIT_PCT", *required_columns},
         )
         self.feature_cols = [*required_columns, *numeric_columns]
         self.feature_columns = list(self.feature_cols)

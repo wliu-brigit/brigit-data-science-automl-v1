@@ -47,7 +47,7 @@ class Dataset:
     n_rows: int
     n_columns: int
     target_column: str
-    split_id_col: str
+    split_pct_col: str
     hash_key: tuple[str, ...]
     gcs_prefix: str = ""
     experiment_id: str = ""
@@ -91,7 +91,7 @@ class Dataset:
             n_rows=int(payload.get("n_rows", 0)),
             n_columns=int(payload.get("n_columns", 0)),
             target_column=str(payload.get("target_column", "")),
-            split_id_col=str(payload.get("split_id_col", "SPLITID")),
+            split_pct_col=str(payload.get("split_pct_col", "SPLIT_PCT")),
             hash_key=tuple(str(item) for item in payload.get("hash_key", ())),
             gcs_prefix=str(payload.get("gcs_prefix", "")),
             experiment_id=str(payload.get("experiment_id", "")),
@@ -113,7 +113,7 @@ class Dataset:
             "n_rows": self.n_rows,
             "n_columns": self.n_columns,
             "target_column": self.target_column,
-            "split_id_col": self.split_id_col,
+            "split_pct_col": self.split_pct_col,
             "hash_key": list(self.hash_key),
             "data_gcs_uri": self.data_gcs_uri,
             "registry_gcs_uri": self.registry_gcs_uri,

@@ -77,7 +77,7 @@ def load_dataset_by_id(
     if ranges is None:
         return loaded
     buckets = set(_buckets(ranges))
-    sliced = df[df[dataset.split_id_col].isin(buckets)].reset_index(drop=True)
+    sliced = df[df[dataset.split_pct_col].isin(buckets)].reset_index(drop=True)
     return LoadedSlice(
         dataset=dataset,
         df=sliced,

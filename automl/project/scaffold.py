@@ -210,7 +210,7 @@ def _snowflake_templates(project_name: str) -> dict[str, str]:
             -- Snowflake training-data starter.
             SELECT
                 *,
-                MOD(ABS(HASH(<TBD_HASH_KEY_COLUMN>)), 100) AS SPLITID
+                MOD(ABS(HASH(<TBD_HASH_KEY_COLUMN>)), 100) AS SPLIT_PCT
             FROM {database}.{schema}.{base_table};
         """,
     }

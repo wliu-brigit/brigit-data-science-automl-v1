@@ -13,7 +13,7 @@ import pandas as pd
 
 from automl.data.dataset import ComponentHashes, Dataset, DatasetIndex, LoadedDataset
 from automl.data.features import FeatureRegistry
-from automl.data.split import ROW_FALLBACK_HASH_KEY, add_split_id, hash_key_columns
+from automl.data.split import ROW_FALLBACK_HASH_KEY, add_split_pct, hash_key_columns
 from automl.errors import DataError, ProjectError
 from automl.mlflow import client as mlflow_client
 from automl.mlflow import experiment as mlflow_experiment
@@ -26,7 +26,7 @@ from automl.utils.io import gcs
 
 
 class DataPipeline:
-    split_id_col = "SPLITID"
+    split_pct_col = "SPLIT_PCT"
 
     def __init__(self, spec, session: Session, *, refresh_source: bool = False) -> None:
         self.spec = spec
@@ -48,13 +48,13 @@ class DataPipeline:
             df,
             protected_cols=(target_column, *hash_key, *metadata_cols),
         )
-        df = add_split_id(df, hash_key=None if hash_key == (ROW_FALLBACK_HASH_KEY,) else hash_key)
+        df = add_split_pct(df, hash_key=None if hash_key == (ROW_FALLBACK_HASH_KEY,) else hash_key)
         registry = FeatureRegistry().build_from_df(
             df,
             target_column=target_column,
             metadata_cols=registry_metadata_cols,
             exclude_cols=exclude_cols,
-            split_id_col=self.split_id_col,
+            split_pct_col=self.split_pct_col,
             original_names=original_names,
         )
         dataset = self._dataset_for(
@@ -157,7 +157,7 @@ class DataPipeline:
                 "n_columns": len(df.columns),
                 "n_rows": len(df),
                 "project_name": self.session.project_name,
-                "split_id_col": self.split_id_col,
+                "split_pct_col": self.split_pct_col,
                 "target_column": target_column,
             }
         )
@@ -174,7 +174,7 @@ class DataPipeline:
             n_rows=len(df),
             n_columns=len(df.columns),
             target_column=target_column,
-            split_id_col=self.split_id_col,
+            split_pct_col=self.split_pct_col,
             hash_key=hash_key,
         )
 
@@ -311,7 +311,7 @@ def _validate_existing_dataset_matches_candidate(existing: Dataset, candidate: D
         "n_rows",
         "n_columns",
         "target_column",
-        "split_id_col",
+        "split_pct_col",
         "hash_key",
     ):
         if getattr(existing, field) != getattr(candidate, field):

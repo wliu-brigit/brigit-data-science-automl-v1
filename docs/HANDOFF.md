@@ -30,7 +30,15 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
    [`plans/README.md`](execution/snowflake-source-and-split-keys/plans/README.md).
 2. Before/with step 2: **wendao manually wipes old MLflow/GCS state** for a
    clean slate — the implementation must never delete or migrate old state
-   itself (design §14 ground rule).
+   itself (design §14 ground rule). **Wiped 2026-06-04:** the
+   `dry_run/example_homecredit/overview` MLflow experiment (renamed to
+   `…__trash-2026-06-04` then soft-deleted, so the route name is free; hard
+   delete waits on a platform-team `mlflow gc`) and its associated GCS
+   records (`automl/dry_run/example_homecredit/data/` — old dataset index +
+   v1/v2 bytes). Kept: `dry_run/example_homecredit/example-homecredit`
+   (experiment 24) and its GCS subtree — note its old trial contracts now
+   point at deleted dataset bytes, so replaying those dry-run trials will
+   fail (expected, forward-only).
 
 ## On hold — waiting, not next fixes
 

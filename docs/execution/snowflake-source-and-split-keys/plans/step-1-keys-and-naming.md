@@ -71,7 +71,7 @@ pipeline,dataset,contract,features,registry,profile,spec}.py`,
 - Modify: `automl/data/split.py`
 - Modify: `automl/data/__init__.py`
 
-- [ ] **Step 1: Rename in `automl/data/split.py`**
+- [x] **Step 1: Rename in `automl/data/split.py`**
 
 Replace the module with (Part B rewrites it again — this pass is the
 column/function rename only; `hash_key` machinery survives until B1):
@@ -162,7 +162,7 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 2: Update the export in `automl/data/__init__.py`**
+- [x] **Step 2: Update the export in `automl/data/__init__.py`**
 
 ```python
 from automl.data.split import HashKey, add_split_pct, hash_key_columns, split_report
@@ -179,7 +179,7 @@ and in `__all__`: `"add_split_id"` → `"add_split_pct"`.
 - Modify: `automl/data/features.py`
 - Modify: `automl/data/registry.py`
 
-- [ ] **Step 1: `automl/data/pipeline.py`**
+- [x] **Step 1: `automl/data/pipeline.py`**
 
 ```python
 # import line 16:
@@ -196,20 +196,20 @@ class DataPipeline:
 # _validate_existing_dataset_matches_candidate field tuple: "split_id_col" → "split_pct_col"
 ```
 
-- [ ] **Step 2: `automl/data/dataset.py`** — `Dataset.split_id_col` field →
+- [x] **Step 2: `automl/data/dataset.py`** — `Dataset.split_id_col` field →
 `split_pct_col`; `from_dict`: `split_pct_col=str(payload.get("split_pct_col", "SPLIT_PCT"))`
 (no `split_id_col` fallback key — forward-only); `to_dict` key
 `"split_id_col"` → `"split_pct_col"`.
 
-- [ ] **Step 3: `automl/data/contract.py`** — `DatasetRef.split_id_col` field →
+- [x] **Step 3: `automl/data/contract.py`** — `DatasetRef.split_id_col` field →
 `split_pct_col` (dataclass field, `from_dataset`, `from_dict` key, and the
 `validate_trial_data_contract` checks-dict key).
 
-- [ ] **Step 4: `automl/data/features.py`** — `build_from_df` parameter
+- [x] **Step 4: `automl/data/features.py`** — `build_from_df` parameter
 `split_id_col: str = "SPLITID"` → `split_pct_col: str = "SPLIT_PCT"`; the
 `is_metadata` comparison uses the renamed parameter.
 
-- [ ] **Step 5: `automl/data/registry.py`** — line 80:
+- [x] **Step 5: `automl/data/registry.py`** — line 80:
 `df[df[dataset.split_pct_col].isin(buckets)]`.
 
 ### Task A3: eval layer column rename
@@ -218,7 +218,7 @@ class DataPipeline:
 - Modify: `automl/eval/eval_dataset.py`
 - Modify: `automl/eval/prepare.py`
 
-- [ ] **Step 1: `automl/eval/eval_dataset.py`** — rename in five places:
+- [x] **Step 1: `automl/eval/eval_dataset.py`** — rename in five places:
 `compute_eval_dataset_identity` parameter `split_id_col` → `split_pct_col`
 and its payload key `"split_id_col"` → `"split_pct_col"` (line 41 — this
 changes `ev_` ids; forward-only, accepted); the `split_view`-kind required
@@ -226,7 +226,7 @@ check message; `EvalDataset.split_id_col` field → `split_pct_col`;
 `EvalDataset.split_view(... split_id_col=...)` parameter → `split_pct_col`;
 `from_dict`/`to_dict` keys.
 
-- [ ] **Step 2: `automl/eval/prepare.py`** — `_prepare_split_view` line 119:
+- [x] **Step 2: `automl/eval/prepare.py`** — `_prepare_split_view` line 119:
 `split_pct_col=parent.split_pct_col`.
 
 ### Task A4: scaffold + projects column rename
@@ -238,7 +238,7 @@ check message; `EvalDataset.split_id_col` field → `split_pct_col`;
 - Modify: `projects/fraud_anomaly_detection/data/queries/training_data.sql`
 - Modify: `projects/payment_routing/data/queries/training_data.sql`
 
-- [ ] **Step 1:** In `scaffold.py` `_snowflake_templates()`, the
+- [x] **Step 1:** In `scaffold.py` `_snowflake_templates()`, the
 training_data.sql starter line becomes:
 
 ```sql
@@ -248,18 +248,18 @@ training_data.sql starter line becomes:
 (Step 3 of the effort rewrites this template entirely; this pass only keeps
 the literal consistent. `<TBD_HASH_KEY_COLUMN>` is renamed in Part B.)
 
-- [ ] **Step 2:** `projects/example_homecredit/model/__init__.py:43` — the
+- [x] **Step 2:** `projects/example_homecredit/model/__init__.py:43` — the
 string literal in the `exclude={target, "SPLITID", *required_columns}` set
 becomes `"SPLIT_PCT"`.
 
-- [ ] **Step 3:** `projects/example_homecredit/PROJECT_INSTRUCTIONS.md:25` —
+- [x] **Step 3:** `projects/example_homecredit/PROJECT_INSTRUCTIONS.md:25` —
 "`SPLITID` is derived by stable hash from `SK_ID_CURR`" → `SPLIT_PCT`.
 
-- [ ] **Step 4:** `projects/fraud_anomaly_detection/data/queries/training_data.sql`
+- [x] **Step 4:** `projects/fraud_anomaly_detection/data/queries/training_data.sql`
 — `AS SPLITID` → `AS SPLIT_PCT` (explicitly required by the contract rename;
 no other fraud changes in Part A).
 
-- [ ] **Step 5:** `projects/payment_routing/data/queries/training_data.sql`
+- [x] **Step 5:** `projects/payment_routing/data/queries/training_data.sql`
 — lines 4 and 9: `SPLITID` → `SPLIT_PCT` (this file hashes `payment_id`
 directly; just the literal renames, nothing else).
 
@@ -269,7 +269,7 @@ directly; just the literal renames, nothing else).
 - Modify: `agent-skills/references/setup/data-pipeline.md`
 - Modify: `agent-skills/references/setup/run-config.md`
 
-- [ ] **Step 1:** `grep -n "SPLITID\|split_id_col\|add_split_id" agent-skills/references/setup/*.md`
+- [x] **Step 1:** `grep -n "SPLITID\|split_id_col\|add_split_id" agent-skills/references/setup/*.md`
 and update every hit to the new names (`SPLIT_PCT`, `split_pct_col`,
 `add_split_pct`). **Scope guard for `run-config.md:29`:** swap the `SPLITID`
 literal only — the surrounding `Splits(train=[(start, end)])` range prose
@@ -294,14 +294,14 @@ as written).
 - `tests/integration/homecredit/test_required_transformer_fixture.py`
 - `tests/e2e/test_homecredit_data_model_breadth.py`
 
-- [ ] **Step 1: Mechanical sweep.** For each file apply the rename map
+- [x] **Step 1: Mechanical sweep.** For each file apply the rename map
 (`"SPLITID"` → `"SPLIT_PCT"`, `split_id_col=` → `split_pct_col=`,
 `add_split_id` → `add_split_pct`, `.split_id_col` → `.split_pct_col`).
 These are fixture constructions and assertions pinning today's shape —
 the *assertion values* change with the shape, which is the contract-tests
 rule working as intended.
 
-- [ ] **Step 2: Verify nothing is left**
+- [x] **Step 2: Verify nothing is left**
 
 ```bash
 grep -rn "SPLITID\|split_id_col\|add_split_id" automl tests projects agent-skills --include="*.py" --include="*.md" --include="*.sql" | grep -v docs/archive
@@ -311,10 +311,10 @@ Expected: no output.
 
 ### Task A7: green suite, commit 1
 
-- [ ] **Step 1:** `uv run pytest tests/unit tests/contracts tests/integration`
+- [x] **Step 1:** `uv run pytest tests/unit tests/contracts tests/integration`
 — Expected: all pass.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add -A automl tests projects agent-skills
@@ -335,7 +335,7 @@ tests updated with the shapes they pin (design step 1, part A)."
 - Modify: `automl/data/split.py`
 - Modify: `automl/data/__init__.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 """Key normalization, SPLIT_PCT assignment, and materialize-edge validation."""
@@ -420,12 +420,12 @@ def test_split_report_counts_buckets():
     assert int(report["rows"].sum()) == len(df)
 ```
 
-- [ ] **Step 2: Run to verify failure**
+- [x] **Step 2: Run to verify failure**
 
 `uv run pytest tests/unit/data/test_split_keys.py -v`
 Expected: FAIL — `ImportError: cannot import name 'validate_split_pct'`.
 
-- [ ] **Step 3: Rewrite `automl/data/split.py`**
+- [x] **Step 3: Rewrite `automl/data/split.py`**
 
 ```python
 """Deterministic split-bucket helpers, key normalization, and ingestion-edge checks."""
@@ -563,7 +563,7 @@ __all__ = [
 (`HashKey`, `ROW_FALLBACK_HASH_KEY`, and `hash_key_columns` are gone;
 `_normalize_key` is module-internal and consumed by `sources/base.py`.)
 
-- [ ] **Step 4:** `automl/data/__init__.py` — update the import/`__all__`:
+- [x] **Step 4:** `automl/data/__init__.py` — update the import/`__all__`:
 
 ```python
 from automl.data.split import Key, add_split_pct, split_report, validate_split_pct, validate_unique_key
@@ -572,7 +572,7 @@ from automl.data.split import Key, add_split_pct, split_report, validate_split_p
 `__all__`: remove `"HashKey"`, `"hash_key_columns"`; add `"Key"`,
 `"validate_split_pct"`, `"validate_unique_key"`.
 
-- [ ] **Step 5:** `uv run pytest tests/unit/data/test_split_keys.py -v` —
+- [x] **Step 5:** `uv run pytest tests/unit/data/test_split_keys.py -v` —
 Expected: PASS (the rest of the suite is red until B2–B4; that is expected
 mid-sweep).
 
@@ -585,7 +585,7 @@ mid-sweep).
 - Modify: `automl/data/sources/snowflake.py`
 - Modify: `tests/unit/data/test_sources_breadth.py`
 
-- [ ] **Step 1: `automl/data/sources/base.py`**
+- [x] **Step 1: `automl/data/sources/base.py`**
 
 ```python
 """Data source extension anchor."""
@@ -637,7 +637,7 @@ class DataSource(ABC):
 __all__ = ["DataSource"]
 ```
 
-- [ ] **Step 2: `automl/data/sources/local_csv.py`**
+- [x] **Step 2: `automl/data/sources/local_csv.py`**
 
 ```python
 """Local CSV data source."""
@@ -688,13 +688,13 @@ class LocalCSVSource(DataSource):
 __all__ = ["LocalCSVSource"]
 ```
 
-- [ ] **Step 3: `automl/data/sources/gcs_parquet.py`** — same shape:
+- [x] **Step 3: `automl/data/sources/gcs_parquet.py`** — same shape:
 fields become `gcs_uri`, `unique_key: Key`, `split_group_key: Key | None = None`;
 `__post_init__` keeps `gcs.parse_gcs_uri(self.gcs_uri)` and adds the two
 property touches; `identity()` returns
 `{"kind", "gcs_uri", "unique_key": list(...), "split_group_key": list(...)}`.
 
-- [ ] **Step 4: `automl/data/sources/snowflake.py`** — the stub gains the key
+- [x] **Step 4: `automl/data/sources/snowflake.py`** — the stub gains the key
 fields (the source becomes real in step 3 of the effort):
 
 ```python
@@ -715,7 +715,7 @@ class SnowflakeSource(DataSource):
 the env fields are unchanged. Add the `from automl.data.split import Key`
 import.
 
-- [ ] **Step 5: Update `tests/unit/data/test_sources_breadth.py`** — **all**
+- [x] **Step 5: Update `tests/unit/data/test_sources_breadth.py`** — **all**
 source constructions in the file gain `unique_key=` (use the column the
 fixture already has) — that includes the GCS/CSV identity tests **and** the
 `SnowflakeSource` load-stub test at ~line 54, which otherwise TypeErrors;
@@ -737,7 +737,7 @@ def test_sources_require_unique_key():
         LocalCSVSource(csv_path="x.csv")  # unique_key is required
 ```
 
-- [ ] **Step 6:** `uv run pytest tests/unit/data/test_sources_breadth.py -v` —
+- [x] **Step 6:** `uv run pytest tests/unit/data/test_sources_breadth.py -v` —
 Expected: PASS.
 
 ### Task B3: pipeline — normalized keys, validation, collision check
@@ -745,7 +745,7 @@ Expected: PASS.
 **Files:**
 - Modify: `automl/data/pipeline.py`
 
-- [ ] **Step 1: Imports and `run()`**
+- [x] **Step 1: Imports and `run()`**
 
 ```python
 from automl.data.split import add_split_pct, validate_split_pct, validate_unique_key
@@ -796,7 +796,7 @@ from automl.data.split import add_split_pct, validate_split_pct, validate_unique
         return LoadedDataset(dataset=dataset, df=df, registry=registry)
 ```
 
-- [ ] **Step 2: Replace `_normalized_hash_key` with the generic mapper + collision check**
+- [x] **Step 2: Replace `_normalized_hash_key` with the generic mapper + collision check**
 
 ```python
     def _normalize_key_columns(
@@ -820,7 +820,7 @@ from automl.data.split import add_split_pct, validate_split_pct, validate_unique
             )
 ```
 
-- [ ] **Step 3: `_dataset_for`** — signature
+- [x] **Step 3: `_dataset_for`** — signature
 `(self, df, registry, *, unique_key, split_group_key, target_column, dataset_id="unmaterialized")`;
 `source_identity["hash_key"] = list(hash_key)` becomes:
 
@@ -842,7 +842,7 @@ identity-hash payload: `"hash_key": list(hash_key)` →
 - Modify: `automl/data/dataset.py`
 - Modify: `automl/data/contract.py`
 
-- [ ] **Step 1: `Dataset`** — replace `hash_key: tuple[str, ...]` with:
+- [x] **Step 1: `Dataset`** — replace `hash_key: tuple[str, ...]` with:
 
 ```python
     unique_key: tuple[str, ...]
@@ -859,7 +859,7 @@ identity-hash payload: `"hash_key": list(hash_key)` →
 `to_dict`: `"unique_key": list(self.unique_key)`,
 `"split_group_key": list(self.split_group_key)` (drop `"hash_key"`).
 
-- [ ] **Step 2: `contract.py`** — no `hash_key` fields exist on
+- [x] **Step 2: `contract.py`** — no `hash_key` fields exist on
 `DatasetRef`/`TrialDataContract`; nothing further here beyond Task A2's
 `split_pct_col`. Verify: `grep -n "hash_key" automl/data/contract.py` →
 no output.
@@ -874,7 +874,7 @@ no output.
 - Modify: `automl/eval/evaluate.py`
 - Modify: `automl/eval/results.py`
 
-- [ ] **Step 1: `eval_dataset.py`** — rename throughout (field on
+- [x] **Step 1: `eval_dataset.py`** — rename throughout (field on
 `EvalDataset` and `Augmentation`, `compute_eval_dataset_identity` parameter
 and payload key `"hash_key"` → `"unique_key"` (changes `ev_` ids;
 forward-only), `split_view`/`external`/`Augmentation.create` parameters,
@@ -882,30 +882,30 @@ forward-only), `split_view`/`external`/`Augmentation.create` parameters,
 with message `"unique_key must contain at least one column"`, the duplicate-
 and missing-column validation messages).
 
-- [ ] **Step 2: `prepare.py`** — `prepare_eval_dataset(... hash_key=...)`
+- [x] **Step 2: `prepare.py`** — `prepare_eval_dataset(... hash_key=...)`
 parameter → `unique_key=`; `_prepare_external(... hash_key=...)` →
 `unique_key=`; `parent.hash_key` → `parent.unique_key`;
 `Augmentation.create(... hash_key=base.hash_key)` →
 `unique_key=base.unique_key`; `_validate_augmentation_against_eval_frame`
 local renames.
 
-- [ ] **Step 3: `_load.py`** — `LoadedEvalDataset.hash_key` field →
+- [x] **Step 3: `_load.py`** — `LoadedEvalDataset.hash_key` field →
 `unique_key`; `recipe.hash_key` reads → `recipe.unique_key`; error messages
 ("duplicate hash_key rows" → "duplicate unique_key rows").
 
-- [ ] **Step 4: `base.py`** — `_hash_key_columns` → `_unique_key_columns`;
+- [x] **Step 4: `base.py`** — `_hash_key_columns` → `_unique_key_columns`;
 `_with_augmentation_frames(..., hash_key=...)` parameter → `unique_key=`;
 messages ("missing hash_key columns" → "missing unique_key columns",
 "duplicate hash_key rows" → "duplicate unique_key rows").
 
-- [ ] **Step 5: `evaluate.py`** — `spec.evaluate(..., hash_key=loaded.hash_key)`
+- [x] **Step 5: `evaluate.py`** — `spec.evaluate(..., hash_key=loaded.hash_key)`
 → `unique_key=loaded.unique_key` (and the `evaluate` signature it calls in
 `base.py`).
 
-- [ ] **Step 6: `results.py`** — `Predictions.hash_key` field → `unique_key`;
+- [x] **Step 6: `results.py`** — `Predictions.hash_key` field → `unique_key`;
 `manifest_dict()` key `"hash_key"` → `"unique_key"`.
 
-- [ ] **Step 7: Verify the eval sweep is complete**
+- [x] **Step 7: Verify the eval sweep is complete**
 
 ```bash
 grep -rn "hash_key" automl/eval
@@ -919,7 +919,7 @@ Expected: no output.
 - Modify: `automl/data/profile.py`
 - Modify: `tests/unit/data/test_profile.py`
 
-- [ ] **Step 1: Add the stats check** (design §11: cardinality is surfaced,
+- [x] **Step 1: Add the stats check** (design §11: cardinality is surfaced,
 not just trusted) — new function next to `_basic_observations`, registered
 in `_STATS_CHECKS`:
 
@@ -944,7 +944,7 @@ def _unique_key_cardinality(loaded: LoadedDataset) -> list[dict[str, Any]]:
 _STATS_CHECKS: list[StatsCheck] = [_basic_observations, _unique_key_cardinality]
 ```
 
-- [ ] **Step 2:** In `tests/unit/data/test_profile.py`, fixtures already
+- [x] **Step 2:** In `tests/unit/data/test_profile.py`, fixtures already
 construct `Dataset(...)` — update to `unique_key=`/`split_group_key=` (Task
 B9 sweep) and add an assertion that the observations payload contains a
 `"unique_key_cardinality"` entry.
@@ -958,7 +958,7 @@ B9 sweep) and add an assertion that the observations payload contains a
 - Modify: `projects/fraud_anomaly_detection/data/queries/training_data.sql`
 - Modify: `tests/unit/project/test_metadata_and_scaffold.py`
 
-- [ ] **Step 1: `scaffold.py` `_CONFIG_TEMPLATE`** — the source block becomes:
+- [x] **Step 1: `scaffold.py` `_CONFIG_TEMPLATE`** — the source block becomes:
 
 ```python
 source = SnowflakeSource(
@@ -976,11 +976,11 @@ and the `metadata_cols` comment "e.g. the hash key" → "e.g. the unique key".
 In `_snowflake_templates()`, `<TBD_HASH_KEY_COLUMN>` →
 `<TBD_SPLIT_GROUP_KEY_COLUMN>`.
 
-- [ ] **Step 2: `tests/unit/project/test_metadata_and_scaffold.py`** —
+- [x] **Step 2: `tests/unit/project/test_metadata_and_scaffold.py`** —
 `CONFIG_PLACEHOLDERS` tuple gains `"<TBD_unique_key>"`; the SQL-placeholder
 expectations swap `<TBD_HASH_KEY_COLUMN>` for `<TBD_SPLIT_GROUP_KEY_COLUMN>`.
 
-- [ ] **Step 3: `projects/example_homecredit/config.py`** —
+- [x] **Step 3: `projects/example_homecredit/config.py`** —
 `HASH_KEY = "SK_ID_CURR"` → `UNIQUE_KEY = "SK_ID_CURR"`;
 `LocalCSVSource(csv_path=SAMPLE_CSV, hash_key=HASH_KEY)` →
 `LocalCSVSource(csv_path=SAMPLE_CSV, unique_key=UNIQUE_KEY)`;
@@ -988,7 +988,7 @@ expectations swap `<TBD_HASH_KEY_COLUMN>` for `<TBD_SPLIT_GROUP_KEY_COLUMN>`.
 explanatory comments in the same voice (this file is the self-teaching
 example).
 
-- [ ] **Step 4: Verify SK_ID_CURR is duplicate-free** (first contact with the
+- [x] **Step 4: Verify SK_ID_CURR is duplicate-free** (first contact with the
 new hard check — if this fails, stop and surface it, don't work around):
 
 ```bash
@@ -1002,13 +1002,13 @@ print('rows:', len(df), 'duplicate SK_ID_CURR:', int(df['SK_ID_CURR'].duplicated
 
 Expected: `duplicate SK_ID_CURR: 0`.
 
-- [ ] **Step 5: `projects/fraud_anomaly_detection/config.py`** — minimal
+- [x] **Step 5: `projects/fraud_anomaly_detection/config.py`** — minimal
 contract-required touch only: add `unique_key="<TBD_unique_key>"` to the
 `SnowflakeSource(...)` block (after `training_data_sql`). The SQL placeholder
 in `data/queries/training_data.sql`: `<TBD_HASH_KEY_COLUMN>` →
 `<TBD_SPLIT_GROUP_KEY_COLUMN>`. Nothing else in the project changes.
 
-- [ ] **Step 6: `projects/payment_routing/config.py`** (git-tracked; review
+- [x] **Step 6: `projects/payment_routing/config.py`** (git-tracked; review
 finding — its module-level `SnowflakeSource(...)` at ~lines 27–30 would
 `TypeError` on import once `unique_key` is required): the same minimal
 touch — add `unique_key="<TBD_unique_key>"` (or `"payment_id"` if the
@@ -1021,7 +1021,7 @@ the honest value). Nothing else in the project changes.
 - Modify: `agent-skills/references/setup/data-pipeline.md`
 - Modify: `agent-skills/references/setup/run-config.md`
 
-- [ ] **Step 1:** `grep -n "hash_key" agent-skills/references/setup/*.md` and
+- [x] **Step 1:** `grep -n "hash_key" agent-skills/references/setup/*.md` and
 rewrite each hit in terms of `unique_key`/`split_group_key` (the data-pipeline
 reference describes the source contract — it should now state: `unique_key`
 required, the stable row identifier, hard-validated unique at materialize;
@@ -1055,19 +1055,19 @@ grouping). Leave `docs/archive/**` untouched.
 - `tests/e2e/test_eval_dataset_breadth.py`
 - `tests/e2e/test_homecredit_data_model_breadth.py`
 
-- [ ] **Step 1: Mechanical sweep** per the rename map: `hash_key=` →
+- [x] **Step 1: Mechanical sweep** per the rename map: `hash_key=` →
 `unique_key=` in source/`Dataset`/eval constructors and keyword calls;
 `.hash_key` attribute reads → `.unique_key`; `"hash_key"` dict keys →
 `"unique_key"`; `Dataset(...)` fixtures additionally gain
 `split_group_key=` (same value as `unique_key` unless the test exercises
 grouping).
 
-- [ ] **Step 2: Delete the row-fallback test** in
+- [x] **Step 2: Delete the row-fallback test** in
 `tests/unit/data/test_sources_pipeline_contract.py`
 (`test_build_dataset_without_hash_key_uses_deterministic_row_fallback`,
 ~line 311) — the path no longer exists.
 
-- [ ] **Step 3: Add pipeline-edge validation tests** to
+- [x] **Step 3: Add pipeline-edge validation tests** to
 `tests/unit/data/test_sources_pipeline_contract.py` (these exercise the
 checks through `build_dataset`, where unit B1 exercised the helpers):
 
@@ -1109,7 +1109,7 @@ def test_build_dataset_groups_splits_by_split_group_key(tmp_path):
 it constructs `DataSpec(source=LocalCSVSource(...))` + `Session(...)`
 inline; thread `unique_key`/`split_group_key` through that existing helper.)
 
-- [ ] **Step 4: Verify nothing is left**
+- [x] **Step 4: Verify nothing is left**
 
 ```bash
 grep -rn "hash_key\|HashKey\|ROW_FALLBACK" automl tests projects agent-skills --include="*.py" --include="*.md" | grep -v docs/archive
@@ -1119,14 +1119,14 @@ Expected: no output.
 
 ### Task B10: green suite, commit 2
 
-- [ ] **Step 1:** `uv run pytest tests/unit tests/contracts tests/integration`
+- [x] **Step 1:** `uv run pytest tests/unit tests/contracts tests/integration`
 — Expected: all pass.
 
-- [ ] **Step 2: Update `docs/HANDOFF.md`** — "Where things stand": step 1 of
+- [x] **Step 2: Update `docs/HANDOFF.md`** — "Where things stand": step 1 of
 the effort landed (keys & naming); next action becomes step 2 (dataset
 record & lifecycle) and the manual MLflow/GCS state wipe before/with it.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A automl tests projects agent-skills docs/HANDOFF.md
@@ -1142,8 +1142,8 @@ already provide SPLIT_PCT now error loudly (design step 1, part B)."
 
 ## Self-review checklist (run before declaring step 1 done)
 
-- [ ] `grep -rn "SPLITID\|split_id_col\|hash_key\|ROW_FALLBACK" automl tests projects agent-skills | grep -v docs/archive` → empty.
-- [ ] Full suite green: `uv run pytest tests/unit tests/contracts tests/integration`.
-- [ ] `uv run automl --project example_homecredit validate project` still passes structurally.
-- [ ] Dataset identity intentionally changed (new payload keys) — no migration; confirm nothing tries to read old records.
-- [ ] fraud project diff is exactly: `unique_key="<TBD_unique_key>"` line + two SQL literal renames.
+- [x] `grep -rn "SPLITID\|split_id_col\|hash_key\|ROW_FALLBACK" automl tests projects agent-skills | grep -v docs/archive` → empty.
+- [x] Full suite green: `uv run pytest tests/unit tests/contracts tests/integration`.
+- [x] `uv run automl --project example_homecredit validate project` still passes structurally.
+- [x] Dataset identity intentionally changed (new payload keys) — no migration; confirm nothing tries to read old records.
+- [x] fraud project diff is exactly: `unique_key="<TBD_unique_key>"` line + two SQL literal renames.

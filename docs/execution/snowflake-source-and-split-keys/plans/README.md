@@ -13,7 +13,7 @@ design wins — fix the plan, don't reinterpret the design.
 
 | Step | Plan | Status | Landed commits | Notes / deviations |
 |---|---|---|---|---|
-| 1 — keys & naming | [`step-1-keys-and-naming.md`](step-1-keys-and-naming.md) | not started | — | — |
+| 1 — keys & naming | [`step-1-keys-and-naming.md`](step-1-keys-and-naming.md) | landed | d43d1ff, dac92c7 | Suite 507-green; `validate project` clean. Deviations: (1) commit 1's `git add -A projects` swept in the untracked fraud scaffold + pre-existing example_homecredit working edits (ModelRoute→opus, notebooks 1–2 churn) — intended consumers/accepted churn, noted for honesty. (2) B9 needed four fixture fixes the plan didn't enumerate (`test_eval_thin_path` + `test_eval_dataset_persistence` `Dataset(...)` gain `split_group_key=`; `test_project_validation` `SnowflakeSource(...)` gains `unique_key=`; augmentations match-string `non-hash-key`→`non-unique-key`). (3) No test pinned the scaffold SQL placeholder (B7 step 2 over-specified) — only `CONFIG_PLACEHOLDERS` updated. (4) Self-review grep clean for code/docs/SQL; stale `hash_key`/`SPLITID` remain in example_homecredit notebooks (tail-end pass below) and in old logged experiment artifacts (old state, untouched per ground rule). |
 | 2 — dataset record & lifecycle | [`step-2-dataset-record-and-lifecycle.md`](step-2-dataset-record-and-lifecycle.md) | not started | — | — |
 | 3 — Snowflake | [`step-3-snowflake.md`](step-3-snowflake.md) | not started | — | — |
 | 4 — flexible splits | [`step-4-flexible-splits.md`](step-4-flexible-splits.md) | not started | — | — |

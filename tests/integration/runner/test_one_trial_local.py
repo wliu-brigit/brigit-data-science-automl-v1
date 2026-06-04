@@ -341,7 +341,15 @@ def test_run_trial_logs_failure_report_and_traceback_artifacts(tmp_path, monkeyp
     repo_root = Path(__file__).resolve().parents[3]
     monkeypatch.setenv("MLFLOW_TRACKING_URI", (tmp_path / "mlruns").as_uri())
 
-    active = use_project("example_homecredit", repo_root=repo_root)
+    # Unique route per run (like the sibling import-failure test): the dataset
+    # record lives in this run's fresh MLflow, so re-using a fixed GCS route
+    # across runs would trip materialize's refuse-to-overwrite guard.
+    active = use_project(
+        "example_homecredit",
+        repo_root=repo_root,
+        dry_run=True,
+        namespace=f"qa_failure_{uuid4().hex}",
+    )
 
     import automl.runner.trial as runner_trial
 

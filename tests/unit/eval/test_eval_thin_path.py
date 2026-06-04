@@ -119,11 +119,11 @@ def _fake_eval_dataset_storage(monkeypatch):
     json_store: dict[str, dict] = {}
 
     monkeypatch.setattr(
-        "automl.mlflow.experiment.eval_datasets.write_manifest",
+        "automl.mlflow.experiment.eval_datasets.write_record",
         lambda uri, payload, **kwargs: json_store.__setitem__(uri, payload),
     )
     monkeypatch.setattr(
-        "automl.mlflow.experiment.eval_datasets.read_manifest",
+        "automl.mlflow.experiment.eval_datasets.read_record",
         lambda uri, **kwargs: json_store[uri],
     )
     monkeypatch.setattr(
@@ -231,7 +231,7 @@ def test_prepare_external_eval_dataset_partial_objects_raise_eval_error(tmp_path
 
     monkeypatch.setattr(
         "automl.mlflow.experiment.eval_datasets.blob_exists",
-        lambda uri, **kwargs: uri.endswith("/manifest.json"),
+        lambda uri, **kwargs: uri.endswith("/eval_dataset.json"),
     )
 
     with pytest.raises(EvalError, match="partial external eval dataset objects exist"):

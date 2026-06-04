@@ -93,7 +93,7 @@ def test_write_and_load_eval_index(active_run_with_fake_gcs):
                 eval_dataset_id="eval-v1",
                 kind="external",
                 report_path="eval/holdout/report.json",
-                eval_dataset_manifest_uri="gs://bucket/eval/datasets/eval-v1/manifest.json",
+                eval_dataset_record_uri="gs://bucket/eval/datasets/eval-v1/eval_dataset.json",
                 predictions_uri="gs://bucket/eval/holdout/predictions.parquet",
                 predictions_manifest_uri="gs://bucket/eval/holdout/predictions.json",
                 augmentations_used=(),

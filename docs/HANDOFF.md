@@ -8,7 +8,7 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
 
 ## Where things stand
 
-- **Active effort — step 1 of 4 landed:**
+- **Active effort — steps 1–2 of 4 landed:**
   [`execution/snowflake-source-and-split-keys/`](execution/snowflake-source-and-split-keys/)
   — the full design for the real `SnowflakeSource` plus the data-layer
   contract work it surfaced. **`design.md` is the source of truth**;
@@ -18,19 +18,32 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
   `hash_key` → required `unique_key` + optional `split_group_key`, row
   fallback deleted, materialize-edge validation (unique_key duplicate-free;
   SPLIT_PCT present/integer/0–99; loud collision error on a source-provided
-  split column). Steps 2–4 (dataset record & lifecycle, Snowflake, flexible
-  splits) remain — one step per session, in order.
+  split column). **Step 2 (dataset record & lifecycle) landed 2026-06-04**:
+  dataset records relocated GCS → MLflow (`datasets/<id>/dataset.json` on
+  the overview run; index/latest mirrors and GCS manifests deleted — the
+  folder structure is the index, the experiment tag the pointer); recipe
+  (config-derived identity) recorded on the record; `materialize()` attaches
+  as pinned by default, warns with a field diff on recipe drift, re-derives
+  only on `--refresh-data` (`--refresh-source` implies it); content hash now
+  row-order-insensitive; eval records renamed for their nouns
+  (`eval_dataset.json` / `augmentation.json`, `record_gcs_uri`); eval key
+  normalization unified onto the data normalizer. Steps 3–4 (Snowflake,
+  flexible splits) remain — one step per session, in order.
 - **Known-stale, deferred to the tail-end notebook pass:**
   `example_homecredit` notebooks still reference `hash_key`/`SPLITID` in
   code cells and outputs (see plans README "Tail-end activities").
 
 ## Next actions
 
-1. **Execute step 2** (dataset record & lifecycle) following the protocol in
+1. **Execute step 3** (Snowflake) following the protocol in
    [`plans/README.md`](execution/snowflake-source-and-split-keys/plans/README.md).
-2. Before/with step 2: **wendao manually wipes old MLflow/GCS state** for a
-   clean slate — the implementation must never delete or migrate old state
-   itself (design §14 ground rule). **Wiped 2026-06-04: the entire
+2. **wendao: two orphan GCS objects to wipe at your discretion** — the step-2
+   session's first full-suite run (before the test was re-routed) minted
+   `…/example_homecredit/example-homecredit/data/datasets/v1_da6dbdc5/`
+   (`data.parquet` + `feature_registry.csv`) in the real bucket with no MLflow
+   record (its tmp `mlruns` is gone). The code never deletes state (design §14
+   ground rule); details in the step-2 deviations column.
+3. For reference, the 2026-06-04 wipe that preceded step 2: **the entire
    `dry_run/example_homecredit` route** — both MLflow experiments (`overview`
    id 23 and `example-homecredit` id 24, each renamed to `…__trash-2026-06-04`
    then soft-deleted so the route names are free; hard delete waits on a

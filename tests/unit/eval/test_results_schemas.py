@@ -63,7 +63,7 @@ def test_eval_index_round_trips_entries_and_primary_label():
                 eval_dataset_id="v1_abcdef12",
                 kind="external",
                 report_path="eval/external_augmented/results.json",
-                eval_dataset_manifest_uri="gs://bucket/eval/datasets/v1_abcdef12/manifest.json",
+                eval_dataset_record_uri="gs://bucket/eval/datasets/v1_abcdef12/eval_dataset.json",
                 predictions_uri="gs://bucket/eval/external_augmented/predictions.parquet",
                 predictions_manifest_uri="gs://bucket/eval/external_augmented/predictions.json",
                 augmentations_used=({"name": "risk_weight", "hash8": "12345678"},),

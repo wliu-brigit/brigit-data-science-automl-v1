@@ -79,11 +79,11 @@ def _fake_gcs(monkeypatch):
     )
     monkeypatch.setattr("automl.utils.io.gcs.list_prefixes", lambda *args, **kwargs: [])
     monkeypatch.setattr(
-        "automl.mlflow.experiment.eval_datasets.write_manifest",
+        "automl.mlflow.experiment.eval_datasets.write_record",
         lambda uri, payload, **kwargs: json_store.__setitem__(uri, payload),
     )
     monkeypatch.setattr(
-        "automl.mlflow.experiment.eval_datasets.read_manifest",
+        "automl.mlflow.experiment.eval_datasets.read_record",
         lambda uri, **kwargs: json_store[uri],
     )
     monkeypatch.setattr(

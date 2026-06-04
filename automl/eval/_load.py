@@ -1,4 +1,4 @@
-"""Eval dataset loading delegated to durable manifests and the data domain."""
+"""Eval dataset loading delegated to durable records and the data domain."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from automl.eval.eval_dataset import (
     Augmentation,
     EvalDataset,
     augmentation_root_uri,
-    manifest_uri_for,
+    record_uri_for,
 )
 from automl.mlflow.experiment import eval_datasets
 from automl.project import Session
@@ -31,8 +31,8 @@ class LoadedEvalDataset:
 
 def load_eval_dataset(eval_dataset_id: str, *, session: Session | None = None) -> LoadedEvalDataset:
     active = _session(session)
-    manifest = eval_datasets.read_manifest(manifest_uri_for(eval_dataset_id, session=active))
-    recipe = EvalDataset.from_dict(manifest)
+    record = eval_datasets.read_record(record_uri_for(eval_dataset_id, session=active))
+    recipe = EvalDataset.from_dict(record)
     if recipe.kind == "split_view":
         loaded = data.load_dataset_by_id(
             recipe.of_dataset_id,
@@ -71,7 +71,7 @@ def _validate_external_payload(recipe: EvalDataset, frame: pd.DataFrame) -> None
     required_columns = (*recipe.unique_key, recipe.target_column)
     missing = [column for column in required_columns if column not in frame.columns]
     if missing:
-        raise ValueError(f"external eval dataset is missing manifest column(s): {missing}")
+        raise ValueError(f"external eval dataset is missing record column(s): {missing}")
     if frame.duplicated(subset=list(recipe.unique_key), keep=False).any():
         raise ValueError("external eval dataset contains duplicate unique_key rows")
     actual_schema_hash = schema_hash(frame)
@@ -99,10 +99,10 @@ def load_eval_augmentations(
     for prefix in eval_datasets.list_prefixes(
         augmentation_root_uri(eval_dataset_id, session=active)
     ):
-        manifest_uri = prefix.rstrip("/") + "/manifest.json"
-        if not eval_datasets.blob_exists(manifest_uri):
+        record_uri = prefix.rstrip("/") + "/augmentation.json"
+        if not eval_datasets.blob_exists(record_uri):
             continue
-        augmentation = Augmentation.from_dict(eval_datasets.read_manifest(manifest_uri))
+        augmentation = Augmentation.from_dict(eval_datasets.read_record(record_uri))
         if augmentation.name in found:
             found[augmentation.name].append(augmentation)
     missing = [name for name, items in found.items() if not items]
@@ -121,7 +121,7 @@ def load_eval_augmentations(
                 "name": latest.name,
                 "hash8": latest.hash8,
                 "data_uri": latest.data_gcs_uri,
-                "manifest_uri": latest.manifest_gcs_uri,
+                "record_uri": latest.record_gcs_uri,
             }
         )
     return frames, tuple(used)
@@ -130,7 +130,7 @@ def load_eval_augmentations(
 def _validate_augmentation_payload(augmentation: Augmentation, frame: pd.DataFrame) -> None:
     missing = [column for column in augmentation.columns if column not in frame.columns]
     if missing:
-        raise ValueError(f"augmentation is missing manifest column(s): {missing}")
+        raise ValueError(f"augmentation is missing record column(s): {missing}")
     if frame.duplicated(subset=list(augmentation.unique_key), keep=False).any():
         raise ValueError("augmentation contains duplicate unique_key rows")
     actual_schema_hash = schema_hash(frame)

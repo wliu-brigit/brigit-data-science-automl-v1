@@ -58,7 +58,7 @@ def test_augmentation_identity_is_content_based():
     assert first != third
 
 
-def test_augmentation_manifest_round_trips_route_fields(tmp_path):
+def test_augmentation_record_round_trips_route_fields(tmp_path):
     active = _session(tmp_path)
     frame = pd.DataFrame({"row_id": [1, 2], "risk_weight": [1.0, 2.0]})
 
@@ -77,8 +77,8 @@ def test_augmentation_manifest_round_trips_route_fields(tmp_path):
     assert augmentation.data_gcs_uri.endswith(
         f"eval/datasets/ev_123/augmentations/risk_weight__{augmentation.hash8}/data.parquet"
     )
-    assert augmentation.manifest_gcs_uri.endswith(
-        f"eval/datasets/ev_123/augmentations/risk_weight__{augmentation.hash8}/manifest.json"
+    assert augmentation.record_gcs_uri.endswith(
+        f"eval/datasets/ev_123/augmentations/risk_weight__{augmentation.hash8}/augmentation.json"
     )
 
 
@@ -101,7 +101,7 @@ def test_augmentation_route_uris_preserve_current_gcs_prefix_layout(tmp_path):
     assert augmentation.route_prefix == "root/qa/dry_run/demo/baseline"
     assert augmentation.base_gcs_uri == base
     assert augmentation.data_gcs_uri == f"{base}/data.parquet"
-    assert augmentation.manifest_gcs_uri == f"{base}/manifest.json"
+    assert augmentation.record_gcs_uri == f"{base}/augmentation.json"
     assert eval_dataset_module.augmentation_root_uri("ev_123", session=active) == (
         "gs://bucket/root/qa/dry_run/demo/baseline/eval/datasets/ev_123/augmentations/"
     )

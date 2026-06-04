@@ -109,9 +109,9 @@ def test_eval_dataset_breadth_external_gate():
         assert "auc" not in run.data.metrics
         assert any(record["name"] == "threshold_sweep" for record in external_result.metrics)
         for uri in (
-            eval_dataset.manifest_gcs_uri,
+            eval_dataset.record_gcs_uri,
             eval_dataset.data_gcs_uri,
-            augmentation.manifest_gcs_uri,
+            augmentation.record_gcs_uri,
             augmentation.data_gcs_uri,
             run.data.tags[tags.eval_predictions_uri("external_augmented")],
         ):

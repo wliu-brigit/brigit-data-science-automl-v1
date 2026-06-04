@@ -13,10 +13,10 @@ def list_eval_datasets(*, session: Session | None = None) -> list[EvalDataset]:
     root = _eval_dataset_root(active)
     datasets: list[EvalDataset] = []
     for prefix in eval_datasets.list_prefixes(root):
-        manifest_uri = prefix.rstrip("/") + "/manifest.json"
+        record_uri = prefix.rstrip("/") + "/eval_dataset.json"
         try:
-            if eval_datasets.blob_exists(manifest_uri):
-                datasets.append(EvalDataset.from_dict(eval_datasets.read_manifest(manifest_uri)))
+            if eval_datasets.blob_exists(record_uri):
+                datasets.append(EvalDataset.from_dict(eval_datasets.read_record(record_uri)))
         except Exception:
             continue
     return sorted(datasets, key=lambda item: item.created_at, reverse=True)

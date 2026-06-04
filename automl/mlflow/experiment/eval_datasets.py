@@ -10,18 +10,18 @@ from automl.errors import StorageError
 from automl.utils.io import gcs
 
 
-def read_manifest(uri: str) -> dict[str, Any]:
+def read_record(uri: str) -> dict[str, Any]:
     try:
         return gcs.read_json(uri)
     except Exception as exc:
-        raise StorageError(f"Failed to read eval manifest {uri!r}") from exc
+        raise StorageError(f"Failed to read eval record {uri!r}") from exc
 
 
-def write_manifest(uri: str, payload: dict[str, Any], *, overwrite: bool = False) -> None:
+def write_record(uri: str, payload: dict[str, Any], *, overwrite: bool = False) -> None:
     try:
         gcs.write_json(uri, payload, overwrite=overwrite)
     except Exception as exc:
-        raise StorageError(f"Failed to write eval manifest {uri!r}") from exc
+        raise StorageError(f"Failed to write eval record {uri!r}") from exc
 
 
 def read_frame(uri: str) -> pd.DataFrame:
@@ -55,7 +55,7 @@ __all__ = [
     "list_blob_names",
     "list_prefixes",
     "read_frame",
-    "read_manifest",
+    "read_record",
     "write_frame",
-    "write_manifest",
+    "write_record",
 ]

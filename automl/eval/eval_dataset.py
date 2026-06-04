@@ -1,4 +1,4 @@
-"""Durable eval dataset identity and manifest value objects."""
+"""Durable eval dataset identity and record value objects."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
+from automl.data.split import _normalize_key
 from automl.mlflow import routing as mlflow_routing
 from automl.project import Session
 from automl.utils.hashing import dataframe_content_hash, json_hash, schema_hash
@@ -185,8 +186,8 @@ class EvalDataset:
         )
 
     @property
-    def manifest_gcs_uri(self) -> str:
-        return f"gs://{self.gcs_bucket}/{self.route_prefix}/eval/datasets/{self.id}/manifest.json"
+    def record_gcs_uri(self) -> str:
+        return f"gs://{self.gcs_bucket}/{self.route_prefix}/eval/datasets/{self.id}/eval_dataset.json"
 
     @property
     def data_gcs_uri(self) -> str | None:
@@ -234,7 +235,7 @@ class EvalDataset:
             "dry_run": self.dry_run,
             "namespace": self.namespace,
             "created_at": self.created_at,
-            "manifest_gcs_uri": self.manifest_gcs_uri,
+            "record_gcs_uri": self.record_gcs_uri,
             "data_gcs_uri": self.data_gcs_uri,
         }
         if self.kind == "split_view":
@@ -335,8 +336,8 @@ class Augmentation:
         return f"{self.base_gcs_uri}/data.parquet"
 
     @property
-    def manifest_gcs_uri(self) -> str:
-        return f"{self.base_gcs_uri}/manifest.json"
+    def record_gcs_uri(self) -> str:
+        return f"{self.base_gcs_uri}/augmentation.json"
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "Augmentation":
@@ -380,11 +381,11 @@ class Augmentation:
             "n_rows": self.n_rows,
             "n_columns": self.n_columns,
             "data_gcs_uri": self.data_gcs_uri,
-            "manifest_gcs_uri": self.manifest_gcs_uri,
+            "record_gcs_uri": self.record_gcs_uri,
         }
 
 
-def manifest_uri_for(eval_dataset_id: str, *, session: Session) -> str:
+def record_uri_for(eval_dataset_id: str, *, session: Session) -> str:
     route = _route_fields(session)
     prefix = _route_prefix(
         gcs_prefix=route["gcs_prefix"],
@@ -393,7 +394,7 @@ def manifest_uri_for(eval_dataset_id: str, *, session: Session) -> str:
         project_name=route["project_name"],
         experiment_id=route["experiment_id"],
     )
-    return f"gs://{route['gcs_bucket']}/{prefix}/eval/datasets/{eval_dataset_id}/manifest.json"
+    return f"gs://{route['gcs_bucket']}/{prefix}/eval/datasets/{eval_dataset_id}/eval_dataset.json"
 
 
 def augmentation_root_uri(eval_dataset_id: str, *, session: Session) -> str:
@@ -424,10 +425,10 @@ def _validate_external_frame(
 
 
 def _normalize_unique_key(unique_key: Sequence[str]) -> tuple[str, ...]:
-    normalized = tuple(str(column) for column in unique_key)
-    if not normalized:
-        raise ValueError("unique_key must contain at least one column")
-    return normalized
+    # One shared normalizer with the data layer (sorted, blank/duplicate-free)
+    # so the same composite key always normalizes — and hashes — identically
+    # on both sides of the eval join (carried in from the step-1 review).
+    return _normalize_key(unique_key, field_name="unique_key")
 
 
 def _normalize_buckets(buckets: Sequence[Sequence[int]] | None) -> tuple[tuple[int, int], ...]:
@@ -504,5 +505,5 @@ __all__ = [
     "augmentation_root_uri",
     "compute_augmentation_identity",
     "compute_eval_dataset_identity",
-    "manifest_uri_for",
+    "record_uri_for",
 ]

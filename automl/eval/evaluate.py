@@ -97,7 +97,7 @@ def evaluate(
         label=label,
         result=result,
         report_path=eval_ref.path,
-        eval_dataset_manifest_uri=loaded.dataset.manifest_gcs_uri,
+        eval_dataset_record_uri=loaded.dataset.record_gcs_uri,
         set_as_primary_label=set_as_primary_label,
     )
     _log_scalar_metrics(model_run_id, result, set_as_primary_label=set_as_primary_label)
@@ -163,7 +163,7 @@ def _write_eval_index(
     label: str,
     result: EvalResult,
     report_path: str,
-    eval_dataset_manifest_uri: str,
+    eval_dataset_record_uri: str,
     set_as_primary_label: bool,
 ) -> None:
     existing = artifacts.load_eval_index(run_id)
@@ -172,7 +172,7 @@ def _write_eval_index(
         eval_dataset_id=result.eval_dataset_id,
         kind=result.eval_dataset_kind,
         report_path=report_path,
-        eval_dataset_manifest_uri=eval_dataset_manifest_uri,
+        eval_dataset_record_uri=eval_dataset_record_uri,
         predictions_uri=result.predictions_uri,
         predictions_manifest_uri=result.predictions_manifest_uri,
         augmentations_used=result.augmentations_used,

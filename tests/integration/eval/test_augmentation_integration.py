@@ -81,9 +81,9 @@ def _fake_gcs(monkeypatch):
                     prefixes.add(base + head + "/")
         return sorted(prefixes)
 
-    monkeypatch.setattr("automl.mlflow.experiment.eval_datasets.write_manifest", write_json)
+    monkeypatch.setattr("automl.mlflow.experiment.eval_datasets.write_record", write_json)
     monkeypatch.setattr(
-        "automl.mlflow.experiment.eval_datasets.read_manifest",
+        "automl.mlflow.experiment.eval_datasets.read_record",
         lambda uri, **kwargs: json_store[uri],
     )
     monkeypatch.setattr("automl.mlflow.experiment.eval_datasets.write_frame", write_parquet)
@@ -144,7 +144,7 @@ def test_prepare_load_and_join_augmentation(tmp_path, monkeypatch):
             "name": "risk_weight",
             "hash8": augmentation.hash8,
             "data_uri": augmentation.data_gcs_uri,
-            "manifest_uri": augmentation.manifest_gcs_uri,
+            "record_uri": augmentation.record_gcs_uri,
         },
     )
     assert report["metrics"][1] == {
@@ -170,7 +170,7 @@ def test_load_eval_augmentations_names_missing_published_items(tmp_path, monkeyp
         eval_load.load_eval_augmentations(eval_dataset.id, names=("risk_weight",), session=active)
 
 
-def test_load_eval_augmentations_rejects_payload_that_no_longer_matches_manifest(
+def test_load_eval_augmentations_rejects_payload_that_no_longer_matches_record(
     tmp_path, monkeypatch
 ):
     active = _session(tmp_path)

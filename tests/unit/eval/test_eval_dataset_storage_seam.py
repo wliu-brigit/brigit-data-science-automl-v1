@@ -27,18 +27,18 @@ def test_eval_dataset_storage_seam_delegates_gcs_operations(monkeypatch):
     monkeypatch.setattr(eval_datasets.gcs, "list_blob_names", lambda uri: [uri])
     monkeypatch.setattr(eval_datasets.gcs, "list_prefixes", lambda uri: [uri.rstrip("/") + "/"])
 
-    eval_datasets.write_manifest("gs://bucket/manifest.json", {"a": 1}, overwrite=True)
+    eval_datasets.write_record("gs://bucket/eval_dataset.json", {"a": 1}, overwrite=True)
     eval_datasets.write_frame("gs://bucket/data.parquet", frame, overwrite=False)
 
-    assert eval_datasets.read_manifest("gs://bucket/manifest.json") == {
-        "uri": "gs://bucket/manifest.json"
+    assert eval_datasets.read_record("gs://bucket/eval_dataset.json") == {
+        "uri": "gs://bucket/eval_dataset.json"
     }
     assert eval_datasets.read_frame("gs://bucket/data.parquet").equals(frame)
     assert eval_datasets.blob_exists("gs://bucket/a") is True
     assert eval_datasets.list_blob_names("gs://bucket/prefix") == ["gs://bucket/prefix"]
     assert eval_datasets.list_prefixes("gs://bucket/prefix") == ["gs://bucket/prefix/"]
     assert calls == [
-        ("write_json", "gs://bucket/manifest.json", {"a": 1}, {"overwrite": True}),
+        ("write_json", "gs://bucket/eval_dataset.json", {"a": 1}, {"overwrite": True}),
         ("write_parquet", "gs://bucket/data.parquet", frame, {"overwrite": False}),
     ]
 
@@ -46,10 +46,10 @@ def test_eval_dataset_storage_seam_delegates_gcs_operations(monkeypatch):
 @pytest.mark.parametrize(
     ("operation", "message"),
     [
-        (lambda: eval_datasets.read_manifest("gs://bucket/manifest.json"), "read eval manifest"),
+        (lambda: eval_datasets.read_record("gs://bucket/eval_dataset.json"), "read eval record"),
         (
-            lambda: eval_datasets.write_manifest("gs://bucket/manifest.json", {}),
-            "write eval manifest",
+            lambda: eval_datasets.write_record("gs://bucket/eval_dataset.json", {}),
+            "write eval record",
         ),
         (lambda: eval_datasets.read_frame("gs://bucket/data.parquet"), "read eval frame"),
         (

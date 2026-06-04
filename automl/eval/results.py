@@ -74,7 +74,7 @@ class EvalIndexEntry:
     eval_dataset_id: str
     kind: str
     report_path: str
-    eval_dataset_manifest_uri: str
+    eval_dataset_record_uri: str
     predictions_uri: str
     predictions_manifest_uri: str
     augmentations_used: tuple[Any, ...]
@@ -87,7 +87,7 @@ class EvalIndexEntry:
             eval_dataset_id=str(payload["eval_dataset_id"]),
             kind=str(payload["kind"]),
             report_path=str(payload["report_path"]),
-            eval_dataset_manifest_uri=str(payload["eval_dataset_manifest_uri"]),
+            eval_dataset_record_uri=str(payload["eval_dataset_record_uri"]),
             predictions_uri=str(payload.get("predictions_uri", "")),
             predictions_manifest_uri=str(payload.get("predictions_manifest_uri", "")),
             augmentations_used=tuple(payload.get("augmentations_used", ())),
@@ -100,7 +100,7 @@ class EvalIndexEntry:
             "eval_dataset_id": self.eval_dataset_id,
             "kind": self.kind,
             "report_path": self.report_path,
-            "eval_dataset_manifest_uri": self.eval_dataset_manifest_uri,
+            "eval_dataset_record_uri": self.eval_dataset_record_uri,
             "predictions_uri": self.predictions_uri,
             "predictions_manifest_uri": self.predictions_manifest_uri,
             "augmentations_used": _json_list(self.augmentations_used),

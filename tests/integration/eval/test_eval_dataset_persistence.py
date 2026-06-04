@@ -85,11 +85,11 @@ def _fake_gcs(monkeypatch):
     parquet_store: dict[str, pd.DataFrame] = {}
 
     monkeypatch.setattr(
-        "automl.mlflow.experiment.eval_datasets.write_manifest",
+        "automl.mlflow.experiment.eval_datasets.write_record",
         lambda uri, payload, **kwargs: json_store.setdefault(uri, payload),
     )
     monkeypatch.setattr(
-        "automl.mlflow.experiment.eval_datasets.read_manifest",
+        "automl.mlflow.experiment.eval_datasets.read_record",
         lambda uri, **kwargs: json_store[uri],
     )
     monkeypatch.setattr(
@@ -107,7 +107,7 @@ def _fake_gcs(monkeypatch):
     return json_store, parquet_store
 
 
-def test_split_view_prepare_writes_manifest_and_loads_lazily(tmp_path, monkeypatch):
+def test_split_view_prepare_writes_record_and_loads_lazily(tmp_path, monkeypatch):
     active = _session(tmp_path)
     dataset = _dataset()
     json_store, parquet_store = _fake_gcs(monkeypatch)
@@ -164,13 +164,13 @@ def test_external_prepare_writes_frame_and_loads_round_trip(tmp_path, monkeypatc
     assert cached is False
     assert second == eval_dataset
     assert second_cached is True
-    assert eval_dataset.manifest_gcs_uri in json_store
+    assert eval_dataset.record_gcs_uri in json_store
     assert eval_dataset.data_gcs_uri in parquet_store
     assert loaded.df.equals(frame)
     assert loaded.row_ids.equals(frame[["row_id"]])
 
 
-def test_external_load_rejects_payload_that_no_longer_matches_manifest(tmp_path, monkeypatch):
+def test_external_load_rejects_payload_that_no_longer_matches_record(tmp_path, monkeypatch):
     active = _session(tmp_path)
     _json_store, parquet_store = _fake_gcs(monkeypatch)
     frame = pd.DataFrame({"row_id": [1, 2], "target": [0, 1], "score": [0.1, 0.9]})

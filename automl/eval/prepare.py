@@ -1,4 +1,4 @@
-"""Prepare durable eval dataset manifests."""
+"""Prepare durable eval dataset records."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from automl.eval.eval_dataset import (
     Augmentation,
     EvalDataset,
     augmentation_root_uri,
-    manifest_uri_for,
+    record_uri_for,
 )
 from automl.mlflow.experiment import eval_datasets
 from automl.project import Session
@@ -53,7 +53,7 @@ def prepare_eval_dataset(
 def get_eval_dataset(eval_dataset_id: str, *, session: Session | None = None) -> EvalDataset:
     active = _session(session)
     return EvalDataset.from_dict(
-        eval_datasets.read_manifest(manifest_uri_for(eval_dataset_id, session=active))
+        eval_datasets.read_record(record_uri_for(eval_dataset_id, session=active))
     )
 
 
@@ -78,12 +78,12 @@ def prepare_eval_augmentation(
         unique_key=base.unique_key,
     )
     data_exists = eval_datasets.blob_exists(augmentation.data_gcs_uri)
-    manifest_exists = eval_datasets.blob_exists(augmentation.manifest_gcs_uri)
-    if data_exists and manifest_exists and not overwrite:
+    record_exists = eval_datasets.blob_exists(augmentation.record_gcs_uri)
+    if data_exists and record_exists and not overwrite:
         return Augmentation.from_dict(
-            eval_datasets.read_manifest(augmentation.manifest_gcs_uri)
+            eval_datasets.read_record(augmentation.record_gcs_uri)
         ), True
-    if data_exists != manifest_exists and not overwrite:
+    if data_exists != record_exists and not overwrite:
         raise EvalError(f"partial augmentation objects exist for {name!r}")
 
     _validate_augmentation_against_eval_frame(
@@ -91,12 +91,12 @@ def prepare_eval_augmentation(
         frame=frame,
         eval_frame=loaded.df,
         existing=_existing_augmentations(
-            active, eval_dataset_id, skip=augmentation.manifest_gcs_uri
+            active, eval_dataset_id, skip=augmentation.record_gcs_uri
         ),
     )
     eval_datasets.write_frame(augmentation.data_gcs_uri, frame, overwrite=overwrite)
-    eval_datasets.write_manifest(
-        augmentation.manifest_gcs_uri,
+    eval_datasets.write_record(
+        augmentation.record_gcs_uri,
         augmentation.to_dict(),
         overwrite=overwrite,
     )
@@ -121,9 +121,9 @@ def _prepare_split_view(
         target_column=parent.target_column,
         unique_key=parent.unique_key,
     )
-    if eval_datasets.blob_exists(recipe.manifest_gcs_uri) and not overwrite:
-        return EvalDataset.from_dict(eval_datasets.read_manifest(recipe.manifest_gcs_uri)), True
-    eval_datasets.write_manifest(recipe.manifest_gcs_uri, recipe.to_dict(), overwrite=overwrite)
+    if eval_datasets.blob_exists(recipe.record_gcs_uri) and not overwrite:
+        return EvalDataset.from_dict(eval_datasets.read_record(recipe.record_gcs_uri)), True
+    eval_datasets.write_record(recipe.record_gcs_uri, recipe.to_dict(), overwrite=overwrite)
     return recipe, False
 
 
@@ -145,22 +145,22 @@ def _prepare_external(
     )
     if recipe.data_gcs_uri is None:
         raise EvalError("external eval dataset did not produce a data URI")
-    manifest_exists = eval_datasets.blob_exists(recipe.manifest_gcs_uri)
+    record_exists = eval_datasets.blob_exists(recipe.record_gcs_uri)
     data_exists = eval_datasets.blob_exists(recipe.data_gcs_uri)
-    if manifest_exists and data_exists and not overwrite:
-        return EvalDataset.from_dict(eval_datasets.read_manifest(recipe.manifest_gcs_uri)), True
-    if manifest_exists != data_exists and not overwrite:
+    if record_exists and data_exists and not overwrite:
+        return EvalDataset.from_dict(eval_datasets.read_record(recipe.record_gcs_uri)), True
+    if record_exists != data_exists and not overwrite:
         existing = [
             name
             for name, exists in {
-                "manifest": manifest_exists,
+                "record": record_exists,
                 "data": data_exists,
             }.items()
             if exists
         ]
         raise EvalError(f"partial external eval dataset objects exist: {existing}")
     eval_datasets.write_frame(recipe.data_gcs_uri, frame, overwrite=overwrite)
-    eval_datasets.write_manifest(recipe.manifest_gcs_uri, recipe.to_dict(), overwrite=overwrite)
+    eval_datasets.write_record(recipe.record_gcs_uri, recipe.to_dict(), overwrite=overwrite)
     return recipe, False
 
 
@@ -181,10 +181,10 @@ def _existing_augmentations(
     for prefix in eval_datasets.list_prefixes(
         augmentation_root_uri(eval_dataset_id, session=active)
     ):
-        manifest_uri = prefix.rstrip("/") + "/manifest.json"
-        if manifest_uri == skip or not eval_datasets.blob_exists(manifest_uri):
+        record_uri = prefix.rstrip("/") + "/augmentation.json"
+        if record_uri == skip or not eval_datasets.blob_exists(record_uri):
             continue
-        augmentations.append(Augmentation.from_dict(eval_datasets.read_manifest(manifest_uri)))
+        augmentations.append(Augmentation.from_dict(eval_datasets.read_record(record_uri)))
     return tuple(augmentations)
 
 

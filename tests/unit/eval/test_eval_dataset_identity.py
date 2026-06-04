@@ -122,7 +122,7 @@ def test_external_identity_changes_with_frame_content():
     assert first != second
 
 
-def test_eval_dataset_manifest_round_trips_route_and_kind(tmp_path):
+def test_eval_dataset_record_round_trips_route_and_kind(tmp_path):
     active = _session(tmp_path)
     dataset = EvalDataset.split_view(
         session=active,
@@ -141,12 +141,12 @@ def test_eval_dataset_manifest_round_trips_route_and_kind(tmp_path):
     assert payload["data_gcs_uri"] is None
     assert "schema_hash" not in payload
     assert "content_hash" not in payload
-    assert restored.manifest_gcs_uri == (
-        f"gs://bucket/root/qa/demo/baseline/eval/datasets/{dataset.id}/manifest.json"
+    assert restored.record_gcs_uri == (
+        f"gs://bucket/root/qa/demo/baseline/eval/datasets/{dataset.id}/eval_dataset.json"
     )
 
 
-def test_external_manifest_carries_hashes_and_data_uri(tmp_path):
+def test_external_record_carries_hashes_and_data_uri(tmp_path):
     active = _session(tmp_path)
     frame = pd.DataFrame({"row_id": [1, 2], "target": [0, 1], "score": [0.1, 0.9]})
     dataset = EvalDataset.external(
@@ -177,14 +177,14 @@ def test_eval_dataset_route_uris_preserve_current_gcs_prefix_layout(tmp_path):
     )
 
     assert dataset.route_prefix == "root/qa/dry_run/demo/baseline"
-    assert dataset.manifest_gcs_uri == (
-        f"gs://bucket/root/qa/dry_run/demo/baseline/eval/datasets/{dataset.id}/manifest.json"
+    assert dataset.record_gcs_uri == (
+        f"gs://bucket/root/qa/dry_run/demo/baseline/eval/datasets/{dataset.id}/eval_dataset.json"
     )
     assert dataset.data_gcs_uri == (
         f"gs://bucket/root/qa/dry_run/demo/baseline/eval/datasets/{dataset.id}/data.parquet"
     )
-    assert eval_dataset_module.manifest_uri_for(dataset.id, session=active) == (
-        f"gs://bucket/root/qa/dry_run/demo/baseline/eval/datasets/{dataset.id}/manifest.json"
+    assert eval_dataset_module.record_uri_for(dataset.id, session=active) == (
+        f"gs://bucket/root/qa/dry_run/demo/baseline/eval/datasets/{dataset.id}/eval_dataset.json"
     )
 
 

@@ -95,7 +95,7 @@ DELETED: datasets/index + datasets/latest overview artifacts; GCS dataset_index.
   `ls tests/unit/utils/` first; if the module's tests live elsewhere, add there)
 - Modify: `automl/utils/hashing.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 import pandas as pd
@@ -123,10 +123,10 @@ def test_content_hash_still_sees_column_order_and_dtypes():
     assert dataframe_content_hash(df) != dataframe_content_hash(df[["b", "a"]])
 ```
 
-- [ ] **Step 2:** Run: `uv run pytest tests/unit/utils/test_hashing.py -v` —
+- [x] **Step 2:** Run: `uv run pytest tests/unit/utils/test_hashing.py -v` —
 Expected: the order test FAILS against today's ordered row_hashes.
 
-- [ ] **Step 3: Implement** — in `automl/utils/hashing.py`, the one change
+- [x] **Step 3: Implement** — in `automl/utils/hashing.py`, the one change
 (design §4: a canonical multiset — sort the per-row hash list, reorder no
 data, the unique key plays no role):
 
@@ -146,9 +146,12 @@ def dataframe_content_hash(df: pd.DataFrame) -> str:
     return json_hash(payload)
 ```
 
-- [ ] **Step 4:** `uv run pytest tests/unit/utils/test_hashing.py tests/unit/data -v`
+- [x] **Step 4:** `uv run pytest tests/unit/utils/test_hashing.py tests/unit/data -v`
 — Expected: PASS (slice-contract hashes change value but tests compute
-expected values through the same function).
+expected values through the same function). *(Deviation: the pre-existing
+`test_dataframe_content_hash_is_sensitive_to_rows_columns_and_dtypes` pinned
+row-order sensitivity — its row-order assertion became a changed-rows
+assertion in the same change.)*
 
 ### Task 2: `automl/data/recipe.py` (TDD)
 
@@ -158,7 +161,7 @@ expected values through the same function).
 - Modify: `automl/data/sources/base.py`
 - Modify: `automl/data/__init__.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 """Recipe: the config-derived identity of a materialization."""
@@ -219,10 +222,10 @@ def test_recipe_diff_names_changed_fields_with_dotted_paths():
     assert recipe_diff(recorded, recorded) == []
 ```
 
-- [ ] **Step 2:** Run: `uv run pytest tests/unit/data/test_recipe.py -v` —
+- [x] **Step 2:** Run: `uv run pytest tests/unit/data/test_recipe.py -v` —
 Expected: FAIL (module missing).
 
-- [ ] **Step 3: Implement `automl/data/recipe.py`**
+- [x] **Step 3: Implement `automl/data/recipe.py`**
 
 ```python
 """Dataset recipe: the config-derived identity of a materialization.
@@ -276,7 +279,7 @@ def recipe_diff(
 __all__ = ["compute_recipe", "recipe_diff"]
 ```
 
-- [ ] **Step 4:** Add the default hook to `DataSource`
+- [x] **Step 4:** Add the default hook to `DataSource`
 (`automl/data/sources/base.py`):
 
 ```python
@@ -290,17 +293,17 @@ __all__ = ["compute_recipe", "recipe_diff"]
         return self.identity()
 ```
 
-- [ ] **Step 5:** Export from `automl/data/__init__.py`:
+- [x] **Step 5:** Export from `automl/data/__init__.py`:
 `from automl.data.recipe import compute_recipe, recipe_diff` (+ `__all__`).
 
-- [ ] **Step 6:** `uv run pytest tests/unit/data/test_recipe.py -v` — PASS.
+- [x] **Step 6:** `uv run pytest tests/unit/data/test_recipe.py -v` — PASS.
 
 ### Task 3: `load()` gains `refresh_source`; commit 1
 
 **Files:**
 - Modify: `automl/data/sources/base.py`, `local_csv.py`, `gcs_parquet.py`, `snowflake.py`
 
-- [ ] **Step 1:** Extend the abstract signature (file sources accept and
+- [x] **Step 1:** Extend the abstract signature (file sources accept and
 ignore it — layer-1 verbs are no-ops for them, design §2):
 
 ```python
@@ -318,9 +321,9 @@ ignore it — layer-1 verbs are no-ops for them, design §2):
 Each concrete `load()` adds the parameter; `local_csv`/`gcs_parquet` bodies
 start with `del refresh_source`. The Snowflake stub keeps raising.
 
-- [ ] **Step 2:** `uv run pytest tests/unit tests/contracts tests/integration` — PASS.
+- [x] **Step 2:** `uv run pytest tests/unit tests/contracts tests/integration` — PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A automl tests
@@ -339,7 +342,7 @@ Additive groundwork for attach-as-pinned (design step 2, part 1)."
 - Modify: `tests/unit/mlflow/test_experiment_dataset_artifacts.py`
 - Modify: `automl/mlflow/experiment/artifacts.py`
 
-- [ ] **Step 1: Write the failing tests** — the module's actual fixtures
+- [x] **Step 1: Write the failing tests** — the module's actual fixtures
 (review-verified) are `bound_file_mlflow` (file-backed MLflow) and
 `bound_artifacts` (fake GCS); the record helpers ride MLflow, so use
 `bound_file_mlflow`. Delete the tests pinning the deleted surface in the
@@ -365,9 +368,9 @@ def test_list_dataset_records_returns_every_version_folder(bound_file_mlflow):
     assert [record["id"] for record in records] == ["v1_a", "v2_b"]
 ```
 
-- [ ] **Step 2:** Run; expected FAIL (helpers missing).
+- [x] **Step 2:** Run; expected FAIL (helpers missing).
 
-- [ ] **Step 3: Implement in `automl/mlflow/experiment/artifacts.py`** —
+- [x] **Step 3: Implement in `automl/mlflow/experiment/artifacts.py`** —
 add the three helpers, delete `dataset_index_uri`, `read_dataset_index`,
 `write_dataset_index`, `log_dataset_catalog`, `_latest_dataset_payload`,
 `read_dataset_manifest`, `write_dataset_manifest` (and their `__all__`
@@ -430,7 +433,7 @@ def list_dataset_records(experiment_id: str | None = None) -> list[dict]:
 (Imports of `gcs` for the byte helpers — `write_dataset_frame` etc. —
 stay; only the JSON record/index surface moves.)
 
-- [ ] **Step 4:** `uv run pytest tests/unit/mlflow/test_experiment_dataset_artifacts.py -v` — PASS.
+- [x] **Step 4:** `uv run pytest tests/unit/mlflow/test_experiment_dataset_artifacts.py -v` — PASS.
 
 ### Task 5: Dataset value object — recipe + record_uri, manifest property dies
 
@@ -438,7 +441,7 @@ stay; only the JSON record/index surface moves.)
 - Modify: `automl/data/dataset.py`
 - Modify: `automl/data/contract.py`
 
-- [ ] **Step 1: `Dataset`** — add two fields and drop the GCS-manifest property:
+- [x] **Step 1: `Dataset`** — add two fields and drop the GCS-manifest property:
 
 ```python
     recipe: Mapping[str, Any] = field(default_factory=dict)   # readable dict, design §3
@@ -453,12 +456,12 @@ and drops `"manifest_gcs_uri"` — but **not** `"record_uri"`: the persisted
 record never stores a pointer to itself; `read_dataset_record` injects it
 on the way back (Task 4).
 
-- [ ] **Step 2: `DatasetRef`** (`automl/data/contract.py`) —
+- [x] **Step 2: `DatasetRef`** (`automl/data/contract.py`) —
 `manifest_uri` field → `record_uri`; `from_dataset` uses
 `record_uri=dataset.record_uri`; `from_dict` key `"manifest_uri"` →
 `"record_uri"`.
 
-- [ ] **Step 3:** Trial tag lineage — **all four** `manifest_uri` consumers
+- [x] **Step 3:** Trial tag lineage — **all four** `manifest_uri` consumers
 (review found two beyond the obvious pair):
 `automl/data/contract.py` has **two** `"data.manifest_uri"` literals
 (`verify_trial_tag_lineage` and a second occurrence ~line 187 — both →
@@ -475,7 +478,7 @@ tag keys) in the same change.
 - Modify: `tests/unit/data/test_materialize_return_shape.py`
 - Modify: `tests/integration/data_pipeline/test_materialize_load.py`
 
-- [ ] **Step 1: New public signature and flow** — replace `materialize` /
+- [x] **Step 1: New public signature and flow** — replace `materialize` /
 `_materialize_bound` in `automl/data/pipeline.py`:
 
 ```python
@@ -625,7 +628,7 @@ just read/wrote); `_dataset_object_state` drops its `"manifest"` entry
 **now forwards it**: `run()`'s `source.load(...)` call gains
 `refresh_source=self.refresh_source`.
 
-- [ ] **Step 2: Behavior tests** — in
+- [x] **Step 2: Behavior tests** — in
 `tests/integration/data_pipeline/test_materialize_load.py`, replace the
 index/latest/dataset_index assertions with the new lifecycle (reusing the
 file-backed-MLflow + fake-GCS fixtures already in the module). Existing
@@ -685,7 +688,7 @@ def test_attach_after_refresh_updates_recorded_recipe_last_wins(...):
     assert recipe_diff(record["recipe"], compute_recipe(drifted_spec, drifted)) == []
 ```
 
-- [ ] **Step 3:** `uv run pytest tests/integration/data_pipeline tests/unit/data -v`
+- [x] **Step 3:** `uv run pytest tests/integration/data_pipeline tests/unit/data -v`
 — PASS.
 
 ### Task 7: registry reads via records
@@ -694,7 +697,7 @@ def test_attach_after_refresh_updates_recorded_recipe_last_wins(...):
 - Modify: `automl/data/registry.py`
 - Modify: `automl/data/dataset.py` (`DatasetIndex` slimmed)
 
-- [ ] **Step 1: `list_datasets`** — assemble the in-memory view:
+- [x] **Step 1: `list_datasets`** — assemble the in-memory view:
 
 ```python
 def list_datasets(*, session: Session | None = None) -> DatasetIndex:
@@ -713,7 +716,7 @@ def list_datasets(*, session: Session | None = None) -> DatasetIndex:
 (it is never persisted again) and keeps `datasets`, `active_dataset_id`,
 `active`, `to_dataframe`.
 
-- [ ] **Step 2: `load_dataset_by_id`** — drop the index lookup + GCS manifest
+- [x] **Step 2: `load_dataset_by_id`** — drop the index lookup + GCS manifest
 read:
 
 ```python
@@ -726,7 +729,7 @@ read:
 (rest of the function — registry/frame reads from GCS, slice filtering —
 unchanged; `_dataset_by_id` helper deleted.)
 
-- [ ] **Step 3:** `automl/data/profile.py` imports nothing removed — verify
+- [x] **Step 3:** `automl/data/profile.py` imports nothing removed — verify
 `uv run pytest tests/unit/data tests/integration/data_pipeline -v` — PASS.
 
 ### Task 8: CLI + agent flags
@@ -740,7 +743,7 @@ unchanged; `_dataset_by_id` helper deleted.)
 - Modify: `tests/contracts/test_skill_commands.py`
 - Modify: `agent-skills/references/setup/data-pipeline.md`
 
-- [ ] **Step 1: `automl/cli/data.py`**
+- [x] **Step 1: `automl/cli/data.py`**
 
 ```python
 materialize_parser = data_sub.add_parser("materialize")
@@ -764,7 +767,7 @@ def _materialize(args: argparse.Namespace) -> int:
     return 0
 ```
 
-- [ ] **Step 2: `automl/agent/run_options.py`** — `ExperimentRunOptions`
+- [x] **Step 2: `automl/agent/run_options.py`** — `ExperimentRunOptions`
 gains `refresh_data: bool = False` (next to `refresh_source`);
 `add_experiment_run_options` adds
 `parser.add_argument("--refresh-data", action="store_true")`;
@@ -772,7 +775,7 @@ gains `refresh_data: bool = False` (next to `refresh_source`);
 `--refresh-data` when set. (The loop itself never sets either flag — they
 exist so a *human* invoking `experiment run` can refresh once at start.)
 
-- [ ] **Step 3: agent-skills scripts** — in `preflight.py`: there is **no
+- [x] **Step 3: agent-skills scripts** — in `preflight.py`: there is **no
 retired-flags list** (review-verified) — `--refresh-data` is rejected today
 only because `parse_known_args` reports it unknown. The real work: add
 `refresh_data` to `_base_payload` and the run-mode return, mirroring how
@@ -787,7 +790,7 @@ if invocation.get("refresh_source"):
     materialize_dataset_args.append("--refresh-source")
 ```
 
-- [ ] **Step 4: Contract tests** — in `tests/contracts/test_skill_commands.py`:
+- [x] **Step 4: Contract tests** — in `tests/contracts/test_skill_commands.py`:
 **replace** `test_automl_render_context_rejects_retired_refresh_data_flag`
 with `test_automl_render_context_forwards_refresh_data_to_materialize`
 (mirror of the existing refresh-source forwarding test, asserting the
@@ -798,17 +801,17 @@ rendered command ends `" data materialize --refresh-data"`). In
 the `fake_materialize` kwargs assertions (`refresh_data`/`refresh_source`
 both present).
 
-- [ ] **Step 5: Reference doc** — update
+- [x] **Step 5: Reference doc** — update
 `agent-skills/references/setup/data-pipeline.md`: describe the
 attach-as-pinned default (file edits surface as nothing until
 `--refresh-data` — uniform across sources, deliberate), both flags, the
 drift warning, and that the active version is printed on every call.
 
-- [ ] **Step 6:** `uv run pytest tests/unit/cli tests/contracts -v` — PASS.
+- [x] **Step 6:** `uv run pytest tests/unit/cli tests/contracts -v` — PASS.
 
 ### Task 9: full sweep of survivors, commit 2
 
-- [ ] **Step 1:** Find every remaining reference to the deleted surface:
+- [x] **Step 1:** Find every remaining reference to the deleted surface:
 
 ```bash
 grep -rn "dataset_index\|read_dataset_manifest\|write_dataset_manifest\|log_dataset_catalog\|manifest_gcs_uri\|manifest_uri\|DatasetIndex.from_dict" automl tests agent-skills --include="*.py" | grep -v eval
@@ -820,9 +823,9 @@ fixtures, `tests/unit/data/test_materialize_return_shape.py`,
 `tests/integration/data_pipeline/test_trial_replay.py` contract fixtures —
 `manifest_uri` → `record_uri`).
 
-- [ ] **Step 2:** `uv run pytest tests/unit tests/contracts tests/integration` — PASS.
+- [x] **Step 2:** `uv run pytest tests/unit tests/contracts tests/integration` — PASS.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A automl tests agent-skills
@@ -864,7 +867,7 @@ commit red):**
   `tests/integration/eval/test_augmentation_integration.py` (~84-86),
   `tests/e2e/test_eval_dataset_breadth.py`
 
-- [ ] **Step 1: Rename map** (a persisted record is named for the noun it
+- [x] **Step 1: Rename map** (a persisted record is named for the noun it
 serializes — design §6; locations stay GCS, only names change):
 
 | Old | New |
@@ -883,10 +886,10 @@ those literals become `"/augmentation.json"`). `Predictions.manifest_dict`
 and trial-level artifacts are **out of scope** (trial contract unchanged,
 design §6).
 
-- [ ] **Step 2:** Update the listed tests with the same map (they pin URI
+- [x] **Step 2:** Update the listed tests with the same map (they pin URI
 endings and payload keys — assertions move with the shape).
 
-- [ ] **Step 3: Verify — BEFORE committing, not after** (review: this gate
+- [x] **Step 3: Verify — BEFORE committing, not after** (review: this gate
 catches the consumers the file list might still miss):
 
 ```bash
@@ -896,16 +899,16 @@ grep -rn "manifest" automl/eval automl/mlflow/experiment/eval_datasets.py
 Expected: no hits for the renamed surface (predictions/trial manifests in
 other modules are fine). Any hit = a missed consumer; fix it first.
 
-- [ ] **Step 4:** `uv run pytest tests/unit/eval tests/integration/eval tests/unit/mlflow -v` — PASS.
+- [x] **Step 4:** `uv run pytest tests/unit/eval tests/integration/eval tests/unit/mlflow -v` — PASS.
 
 ### Task 11: green suite, handoff, commit 3
 
-- [ ] **Step 1:** `uv run pytest tests/unit tests/contracts tests/integration` — PASS.
+- [x] **Step 1:** `uv run pytest tests/unit tests/contracts tests/integration` — PASS.
 
-- [ ] **Step 2:** Update `docs/HANDOFF.md` (step 2 landed; next: step 3,
+- [x] **Step 2:** Update `docs/HANDOFF.md` (step 2 landed; next: step 3,
 Snowflake).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A automl tests docs/HANDOFF.md
@@ -918,15 +921,15 @@ git commit -m "Rename eval manifests for their nouns: eval_dataset.json + augmen
 
 ## Self-review checklist
 
-- [ ] Fast path provably reads no source and writes no GCS (the
+- [x] Fast path provably reads no source and writes no GCS (the
   `csv_path.unlink()` test).
-- [ ] Drift warning repeats on every call while drifted (call twice in the
+- [x] Drift warning repeats on every call while drifted (call twice in the
   caplog test), never blocks, never auto-derives.
-- [ ] `--refresh-source` without `--refresh-data` still re-derives (implies).
-- [ ] Nothing anywhere deletes or migrates old MLflow/GCS state; the
+- [x] `--refresh-source` without `--refresh-data` still re-derives (implies).
+- [x] Nothing anywhere deletes or migrates old MLflow/GCS state; the
   refuse-to-overwrite guard raises instead of clobbering.
-- [ ] `runs:/` record URIs resolve through `client.download_artifact`
+- [x] `runs:/` record URIs resolve through `client.download_artifact`
   (list-first — prod proxy 500-on-missing is already mitigated there).
-- [ ] Pointer behavior: pinning v2 then calling materialize attaches v2 and
+- [x] Pointer behavior: pinning v2 then calling materialize attaches v2 and
   *prints it*; minting v3 moves the pointer; old records stay readable.
-- [ ] `grep -rn "refresh-data" agent-skills` shows it forwarded, not retired.
+- [x] `grep -rn "refresh-data" agent-skills` shows it forwarded, not retired.

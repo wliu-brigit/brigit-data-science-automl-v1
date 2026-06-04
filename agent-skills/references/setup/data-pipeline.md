@@ -53,9 +53,22 @@ on where the training data lives, then pass it into `DataSpec`.
 
 | Source class | External data | Required constructor args |
 |---|---|---|
-| `SnowflakeSource` | Snowflake | `base_table`, `base_data_sql`, `training_data_sql` |
-| `LocalCSVSource` | Local CSV file | `csv_path`, `hash_key` |
-| `GCSParquetSource` | Parquet file in GCS | `gcs_uri`, `hash_key` |
+| `SnowflakeSource` | Snowflake | `base_table`, `base_data_sql`, `training_data_sql`, `unique_key` |
+| `LocalCSVSource` | Local CSV file | `csv_path`, `unique_key` |
+| `GCSParquetSource` | Parquet file in GCS | `gcs_uri`, `unique_key` |
+
+Every source declares two keys:
+
+- `unique_key` (required) — the stable row identifier: a column name, or a
+  tuple of column names for composite keys. Hard-validated at materialize:
+  the columns must be present and duplicate-free, or materialization errors
+  loudly. Eval joins, augmentations, and any row-addressed operation ride on
+  this guarantee.
+- `split_group_key` (optional, defaults to `unique_key`) — the key whose hash
+  assigns split buckets. Declare it separately only when splits must group by
+  a coarser key than row identity (e.g. rows are transactions identified by
+  `transaction_id`, but splits must group by `user_id` so one user never
+  straddles train/test).
 
 MLflow and GCS are platform requirements for every source. Snowflake
 credentials are needed only when the active project uses `SnowflakeSource`.
@@ -73,10 +86,11 @@ Whatever source you pick, the loaded dataframe must include:
   standardization.
 - Any columns listed as `exclude_cols` or `metadata_cols`.
 
-The pipeline adds or refreshes `SPLIT_PCT` as a uniformly distributed integer
-0-99 column during materialization. If the source declares `hash_key`, the
-split buckets are derived from those stable key columns; otherwise the
-pipeline uses a deterministic row-content fallback.
+The pipeline adds `SPLIT_PCT` as a uniformly distributed integer 0-99 column
+during materialization, hashed from the source's `split_group_key` (which
+defaults to `unique_key`). A source column already named `SPLIT_PCT` is a
+loud error — the pipeline owns the column and never silently recomputes over
+an ambiguous one.
 
 ## Snowflake
 
@@ -104,16 +118,17 @@ from automl.data import DataSpec
 from automl.data.sources import LocalCSVSource
 
 DATA = DataSpec(
-    source=LocalCSVSource(csv_path="raw_data/your_file.csv", hash_key="row_id"),
+    source=LocalCSVSource(csv_path="raw_data/your_file.csv", unique_key="row_id"),
     exclude_cols=[],
     metadata_cols=[],
 )
 ```
 
-`hash_key` is a stable column name, or a list of column names, available in
+`unique_key` is a stable column name, or a list of column names, available in
 the raw file. During materialization, the pipeline computes
-`SPLIT_PCT = stable_hash(hash_key) % 100`, so rows with the same hash-key values
-land in the same split across runs.
+`SPLIT_PCT = stable_hash(split_group_key) % 100` (defaulting to the unique
+key), so rows with the same group-key values land in the same split across
+runs.
 
 ## GCS parquet
 
@@ -124,7 +139,7 @@ from automl.data.sources import GCSParquetSource
 DATA = DataSpec(
     source=GCSParquetSource(
         gcs_uri="gs://your-bucket/path/to/data.parquet",
-        hash_key="row_id",
+        unique_key="row_id",
     ),
     exclude_cols=[],
     metadata_cols=[],
@@ -165,11 +180,13 @@ sequence before publishing an immutable dataset:
 
 - Load raw rows through `DATA.source.load(...)`.
 - Standardize source column names.
-- Normalize target, hash-key, and metadata declarations against the
-  standardized columns.
-- Apply quality filters while preserving target, hash-key, and metadata
+- Normalize target, key (`unique_key`/`split_group_key`), and metadata
+  declarations against the standardized columns.
+- Apply quality filters while preserving target, key, and metadata
   columns.
-- Add deterministic `SPLIT_PCT` buckets.
+- Add deterministic `SPLIT_PCT` buckets hashed from `split_group_key`.
+- Validate the ingestion edge: `unique_key` present and duplicate-free,
+  `SPLIT_PCT` present, integer, 0-99.
 - Build the `FeatureRegistry` from the filtered dataframe and declared column
   roles.
 - Compute the immutable `Dataset` identity and component hashes.

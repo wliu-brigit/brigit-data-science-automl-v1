@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from automl.data.split import HashKey
+from automl.data.split import Key, _normalize_key
 
 if TYPE_CHECKING:
     from automl.data.pipeline import DataPipeline
@@ -16,7 +16,20 @@ if TYPE_CHECKING:
 
 class DataSource(ABC):
     kind = "base"
-    hash_key: HashKey | None = None
+    unique_key: Key
+    split_group_key: Key | None = None
+
+    @property
+    def unique_key_columns(self) -> tuple[str, ...]:
+        """The declared stable row identifier, normalized."""
+        return _normalize_key(self.unique_key, field_name="unique_key")
+
+    @property
+    def split_group_key_columns(self) -> tuple[str, ...]:
+        """The key whose hash assigns split buckets; defaults to unique_key."""
+        if self.split_group_key is None:
+            return self.unique_key_columns
+        return _normalize_key(self.split_group_key, field_name="split_group_key")
 
     @abstractmethod
     def load(self, *, project_dir: str | Path | None = None, nrows: int | None = None) -> pd.DataFrame:

@@ -49,7 +49,7 @@ def test_split_view_identity_is_recipe_based_not_frame_based():
         split_pct_col="SPLIT_PCT",
         buckets=((80, 90), (95, 100)),
         target_column="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
     second = eval_dataset_module.compute_eval_dataset_identity(
         kind="split_view",
@@ -57,7 +57,7 @@ def test_split_view_identity_is_recipe_based_not_frame_based():
         split_pct_col="SPLIT_PCT",
         buckets=((80, 90), (95, 100)),
         target_column="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
     same_rows_different_recipe = eval_dataset_module.compute_eval_dataset_identity(
         kind="split_view",
@@ -65,7 +65,7 @@ def test_split_view_identity_is_recipe_based_not_frame_based():
         split_pct_col="SPLIT_PCT",
         buckets=((80, 100),),
         target_column="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
 
     assert first == second
@@ -79,7 +79,7 @@ def test_split_view_identity_sorts_and_rejects_overlapping_buckets():
         split_pct_col="SPLIT_PCT",
         buckets=((10, 20), (30, 40)),
         target_column="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
     reversed_order = eval_dataset_module.compute_eval_dataset_identity(
         kind="split_view",
@@ -87,7 +87,7 @@ def test_split_view_identity_sorts_and_rejects_overlapping_buckets():
         split_pct_col="SPLIT_PCT",
         buckets=((30, 40), (10, 20)),
         target_column="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
 
     assert reversed_order == ordered
@@ -98,7 +98,7 @@ def test_split_view_identity_sorts_and_rejects_overlapping_buckets():
             split_pct_col="SPLIT_PCT",
             buckets=((10, 20), (15, 30)),
             target_column="target",
-            hash_key=("row_id",),
+            unique_key=("row_id",),
         )
 
 
@@ -110,13 +110,13 @@ def test_external_identity_changes_with_frame_content():
         kind="external",
         frame=frame,
         target_column="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
     second = eval_dataset_module.compute_eval_dataset_identity(
         kind="external",
         frame=changed,
         target_column="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
 
     assert first != second
@@ -131,7 +131,7 @@ def test_eval_dataset_manifest_round_trips_route_and_kind(tmp_path):
         split_pct_col="SPLIT_PCT",
         buckets=((50, 100),),
         target_column="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
 
     payload = dataset.to_dict()
@@ -153,7 +153,7 @@ def test_external_manifest_carries_hashes_and_data_uri(tmp_path):
         session=active,
         frame=frame,
         target_column="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
         provenance={"source": "unit"},
     )
 
@@ -173,7 +173,7 @@ def test_eval_dataset_route_uris_preserve_current_gcs_prefix_layout(tmp_path):
         session=active,
         frame=frame,
         target_column="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
 
     assert dataset.route_prefix == "root/qa/dry_run/demo/baseline"
@@ -203,7 +203,7 @@ def test_eval_registry_dataset_root_uri_pins_route_matrix(tmp_path, namespace, d
     assert registry_module._eval_dataset_root(active) == expected
 
 
-def test_external_identity_validates_target_hash_key_and_duplicates(tmp_path):
+def test_external_identity_validates_target_unique_key_and_duplicates(tmp_path):
     active = _session(tmp_path)
     frame = pd.DataFrame({"row_id": [1, 1], "target": [0, 1]})
 
@@ -212,19 +212,19 @@ def test_external_identity_validates_target_hash_key_and_duplicates(tmp_path):
             session=active,
             frame=frame.drop(columns=["target"]),
             target_column="target",
-            hash_key=("row_id",),
+            unique_key=("row_id",),
         )
-    with pytest.raises(ValueError, match="hash_key"):
+    with pytest.raises(ValueError, match="unique_key"):
         EvalDataset.external(
             session=active,
             frame=frame,
             target_column="target",
-            hash_key=("missing",),
+            unique_key=("missing",),
         )
     with pytest.raises(ValueError, match="duplicate"):
         EvalDataset.external(
             session=active,
             frame=frame,
             target_column="target",
-            hash_key=("row_id",),
+            unique_key=("row_id",),
         )

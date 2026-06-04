@@ -112,7 +112,7 @@ def _models() -> ModelsConfig:
 
 
 def _session(tmp_path: Path, csv_path: Path) -> Session:
-    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, hash_key="row_id"))
+    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"))
     return _session_for_spec(tmp_path, spec)
 
 
@@ -252,7 +252,7 @@ def test_materialize_logs_source_trace_artifacts_to_experiment_overview(tmp_path
     spec = DataSpec(
         source=TraceCSVSource(
             csv_path=_write_tiny_csv(tmp_path),
-            hash_key="row_id",
+            unique_key="row_id",
             trace_file=trace_file,
         )
     )
@@ -330,12 +330,12 @@ def test_build_dataset_reads_gcs_parquet_source_without_materializing_objects(tm
         }
     )
     gcs.write_parquet(raw_uri, raw_df)
-    spec = DataSpec(source=GCSParquetSource(gcs_uri=raw_uri, hash_key="row_id"))
+    spec = DataSpec(source=GCSParquetSource(gcs_uri=raw_uri, unique_key="row_id"))
 
     loaded = build_dataset(session=_session_for_spec(tmp_path, spec))
 
     assert loaded.dataset.source_identity["kind"] == "gcs_parquet"
-    assert loaded.dataset.hash_key == ("row_id",)
+    assert loaded.dataset.unique_key == ("row_id",)
     assert "SPLIT_PCT" in loaded.df.columns
     assert not any(
         blob.startswith("demo/baseline/data/datasets/") for bucket, blob in fake_gcs.store

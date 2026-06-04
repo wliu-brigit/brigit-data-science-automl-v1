@@ -27,7 +27,7 @@ def prepare_eval_dataset(
     kind: str = "split_view",
     frame: pd.DataFrame | None = None,
     target_col: str | None = None,
-    hash_key: Sequence[str] | None = None,
+    unique_key: Sequence[str] | None = None,
     provenance: Mapping[str, object] | None = None,
     overwrite: bool = False,
 ) -> tuple[EvalDataset, bool]:
@@ -43,7 +43,7 @@ def prepare_eval_dataset(
             active,
             frame=frame,
             target_col=target_col or active.config.target_column,
-            hash_key=tuple(hash_key or ()),
+            unique_key=tuple(unique_key or ()),
             provenance=provenance,
             overwrite=overwrite,
         )
@@ -75,7 +75,7 @@ def prepare_eval_augmentation(
         eval_dataset_id=base.id,
         name=name,
         frame=frame,
-        hash_key=base.hash_key,
+        unique_key=base.unique_key,
     )
     data_exists = eval_datasets.blob_exists(augmentation.data_gcs_uri)
     manifest_exists = eval_datasets.blob_exists(augmentation.manifest_gcs_uri)
@@ -119,7 +119,7 @@ def _prepare_split_view(
         split_pct_col=parent.split_pct_col,
         buckets=buckets,
         target_column=parent.target_column,
-        hash_key=parent.hash_key,
+        unique_key=parent.unique_key,
     )
     if eval_datasets.blob_exists(recipe.manifest_gcs_uri) and not overwrite:
         return EvalDataset.from_dict(eval_datasets.read_manifest(recipe.manifest_gcs_uri)), True
@@ -132,7 +132,7 @@ def _prepare_external(
     *,
     frame: pd.DataFrame,
     target_col: str,
-    hash_key: Sequence[str],
+    unique_key: Sequence[str],
     provenance: Mapping[str, object] | None,
     overwrite: bool,
 ) -> tuple[EvalDataset, bool]:
@@ -140,7 +140,7 @@ def _prepare_external(
         session=active,
         frame=frame,
         target_column=target_col,
-        hash_key=hash_key,
+        unique_key=unique_key,
         provenance=provenance,
     )
     if recipe.data_gcs_uri is None:
@@ -195,19 +195,19 @@ def _validate_augmentation_against_eval_frame(
     eval_frame: pd.DataFrame,
     existing: Sequence[Augmentation],
 ) -> None:
-    hash_key = list(augmentation.hash_key)
-    base_rows = set(map(tuple, eval_frame.loc[:, hash_key].itertuples(index=False, name=None)))
-    augmentation_rows = set(map(tuple, frame.loc[:, hash_key].itertuples(index=False, name=None)))
+    unique_key = list(augmentation.unique_key)
+    base_rows = set(map(tuple, eval_frame.loc[:, unique_key].itertuples(index=False, name=None)))
+    augmentation_rows = set(map(tuple, frame.loc[:, unique_key].itertuples(index=False, name=None)))
     missing_rows = sorted(augmentation_rows - base_rows)
     if missing_rows:
         raise ValueError(f"augmentation rows not present in eval dataset: {missing_rows[:5]}")
-    value_columns = set(augmentation.columns) - set(augmentation.hash_key)
-    base_overlap = sorted(value_columns & (set(eval_frame.columns) - set(augmentation.hash_key)))
+    value_columns = set(augmentation.columns) - set(augmentation.unique_key)
+    base_overlap = sorted(value_columns & (set(eval_frame.columns) - set(augmentation.unique_key)))
     if base_overlap:
         raise ValueError(f"augmentation columns overlap eval dataset columns: {base_overlap}")
     existing_columns: set[str] = set()
     for item in existing:
-        existing_columns.update(set(item.columns) - set(item.hash_key))
+        existing_columns.update(set(item.columns) - set(item.unique_key))
     existing_overlap = sorted(value_columns & existing_columns)
     if existing_overlap:
         raise ValueError(f"augmentation columns overlap existing augmentations: {existing_overlap}")

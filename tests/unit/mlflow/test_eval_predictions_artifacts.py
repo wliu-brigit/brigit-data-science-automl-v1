@@ -122,7 +122,7 @@ def test_write_load_and_list_predictions(active_run_with_fake_gcs):
         eval_dataset_id="eval-v1",
         eval_dataset_kind="external",
         label="holdout",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
         frame=pd.DataFrame({"row_id": [1, 2], "y_pred": [0.2, 0.8]}),
         augmentations_used=(),
         written_at="2026-05-27T00:00:00+00:00",

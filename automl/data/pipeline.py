@@ -13,7 +13,7 @@ import pandas as pd
 
 from automl.data.dataset import ComponentHashes, Dataset, DatasetIndex, LoadedDataset
 from automl.data.features import FeatureRegistry
-from automl.data.split import ROW_FALLBACK_HASH_KEY, add_split_pct, hash_key_columns
+from automl.data.split import add_split_pct, validate_split_pct, validate_unique_key
 from automl.errors import DataError, ProjectError
 from automl.mlflow import client as mlflow_client
 from automl.mlflow import experiment as mlflow_experiment
@@ -39,16 +39,24 @@ class DataPipeline:
             nrows=self.spec.dry_run_rows if self.session.dry_run else None,
         )
         df, original_names = self.standardize_columns(raw)
-        hash_key = self._normalized_hash_key(original_names)
+        self._check_split_pct_collision(original_names)
+        unique_key = self._normalize_key_columns(self.spec.source.unique_key_columns, original_names)
+        split_group_key = self._normalize_key_columns(
+            self.spec.source.split_group_key_columns, original_names
+        )
         target_column = self._normalized_target(original_names, df)
         metadata_cols = self._normalize_declared(self.spec.metadata_cols, original_names)
-        registry_metadata_cols = _unique_tuple((*metadata_cols, *hash_key))
+        registry_metadata_cols = _unique_tuple((*metadata_cols, *unique_key, *split_group_key))
         exclude_cols = self._normalize_declared(self.spec.exclude_cols, original_names)
         df = self._apply_quality_filters(
             df,
-            protected_cols=(target_column, *hash_key, *metadata_cols),
+            protected_cols=(target_column, *unique_key, *split_group_key, *metadata_cols),
         )
-        df = add_split_pct(df, hash_key=None if hash_key == (ROW_FALLBACK_HASH_KEY,) else hash_key)
+        df = add_split_pct(
+            df, split_group_key=split_group_key, split_pct_col=self.split_pct_col
+        )
+        validate_unique_key(df, unique_key=unique_key, source_label=self.spec.source.kind)
+        validate_split_pct(df, split_pct_col=self.split_pct_col, source_label=self.spec.source.kind)
         registry = FeatureRegistry().build_from_df(
             df,
             target_column=target_column,
@@ -60,7 +68,8 @@ class DataPipeline:
         dataset = self._dataset_for(
             df,
             registry,
-            hash_key=hash_key,
+            unique_key=unique_key,
+            split_group_key=split_group_key,
             target_column=target_column,
         )
         return LoadedDataset(dataset=dataset, df=df, registry=registry)
@@ -82,15 +91,25 @@ class DataPipeline:
         out.columns = normalized
         return out, original_names
 
-    def _normalized_hash_key(self, original_names: dict[str, str]) -> tuple[str, ...]:
-        source_hash_key = getattr(self.spec.source, "hash_key", None)
-        if source_hash_key is None:
-            return (ROW_FALLBACK_HASH_KEY,)
+    def _normalize_key_columns(
+        self, columns: tuple[str, ...], original_names: dict[str, str]
+    ) -> tuple[str, ...]:
         raw_to_normalized = {raw: normalized for normalized, raw in original_names.items()}
         return tuple(
-            raw_to_normalized.get(column, _normalize_column(column))
-            for column in hash_key_columns(source_hash_key)
+            raw_to_normalized.get(column, _normalize_column(column)) for column in columns
         )
+
+    def _check_split_pct_collision(self, original_names: dict[str, str]) -> None:
+        collisions = [
+            raw
+            for normalized, raw in original_names.items()
+            if normalized == self.split_pct_col.lower()
+        ]
+        if collisions:
+            raise DataError(
+                f"source column(s) {collisions} collide with {self.split_pct_col}: the pipeline "
+                "computes it from split_group_key — rename or remove the source column"
+            )
 
     def _normalize_declared(
         self, values: tuple[str, ...], original_names: dict[str, str]
@@ -138,12 +157,14 @@ class DataPipeline:
         df: pd.DataFrame,
         registry: FeatureRegistry,
         *,
-        hash_key: tuple[str, ...],
+        unique_key: tuple[str, ...],
+        split_group_key: tuple[str, ...],
         target_column: str,
         dataset_id: str = "unmaterialized",
     ) -> Dataset:
         source_identity = dict(self.spec.source.identity())
-        source_identity["hash_key"] = list(hash_key)
+        source_identity["unique_key"] = list(unique_key)
+        source_identity["split_group_key"] = list(split_group_key)
         component_hashes = ComponentHashes(
             source_identity=json_hash(source_identity),
             feature_registry=registry.content_hash(),
@@ -153,7 +174,8 @@ class DataPipeline:
         identity_hash = json_hash(
             {
                 "component_hashes": component_hashes.to_dict(),
-                "hash_key": list(hash_key),
+                "unique_key": list(unique_key),
+                "split_group_key": list(split_group_key),
                 "n_columns": len(df.columns),
                 "n_rows": len(df),
                 "project_name": self.session.project_name,
@@ -175,7 +197,8 @@ class DataPipeline:
             n_columns=len(df.columns),
             target_column=target_column,
             split_pct_col=self.split_pct_col,
-            hash_key=hash_key,
+            unique_key=unique_key,
+            split_group_key=split_group_key,
         )
 
 
@@ -312,7 +335,8 @@ def _validate_existing_dataset_matches_candidate(existing: Dataset, candidate: D
         "n_columns",
         "target_column",
         "split_pct_col",
-        "hash_key",
+        "unique_key",
+        "split_group_key",
     ):
         if getattr(existing, field) != getattr(candidate, field):
             mismatches.append(field)

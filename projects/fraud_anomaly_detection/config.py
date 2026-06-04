@@ -24,6 +24,7 @@ source = SnowflakeSource(
     base_table="<TBD_base_table>",
     base_data_sql="data/queries/base_data.sql",
     training_data_sql="data/queries/training_data.sql",
+    unique_key="<TBD_unique_key>",
 )
 
 DATA = DataSpec(

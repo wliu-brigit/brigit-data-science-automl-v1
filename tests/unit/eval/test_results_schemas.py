@@ -88,7 +88,7 @@ def test_predictions_manifest_and_frame_round_trip():
         eval_dataset_id="v1_abcdef12",
         eval_dataset_kind="external",
         label="external_augmented",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
         frame=frame,
         augmentations_used=({"name": "risk_weight", "hash8": "12345678"},),
         written_at="2026-05-27T00:00:00+00:00",
@@ -100,6 +100,6 @@ def test_predictions_manifest_and_frame_round_trip():
     assert "frame" not in manifest
     assert "columns" not in manifest
     assert manifest["row_count"] == 2
-    assert manifest["hash_key"] == ["row_id"]
+    assert manifest["unique_key"] == ["row_id"]
     assert restored.frame.equals(frame)
     assert restored.augmentations_used == ({"name": "risk_weight", "hash8": "12345678"},)

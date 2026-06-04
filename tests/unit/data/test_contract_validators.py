@@ -58,7 +58,8 @@ def _loaded_dataset() -> LoadedDataset:
         n_columns=len(df.columns),
         target_column="target",
         split_pct_col="SPLIT_PCT",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
+        split_group_key=("row_id",),
     )
     return LoadedDataset(dataset=dataset, df=df, registry=registry)
 

@@ -38,7 +38,7 @@ def test_homecredit_data_model_breadth_external_gate():
         assert index.active.id == loaded.id
         assert active.config.data_spec.source.kind == "local_csv"
         assert (
-            GCSParquetSource("gs://bucket/path/train.parquet", hash_key="row_id").identity()["kind"]
+            GCSParquetSource("gs://bucket/path/train.parquet", unique_key="row_id").identity()["kind"]
             == "gcs_parquet"
         )
         assert (

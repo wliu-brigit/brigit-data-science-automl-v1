@@ -14,7 +14,12 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 # The placeholder check flags any file containing "TBD_", so a comment that
 # spells it would fail `validate project` forever — even after the user fills
 # every real slot.
-CONFIG_PLACEHOLDERS = ("<TBD_target_column>", "<TBD_base_table>", "TBD_experiment_id")
+CONFIG_PLACEHOLDERS = (
+    "<TBD_target_column>",
+    "<TBD_base_table>",
+    "<TBD_unique_key>",
+    "TBD_experiment_id",
+)
 
 
 def _touch_project(root, name: str) -> None:

@@ -61,11 +61,11 @@ def test_eval_dataset_breadth_external_gate():
             kind="external",
             frame=external_frame,
             target_col=active.config.target_column,
-            hash_key=loaded.dataset.hash_key,
+            unique_key=loaded.dataset.unique_key,
             provenance={"source": "eval_dataset_e2e"},
         )
-        hash_key = list(loaded.dataset.hash_key)
-        augmentation_frame = external_frame.loc[:, hash_key].copy()
+        unique_key = list(loaded.dataset.unique_key)
+        augmentation_frame = external_frame.loc[:, unique_key].copy()
         augmentation_frame["risk_weight"] = (
             pd.Series(range(len(augmentation_frame)), dtype="float64") + 1.0
         )

@@ -45,7 +45,8 @@ def _loaded() -> LoadedDataset:
         n_columns=len(df.columns),
         target_column="target",
         split_pct_col="SPLIT_PCT",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
+        split_group_key=("row_id",),
     )
     return LoadedDataset(dataset=dataset, df=df, registry=registry)
 
@@ -79,6 +80,9 @@ def test_write_profile_artifacts_produces_card_observations_manifest_and_charts(
     card = json.loads((tmp_path / "data_card.json").read_text())
     assert card["n_rows"] == 4
     assert card["target"] == "target"
+    observations = json.loads((tmp_path / "data_observations.json").read_text())
+    cardinality = [row for row in observations["observations"] if row["kind"] == "unique_key_cardinality"]
+    assert cardinality and "1:1" in cardinality[0]["text"]
 
 
 def test_profile_artifact_writer_wraps_crashing_chart_as_observation(monkeypatch, tmp_path):

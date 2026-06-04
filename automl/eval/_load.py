@@ -24,7 +24,7 @@ class LoadedEvalDataset:
     df: pd.DataFrame
     dataset: EvalDataset
     target_column: str
-    hash_key: tuple[str, ...]
+    unique_key: tuple[str, ...]
     row_ids: pd.DataFrame
     registry: object | None = None
 
@@ -46,8 +46,8 @@ def load_eval_dataset(eval_dataset_id: str, *, session: Session | None = None) -
             df=frame,
             dataset=recipe,
             target_column=recipe.target_column,
-            hash_key=recipe.hash_key,
-            row_ids=frame.loc[:, list(recipe.hash_key)].reset_index(drop=True),
+            unique_key=recipe.unique_key,
+            row_ids=frame.loc[:, list(recipe.unique_key)].reset_index(drop=True),
             registry=getattr(loaded, "registry", None),
         )
     if recipe.kind == "external":
@@ -61,19 +61,19 @@ def load_eval_dataset(eval_dataset_id: str, *, session: Session | None = None) -
             df=frame,
             dataset=recipe,
             target_column=recipe.target_column,
-            hash_key=recipe.hash_key,
-            row_ids=frame.loc[:, list(recipe.hash_key)].reset_index(drop=True),
+            unique_key=recipe.unique_key,
+            row_ids=frame.loc[:, list(recipe.unique_key)].reset_index(drop=True),
         )
     raise ValueError(f"unsupported eval dataset kind {recipe.kind!r}")
 
 
 def _validate_external_payload(recipe: EvalDataset, frame: pd.DataFrame) -> None:
-    required_columns = (*recipe.hash_key, recipe.target_column)
+    required_columns = (*recipe.unique_key, recipe.target_column)
     missing = [column for column in required_columns if column not in frame.columns]
     if missing:
         raise ValueError(f"external eval dataset is missing manifest column(s): {missing}")
-    if frame.duplicated(subset=list(recipe.hash_key), keep=False).any():
-        raise ValueError("external eval dataset contains duplicate hash_key rows")
+    if frame.duplicated(subset=list(recipe.unique_key), keep=False).any():
+        raise ValueError("external eval dataset contains duplicate unique_key rows")
     actual_schema_hash = schema_hash(frame)
     if recipe.schema_hash and actual_schema_hash != recipe.schema_hash:
         raise ValueError(
@@ -131,8 +131,8 @@ def _validate_augmentation_payload(augmentation: Augmentation, frame: pd.DataFra
     missing = [column for column in augmentation.columns if column not in frame.columns]
     if missing:
         raise ValueError(f"augmentation is missing manifest column(s): {missing}")
-    if frame.duplicated(subset=list(augmentation.hash_key), keep=False).any():
-        raise ValueError("augmentation contains duplicate hash_key rows")
+    if frame.duplicated(subset=list(augmentation.unique_key), keep=False).any():
+        raise ValueError("augmentation contains duplicate unique_key rows")
     actual_schema_hash = schema_hash(frame)
     if actual_schema_hash != augmentation.schema_hash:
         raise ValueError(

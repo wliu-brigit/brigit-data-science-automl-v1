@@ -108,12 +108,12 @@ def _required_attr(metric: Metric, attr: str) -> tuple[str, ...]:
     return tuple(str(item) for item in value)
 
 
-def _hash_key_columns(hash_key: str | Sequence[str] | None) -> tuple[str, ...]:
-    if hash_key is None:
-        raise ValueError("hash_key is required when joining augmentation frames")
-    if isinstance(hash_key, str):
-        return (hash_key,)
-    return tuple(str(column) for column in hash_key)
+def _unique_key_columns(unique_key: str | Sequence[str] | None) -> tuple[str, ...]:
+    if unique_key is None:
+        raise ValueError("unique_key is required when joining augmentation frames")
+    if isinstance(unique_key, str):
+        return (unique_key,)
+    return tuple(str(column) for column in unique_key)
 
 
 class EvalSpec:
@@ -162,12 +162,12 @@ class EvalSpec:
         target_col: str,
         *,
         augmentation_frames: Mapping[str, pd.DataFrame] | None = None,
-        hash_key: str | Sequence[str] | None = None,
+        unique_key: str | Sequence[str] | None = None,
     ) -> dict[str, object]:
         df_for_metrics = self._with_augmentation_frames(
             df,
             augmentation_frames=augmentation_frames,
-            hash_key=hash_key,
+            unique_key=unique_key,
         )
         self.validate_columns(df_for_metrics, target_col)
         records = []
@@ -186,7 +186,7 @@ class EvalSpec:
         df: pd.DataFrame,
         *,
         augmentation_frames: Mapping[str, pd.DataFrame] | None,
-        hash_key: str | Sequence[str] | None,
+        unique_key: str | Sequence[str] | None,
     ) -> pd.DataFrame:
         needed = self.required_augmentations()
         if not needed:
@@ -195,7 +195,7 @@ class EvalSpec:
         missing = [name for name in needed if name not in frames]
         if missing:
             raise ValueError(f"required augmentations missing: {missing}")
-        keys = _hash_key_columns(hash_key)
+        keys = _unique_key_columns(unique_key)
         joined = df
         for name in needed:
             frame = frames[name]
@@ -203,10 +203,10 @@ class EvalSpec:
                 raise TypeError(f"augmentation {name!r} must be a pandas DataFrame")
             missing_keys = [key for key in keys if key not in frame.columns]
             if missing_keys:
-                raise KeyError(f"augmentation {name!r} missing hash_key columns: {missing_keys}")
+                raise KeyError(f"augmentation {name!r} missing unique_key columns: {missing_keys}")
             duplicate_rows = frame.duplicated(subset=list(keys), keep=False)
             if bool(duplicate_rows.any()):
-                raise ValueError(f"augmentation {name!r} contains duplicate hash_key rows")
+                raise ValueError(f"augmentation {name!r} contains duplicate unique_key rows")
             overlap = sorted(set(frame.columns) & set(joined.columns) - set(keys))
             if overlap:
                 raise ValueError(

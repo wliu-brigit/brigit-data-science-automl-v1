@@ -647,7 +647,8 @@ def test_data_materialize_prints_dataset_manifest_not_loaded_rows(monkeypatch, t
             n_columns=2,
             target_column="target",
             split_pct_col="SPLIT_PCT",
-            hash_key=("row_id",),
+            unique_key=("row_id",),
+            split_group_key=("row_id",),
         )
 
     _patch_attr(monkeypatch, "automl.cli.data", "materialize", fake_materialize)

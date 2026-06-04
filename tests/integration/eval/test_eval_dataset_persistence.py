@@ -57,7 +57,8 @@ def _dataset() -> Dataset:
         n_columns=4,
         target_column="target",
         split_pct_col="SPLIT_PCT",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
+        split_group_key=("row_id",),
     )
 
 
@@ -147,7 +148,7 @@ def test_external_prepare_writes_frame_and_loads_round_trip(tmp_path, monkeypatc
         kind="external",
         frame=frame,
         target_col="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
         provenance={"source": "unit"},
     )
     second, second_cached = prepare_eval_dataset(
@@ -155,7 +156,7 @@ def test_external_prepare_writes_frame_and_loads_round_trip(tmp_path, monkeypatc
         kind="external",
         frame=frame,
         target_col="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
         provenance={"source": "unit"},
     )
     loaded = load_eval_dataset(eval_dataset.id, session=active)
@@ -179,7 +180,7 @@ def test_external_load_rejects_payload_that_no_longer_matches_manifest(tmp_path,
         kind="external",
         frame=frame,
         target_col="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
         provenance={"source": "unit"},
     )
     parquet_store[eval_dataset.data_gcs_uri] = frame.assign(score=[0.2, 0.9])

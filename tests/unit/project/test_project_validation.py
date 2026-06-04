@@ -31,7 +31,7 @@ def _session(tmp_path, *, missing_env: bool = False, partial: bool = False) -> S
         task=None if partial else BinaryClassification(target="TARGET"),
         data_spec=None
         if partial
-        else DataSpec(source=LocalCSVSource(csv_path=Path("data.csv"), hash_key="id")),
+        else DataSpec(source=LocalCSVSource(csv_path=Path("data.csv"), unique_key="id")),
         eval_spec=None if partial else EvalSpec(primary=Auc()),
         run_config=None
         if partial
@@ -167,6 +167,7 @@ def test_validate_project_live_marks_snowflake_pending(monkeypatch, tmp_path):
             base_table="demo.table",
             base_data_sql="data/queries/base_data.sql",
             training_data_sql="data/queries/training_data.sql",
+            unique_key="row_id",
         )
     )
     object.__setattr__(session.config, "data_spec", snowflake_spec)

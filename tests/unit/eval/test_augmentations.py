@@ -67,7 +67,7 @@ def test_augmentation_manifest_round_trips_route_fields(tmp_path):
         eval_dataset_id="ev_123",
         name="risk_weight",
         frame=frame,
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
     restored = eval_dataset_module.Augmentation.from_dict(
         {**augmentation.to_dict(), "future": "ignored"}
@@ -91,7 +91,7 @@ def test_augmentation_route_uris_preserve_current_gcs_prefix_layout(tmp_path):
         eval_dataset_id="ev_123",
         name="risk_weight",
         frame=frame,
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
 
     base = (
@@ -107,7 +107,7 @@ def test_augmentation_route_uris_preserve_current_gcs_prefix_layout(tmp_path):
     )
 
 
-def test_augmentation_validation_rejects_bad_names_hash_keys_and_empty_payload(tmp_path):
+def test_augmentation_validation_rejects_bad_names_unique_keys_and_empty_payload(tmp_path):
     active = _session(tmp_path)
     frame = pd.DataFrame({"row_id": [1, 1], "risk_weight": [1.0, 2.0]})
 
@@ -117,7 +117,7 @@ def test_augmentation_validation_rejects_bad_names_hash_keys_and_empty_payload(t
             eval_dataset_id="ev_123",
             name="RiskWeight",
             frame=frame,
-            hash_key=("row_id",),
+            unique_key=("row_id",),
         )
     with pytest.raises(ValueError, match="duplicate"):
         eval_dataset_module.Augmentation.create(
@@ -125,21 +125,21 @@ def test_augmentation_validation_rejects_bad_names_hash_keys_and_empty_payload(t
             eval_dataset_id="ev_123",
             name="risk_weight",
             frame=frame,
-            hash_key=("row_id",),
+            unique_key=("row_id",),
         )
-    with pytest.raises(ValueError, match="non-hash-key"):
+    with pytest.raises(ValueError, match="non-unique-key"):
         eval_dataset_module.Augmentation.create(
             session=active,
             eval_dataset_id="ev_123",
             name="risk_weight",
             frame=pd.DataFrame({"row_id": [1, 2]}),
-            hash_key=("row_id",),
+            unique_key=("row_id",),
         )
-    with pytest.raises(ValueError, match="hash_key"):
+    with pytest.raises(ValueError, match="unique_key"):
         eval_dataset_module.Augmentation.create(
             session=active,
             eval_dataset_id="ev_123",
             name="risk_weight",
             frame=pd.DataFrame({"missing": [1, 2], "risk_weight": [1.0, 2.0]}),
-            hash_key=("row_id",),
+            unique_key=("row_id",),
         )

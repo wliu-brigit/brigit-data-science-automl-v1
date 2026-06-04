@@ -66,7 +66,7 @@ def evaluate(
         y_pred,
         target_col,
         augmentation_frames=augmentation_frames,
-        hash_key=loaded.hash_key,
+        unique_key=loaded.unique_key,
     )
     computed_at = datetime.now(UTC).isoformat()
     predictions = Predictions(
@@ -74,7 +74,7 @@ def evaluate(
         eval_dataset_id=eval_dataset_id,
         eval_dataset_kind=loaded.dataset.kind,
         label=label,
-        hash_key=loaded.hash_key,
+        unique_key=loaded.unique_key,
         frame=_prediction_frame(loaded.row_ids, y_pred),
         augmentations_used=augmentations_used,
         written_at=computed_at,

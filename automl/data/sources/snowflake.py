@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 
 from automl.data.sources.base import DataSource
+from automl.data.split import Key
 
 
 @dataclass(frozen=True)
@@ -17,6 +18,8 @@ class SnowflakeSource(DataSource):
     base_table: str
     base_data_sql: str | Path
     training_data_sql: str | Path
+    unique_key: Key
+    split_group_key: Key | None = None
 
     kind = "snowflake"
 
@@ -39,7 +42,8 @@ class SnowflakeSource(DataSource):
             "training_data_sql": str(self.training_data_sql),
             "snowflake_database": os.environ.get("SNOWFLAKE_DATABASE", ""),
             "snowflake_schema": os.environ.get("SNOWFLAKE_SCHEMA", ""),
-            "hash_key": [],
+            "unique_key": list(self.unique_key_columns),
+            "split_group_key": list(self.split_group_key_columns),
         }
 
 

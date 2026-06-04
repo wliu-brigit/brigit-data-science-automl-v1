@@ -98,7 +98,7 @@ def _route_dataset(
 ):
     csv_path = tmp_path / "route.csv"
     csv_path.write_text("row_id,target,value\n1,0,10\n2,1,20\n", encoding="utf-8")
-    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, hash_key="row_id"))
+    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"))
     active = _route_session(
         tmp_path,
         gcs_prefix=gcs_prefix,
@@ -113,7 +113,7 @@ def test_local_csv_source_reads_csv_from_path(tmp_path):
     csv_path = tmp_path / "tiny.csv"
     csv_path.write_text("row_id,target,value\n1,0,10\n2,1,20\n", encoding="utf-8")
 
-    source = LocalCSVSource(csv_path=csv_path, hash_key="row_id")
+    source = LocalCSVSource(csv_path=csv_path, unique_key="row_id")
 
     df = source.load()
 
@@ -125,9 +125,9 @@ def test_local_csv_source_reads_csv_from_path(tmp_path):
     assert source.identity()["kind"] == "local_csv"
 
 
-def test_build_dataset_adds_split_id_and_feature_registry_for_homecredit_sample():
+def test_build_dataset_adds_split_pct_and_feature_registry_for_homecredit_sample():
     spec = DataSpec(
-        source=LocalCSVSource(csv_path=HOMECREDIT_SAMPLE, hash_key="SK_ID_CURR"),
+        source=LocalCSVSource(csv_path=HOMECREDIT_SAMPLE, unique_key="SK_ID_CURR"),
         metadata_cols=("SK_ID_CURR",),
         dry_run_rows=25,
     )
@@ -136,7 +136,7 @@ def test_build_dataset_adds_split_id_and_feature_registry_for_homecredit_sample(
 
     assert loaded.n_rows == 25
     assert loaded.dataset.target_column == "target"
-    assert loaded.dataset.hash_key == ("sk_id_curr",)
+    assert loaded.dataset.unique_key == ("sk_id_curr",)
     assert "SPLIT_PCT" in loaded.df.columns
     assert set(loaded.df["SPLIT_PCT"]).issubset(set(range(100)))
     assert loaded.registry.get("target").target is True
@@ -181,7 +181,7 @@ def test_dataset_route_uris_pin_current_project_suffix_strip_behavior(
 
 def test_standardize_columns_keeps_suffix_collisions_unique(tmp_path):
     csv_path = tmp_path / "collisions.csv"
-    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, hash_key="A"))
+    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="A"))
     pipeline = DataPipeline(spec, _session_for(spec))
     raw = pd.DataFrame(
         {
@@ -202,7 +202,7 @@ def test_standardize_columns_keeps_suffix_collisions_unique(tmp_path):
 def test_build_dataset_resolves_raw_target_column_to_normalized_name(tmp_path):
     csv_path = tmp_path / "raw_target.csv"
     csv_path.write_text("row_id,TARGET,value\n1,0,10\n2,1,20\n", encoding="utf-8")
-    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, hash_key="row_id"), dry_run_rows=10)
+    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10)
 
     loaded = build_dataset(session=_session_for(spec))
 
@@ -213,7 +213,7 @@ def test_build_dataset_resolves_raw_target_column_to_normalized_name(tmp_path):
 def test_build_dataset_raises_data_error_when_target_is_missing(tmp_path):
     csv_path = tmp_path / "missing_target.csv"
     csv_path.write_text("row_id,value\n1,10\n2,20\n", encoding="utf-8")
-    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, hash_key="row_id"), dry_run_rows=10)
+    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10)
 
     with pytest.raises(DataError, match="target column"):
         build_dataset(session=_session_for(spec))
@@ -222,7 +222,7 @@ def test_build_dataset_raises_data_error_when_target_is_missing(tmp_path):
 def test_materialize_partial_dataset_objects_raise_data_error(tmp_path, monkeypatch):
     csv_path = tmp_path / "partial.csv"
     csv_path.write_text("row_id,target,value\n1,0,10\n2,1,20\n", encoding="utf-8")
-    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, hash_key="row_id"), dry_run_rows=10)
+    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10)
     active = _route_session(tmp_path, gcs_prefix="", data_spec=spec)
 
     monkeypatch.setattr(
@@ -261,7 +261,7 @@ def test_quality_filtering_drops_constant_and_high_null_columns_but_preserves_pr
         }
     ).to_csv(csv_path, index=False)
     spec = DataSpec(
-        source=LocalCSVSource(csv_path=csv_path, hash_key="row_id"),
+        source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"),
         metadata_cols=("metadata_all_null",),
         null_drop_threshold=0.5,
         constant_drop_threshold=1.0,
@@ -293,7 +293,7 @@ def test_strict_constant_drop_preserves_constant_target_hash_and_metadata_column
         }
     ).to_csv(csv_path, index=False)
     spec = DataSpec(
-        source=LocalCSVSource(csv_path=csv_path, hash_key="row_id"),
+        source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"),
         metadata_cols=("metadata_constant",),
         constant_drop_threshold=1.0,
         dry_run_rows=10,
@@ -308,16 +308,42 @@ def test_strict_constant_drop_preserves_constant_target_hash_and_metadata_column
     assert {"row_id", "target", "metadata_constant"}.issubset(registry_names)
 
 
-def test_build_dataset_without_hash_key_uses_deterministic_row_fallback(tmp_path):
-    csv_path = tmp_path / "fallback.csv"
-    csv_path.write_text("target,value\n0,10\n1,20\n0,30\n", encoding="utf-8")
-    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path), dry_run_rows=10)
+def test_build_dataset_errors_on_duplicate_unique_key(tmp_path):
+    csv_path = tmp_path / "dups.csv"
+    pd.DataFrame({"row_id": [1, 1, 2], "x": [0.1, 0.2, 0.3], "TARGET": [0, 1, 0]}).to_csv(
+        csv_path, index=False
+    )
+    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10)
 
-    first = build_dataset(session=_session_for(spec))
-    second = build_dataset(session=_session_for(spec))
+    with pytest.raises(DataError, match="duplicate"):
+        build_dataset(session=_session_for(spec))
 
-    assert first.dataset.hash_key == ("__row_fallback__",)
-    assert first.df["SPLIT_PCT"].tolist() == second.df["SPLIT_PCT"].tolist()
+
+def test_build_dataset_errors_when_source_provides_split_pct(tmp_path):
+    csv_path = tmp_path / "collide.csv"
+    pd.DataFrame({"row_id": [1, 2], "SPLIT_PCT": [3, 4], "TARGET": [0, 1]}).to_csv(
+        csv_path, index=False
+    )
+    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10)
+
+    with pytest.raises(DataError, match="SPLIT_PCT"):
+        build_dataset(session=_session_for(spec))
+
+
+def test_build_dataset_groups_splits_by_split_group_key(tmp_path):
+    csv_path = tmp_path / "grouped.csv"
+    pd.DataFrame(
+        {"txn_id": [1, 2, 3, 4], "user_id": ["a", "a", "b", "b"], "TARGET": [0, 1, 0, 1]}
+    ).to_csv(csv_path, index=False)
+    spec = DataSpec(
+        source=LocalCSVSource(csv_path=csv_path, unique_key="txn_id", split_group_key="user_id"),
+        dry_run_rows=10,
+    )
+
+    loaded = build_dataset(session=_session_for(spec))
+
+    buckets = loaded.df.groupby("user_id")["SPLIT_PCT"].nunique()
+    assert (buckets == 1).all()  # one user never straddles buckets
 
 
 def test_trial_data_contract_round_trips_distinct_trial_id_and_run_id():

@@ -21,13 +21,13 @@ def compute_eval_dataset_identity(
     *,
     kind: str,
     target_column: str,
-    hash_key: Sequence[str],
+    unique_key: Sequence[str],
     of_dataset_id: str | None = None,
     split_pct_col: str | None = None,
     buckets: Sequence[Sequence[int]] | None = None,
     frame: pd.DataFrame | None = None,
 ) -> str:
-    normalized_hash_key = _normalize_hash_key(hash_key)
+    normalized_unique_key = _normalize_unique_key(unique_key)
     if kind == "split_view":
         if not of_dataset_id:
             raise ValueError("of_dataset_id required for split_view eval datasets")
@@ -41,17 +41,17 @@ def compute_eval_dataset_identity(
             "split_pct_col": split_pct_col,
             "buckets": normalized_buckets,
             "target_column": target_column,
-            "hash_key": normalized_hash_key,
+            "unique_key": normalized_unique_key,
         }
     elif kind == "external":
         if frame is None:
             raise ValueError("frame required for external eval datasets")
-        _validate_external_frame(frame, target_column=target_column, hash_key=normalized_hash_key)
+        _validate_external_frame(frame, target_column=target_column, unique_key=normalized_unique_key)
         payload = {
             "schema_version": 1,
             "kind": kind,
             "target_column": target_column,
-            "hash_key": normalized_hash_key,
+            "unique_key": normalized_unique_key,
             "schema_hash": schema_hash(frame),
             "content_hash": dataframe_content_hash(frame),
         }
@@ -65,16 +65,16 @@ def compute_augmentation_identity(
     eval_dataset_id: str,
     name: str,
     frame: pd.DataFrame,
-    hash_key: Sequence[str],
+    unique_key: Sequence[str],
 ) -> str:
-    normalized_hash_key = _normalize_hash_key(hash_key)
+    normalized_unique_key = _normalize_unique_key(unique_key)
     _validate_augmentation_name(name)
-    _validate_augmentation_frame(frame, hash_key=normalized_hash_key)
+    _validate_augmentation_frame(frame, unique_key=normalized_unique_key)
     payload = {
         "schema_version": 1,
         "eval_dataset_id": eval_dataset_id,
         "name": name,
-        "hash_key": normalized_hash_key,
+        "unique_key": normalized_unique_key,
         "schema_hash": schema_hash(frame),
         "content_hash": dataframe_content_hash(frame),
     }
@@ -86,7 +86,7 @@ class EvalDataset:
     id: str
     kind: str
     target_column: str
-    hash_key: tuple[str, ...]
+    unique_key: tuple[str, ...]
     gcs_bucket: str
     gcs_prefix: str
     project_name: str
@@ -115,17 +115,17 @@ class EvalDataset:
         split_pct_col: str,
         buckets: Sequence[Sequence[int]],
         target_column: str,
-        hash_key: Sequence[str],
+        unique_key: Sequence[str],
     ) -> "EvalDataset":
         normalized_buckets = _normalize_buckets(buckets)
-        normalized_hash_key = _normalize_hash_key(hash_key)
+        normalized_unique_key = _normalize_unique_key(unique_key)
         dataset_id = compute_eval_dataset_identity(
             kind="split_view",
             of_dataset_id=of_dataset_id,
             split_pct_col=split_pct_col,
             buckets=normalized_buckets,
             target_column=target_column,
-            hash_key=normalized_hash_key,
+            unique_key=normalized_unique_key,
         )
         route = _route_fields(session)
         return cls(
@@ -136,7 +136,7 @@ class EvalDataset:
             split_pct_col=split_pct_col,
             buckets=normalized_buckets,
             target_column=target_column,
-            hash_key=normalized_hash_key,
+            unique_key=normalized_unique_key,
             created_at=_now(),
             **route,
         )
@@ -148,23 +148,23 @@ class EvalDataset:
         session: Session,
         frame: pd.DataFrame,
         target_column: str,
-        hash_key: Sequence[str],
+        unique_key: Sequence[str],
         provenance: Mapping[str, Any] | None = None,
     ) -> "EvalDataset":
-        normalized_hash_key = _normalize_hash_key(hash_key)
-        _validate_external_frame(frame, target_column=target_column, hash_key=normalized_hash_key)
+        normalized_unique_key = _normalize_unique_key(unique_key)
+        _validate_external_frame(frame, target_column=target_column, unique_key=normalized_unique_key)
         dataset_id = compute_eval_dataset_identity(
             kind="external",
             frame=frame,
             target_column=target_column,
-            hash_key=normalized_hash_key,
+            unique_key=normalized_unique_key,
         )
         route = _route_fields(session)
         return cls(
             id=dataset_id,
             kind="external",
             target_column=target_column,
-            hash_key=normalized_hash_key,
+            unique_key=normalized_unique_key,
             content_hash=dataframe_content_hash(frame),
             schema_hash=schema_hash(frame),
             provenance=dict(provenance or {}),
@@ -201,7 +201,7 @@ class EvalDataset:
             id=str(payload["id"]),
             kind=str(payload["kind"]),
             target_column=str(payload["target_column"]),
-            hash_key=tuple(str(item) for item in payload.get("hash_key", ())),
+            unique_key=tuple(str(item) for item in payload.get("unique_key", ())),
             gcs_bucket=str(payload.get("gcs_bucket", "")),
             gcs_prefix=str(payload.get("gcs_prefix", "")),
             project_name=str(payload.get("project_name", "")),
@@ -226,7 +226,7 @@ class EvalDataset:
             "id": self.id,
             "kind": self.kind,
             "target_column": self.target_column,
-            "hash_key": list(self.hash_key),
+            "unique_key": list(self.unique_key),
             "gcs_bucket": self.gcs_bucket,
             "gcs_prefix": self.gcs_prefix,
             "project_name": self.project_name,
@@ -266,7 +266,7 @@ class Augmentation:
     hash8: str
     content_hash: str
     schema_hash: str
-    hash_key: tuple[str, ...]
+    unique_key: tuple[str, ...]
     columns: tuple[str, ...]
     gcs_bucket: str
     gcs_prefix: str
@@ -287,16 +287,16 @@ class Augmentation:
         eval_dataset_id: str,
         name: str,
         frame: pd.DataFrame,
-        hash_key: Sequence[str],
+        unique_key: Sequence[str],
     ) -> "Augmentation":
-        normalized_hash_key = _normalize_hash_key(hash_key)
+        normalized_unique_key = _normalize_unique_key(unique_key)
         _validate_augmentation_name(name)
-        _validate_augmentation_frame(frame, hash_key=normalized_hash_key)
+        _validate_augmentation_frame(frame, unique_key=normalized_unique_key)
         identity = compute_augmentation_identity(
             eval_dataset_id,
             name,
             frame,
-            normalized_hash_key,
+            normalized_unique_key,
         )
         route = _route_fields(session)
         return cls(
@@ -305,7 +305,7 @@ class Augmentation:
             hash8=identity.removeprefix("sha256:")[:8],
             content_hash=dataframe_content_hash(frame),
             schema_hash=schema_hash(frame),
-            hash_key=normalized_hash_key,
+            unique_key=normalized_unique_key,
             columns=tuple(str(column) for column in frame.columns),
             created_at=_now(),
             n_rows=int(len(frame)),
@@ -347,7 +347,7 @@ class Augmentation:
             hash8=str(payload["hash8"]),
             content_hash=str(payload["content_hash"]),
             schema_hash=str(payload["schema_hash"]),
-            hash_key=tuple(str(item) for item in payload.get("hash_key", ())),
+            unique_key=tuple(str(item) for item in payload.get("unique_key", ())),
             columns=tuple(str(item) for item in payload.get("columns", ())),
             gcs_bucket=str(payload.get("gcs_bucket", "")),
             gcs_prefix=str(payload.get("gcs_prefix", "")),
@@ -368,7 +368,7 @@ class Augmentation:
             "hash8": self.hash8,
             "content_hash": self.content_hash,
             "schema_hash": self.schema_hash,
-            "hash_key": list(self.hash_key),
+            "unique_key": list(self.unique_key),
             "columns": list(self.columns),
             "gcs_bucket": self.gcs_bucket,
             "gcs_prefix": self.gcs_prefix,
@@ -412,21 +412,21 @@ def _validate_external_frame(
     frame: pd.DataFrame,
     *,
     target_column: str,
-    hash_key: Sequence[str],
+    unique_key: Sequence[str],
 ) -> None:
     if target_column not in frame.columns:
         raise ValueError(f"target column {target_column!r} missing from external eval frame")
-    missing_hash = [column for column in hash_key if column not in frame.columns]
-    if missing_hash:
-        raise ValueError(f"hash_key column(s) missing from external eval frame: {missing_hash}")
-    if frame.duplicated(subset=list(hash_key), keep=False).any():
-        raise ValueError("external eval frame contains duplicate hash_key rows")
+    missing_key = [column for column in unique_key if column not in frame.columns]
+    if missing_key:
+        raise ValueError(f"unique_key column(s) missing from external eval frame: {missing_key}")
+    if frame.duplicated(subset=list(unique_key), keep=False).any():
+        raise ValueError("external eval frame contains duplicate unique_key rows")
 
 
-def _normalize_hash_key(hash_key: Sequence[str]) -> tuple[str, ...]:
-    normalized = tuple(str(column) for column in hash_key)
+def _normalize_unique_key(unique_key: Sequence[str]) -> tuple[str, ...]:
+    normalized = tuple(str(column) for column in unique_key)
     if not normalized:
-        raise ValueError("hash_key must contain at least one column")
+        raise ValueError("unique_key must contain at least one column")
     return normalized
 
 
@@ -455,15 +455,15 @@ def _validate_augmentation_name(name: str) -> None:
         raise ValueError("augmentation name must start lowercase and use lowercase letters, numbers, or underscores")
 
 
-def _validate_augmentation_frame(frame: pd.DataFrame, *, hash_key: Sequence[str]) -> None:
-    missing_hash = [column for column in hash_key if column not in frame.columns]
-    if missing_hash:
-        raise ValueError(f"hash_key column(s) missing from augmentation frame: {missing_hash}")
-    if frame.duplicated(subset=list(hash_key), keep=False).any():
-        raise ValueError("augmentation frame contains duplicate hash_key rows")
-    value_columns = [column for column in frame.columns if column not in set(hash_key)]
+def _validate_augmentation_frame(frame: pd.DataFrame, *, unique_key: Sequence[str]) -> None:
+    missing_key = [column for column in unique_key if column not in frame.columns]
+    if missing_key:
+        raise ValueError(f"unique_key column(s) missing from augmentation frame: {missing_key}")
+    if frame.duplicated(subset=list(unique_key), keep=False).any():
+        raise ValueError("augmentation frame contains duplicate unique_key rows")
+    value_columns = [column for column in frame.columns if column not in set(unique_key)]
     if not value_columns:
-        raise ValueError("augmentation frame must contain at least one non-hash-key column")
+        raise ValueError("augmentation frame must contain at least one non-unique-key column")
 
 
 def _route_fields(session: Session) -> dict[str, Any]:

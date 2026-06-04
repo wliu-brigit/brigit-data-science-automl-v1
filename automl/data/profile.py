@@ -214,6 +214,23 @@ def _basic_observations(loaded: LoadedDataset) -> list[dict[str, Any]]:
     return observations
 
 
+def _unique_key_cardinality(loaded: LoadedDataset) -> list[dict[str, Any]]:
+    key = list(loaded.dataset.unique_key)
+    if not key or any(column not in loaded.df.columns for column in key):
+        return []
+    n_distinct = int(len(loaded.df.drop_duplicates(subset=key)))
+    return [
+        {
+            "kind": "unique_key_cardinality",
+            "text": (
+                f"unique_key {key}: {n_distinct} distinct of {len(loaded.df)} rows "
+                f"({'1:1' if n_distinct == len(loaded.df) else 'DUPLICATES PRESENT'})."
+            ),
+            "source": "profile_deterministic",
+        }
+    ]
+
+
 def _plot_label_distribution(df: pd.DataFrame, target: str, out_path: Path) -> None:
     if target not in df.columns:
         return
@@ -259,7 +276,7 @@ def _issue_observation(name: str, exc: Exception) -> dict[str, str]:
     }
 
 
-_STATS_CHECKS: list[StatsCheck] = [_basic_observations]
+_STATS_CHECKS: list[StatsCheck] = [_basic_observations, _unique_key_cardinality]
 _CHARTS: list[tuple[str, ChartFn]] = [
     ("label_distribution", _plot_label_distribution),
     ("missingness", _plot_missingness),

@@ -48,7 +48,8 @@ class Dataset:
     n_columns: int
     target_column: str
     split_pct_col: str
-    hash_key: tuple[str, ...]
+    unique_key: tuple[str, ...]
+    split_group_key: tuple[str, ...]
     gcs_prefix: str = ""
     experiment_id: str = ""
     schema_version: int = 1
@@ -92,7 +93,8 @@ class Dataset:
             n_columns=int(payload.get("n_columns", 0)),
             target_column=str(payload.get("target_column", "")),
             split_pct_col=str(payload.get("split_pct_col", "SPLIT_PCT")),
-            hash_key=tuple(str(item) for item in payload.get("hash_key", ())),
+            unique_key=tuple(str(item) for item in payload.get("unique_key", ())),
+            split_group_key=tuple(str(item) for item in payload.get("split_group_key", ())),
             gcs_prefix=str(payload.get("gcs_prefix", "")),
             experiment_id=str(payload.get("experiment_id", "")),
             schema_version=int(payload.get("schema_version", 1)),
@@ -114,7 +116,8 @@ class Dataset:
             "n_columns": self.n_columns,
             "target_column": self.target_column,
             "split_pct_col": self.split_pct_col,
-            "hash_key": list(self.hash_key),
+            "unique_key": list(self.unique_key),
+            "split_group_key": list(self.split_group_key),
             "data_gcs_uri": self.data_gcs_uri,
             "registry_gcs_uri": self.registry_gcs_uri,
             "manifest_gcs_uri": self.manifest_gcs_uri,

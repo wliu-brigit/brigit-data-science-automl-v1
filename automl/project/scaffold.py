@@ -79,13 +79,15 @@ source = SnowflakeSource(
     base_table="<TBD_base_table>",  # the snapshot table your base-data SQL builds
     base_data_sql="data/queries/base_data.sql",
     training_data_sql="data/queries/training_data.sql",
+    unique_key="<TBD_unique_key>",  # stable row identifier; tuple for composite keys
+    # split_group_key="USER_ID",    # declare only when splits must group by a coarser key
 )
-# source = LocalCSVSource(csv_path=PROJECT_DIR / "data" / "my_data.csv", hash_key="ROW_ID")
-# source = GCSParquetSource(gcs_uri="gs://bucket/path/data.parquet", hash_key="ROW_ID")
+# source = LocalCSVSource(csv_path=PROJECT_DIR / "data" / "my_data.csv", unique_key="ROW_ID")
+# source = GCSParquetSource(gcs_uri="gs://bucket/path/data.parquet", unique_key="ROW_ID")
 
 DATA = DataSpec(
     source=source,
-    metadata_cols=[],  # identifiers kept but never used as features (e.g. the hash key)
+    metadata_cols=[],  # identifiers kept but never used as features (e.g. the unique key)
     exclude_cols=[],  # columns dropped entirely (leakage, post-outcome fields)
     dry_run_rows=10_001,  # row cap when running with --dry-run
     # pipeline_cls=MyPipeline,       # escape hatch: a project-owned DataPipeline subclass
@@ -210,7 +212,7 @@ def _snowflake_templates(project_name: str) -> dict[str, str]:
             -- Snowflake training-data starter.
             SELECT
                 *,
-                MOD(ABS(HASH(<TBD_HASH_KEY_COLUMN>)), 100) AS SPLIT_PCT
+                MOD(ABS(HASH(<TBD_SPLIT_GROUP_KEY_COLUMN>)), 100) AS SPLIT_PCT
             FROM {database}.{schema}.{base_table};
         """,
     }

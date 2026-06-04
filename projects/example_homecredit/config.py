@@ -20,12 +20,12 @@ from projects.example_homecredit.model.preprocessing import WOEEncoder
 
 PROJECT_DIR = Path(__file__).resolve().parent
 SAMPLE_CSV = PROJECT_DIR / "data" / "application_train_sample.csv"
-HASH_KEY = "SK_ID_CURR"
+UNIQUE_KEY = "SK_ID_CURR"
 
 TASK = BinaryClassification(target="TARGET")
 DATA = DataSpec(
-    source=LocalCSVSource(csv_path=SAMPLE_CSV, hash_key=HASH_KEY),
-    metadata_cols=(HASH_KEY,),
+    source=LocalCSVSource(csv_path=SAMPLE_CSV, unique_key=UNIQUE_KEY),
+    metadata_cols=(UNIQUE_KEY,),
     dry_run_rows=100,
 )
 EVAL = EvalSpec(primary=Auc())

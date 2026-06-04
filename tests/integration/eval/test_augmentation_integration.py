@@ -105,7 +105,7 @@ def test_prepare_load_and_join_augmentation(tmp_path, monkeypatch):
         kind="external",
         frame=frame,
         target_col="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
     augmentation_frame = pd.DataFrame({"row_id": [1, 2], "risk_weight": [1.0, 2.0]})
 
@@ -132,7 +132,7 @@ def test_prepare_load_and_join_augmentation(tmp_path, monkeypatch):
         pd.Series([0.2, 0.8]),
         "target",
         augmentation_frames=frames,
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
 
     assert cached is False
@@ -163,7 +163,7 @@ def test_load_eval_augmentations_names_missing_published_items(tmp_path, monkeyp
         kind="external",
         frame=frame,
         target_col="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
 
     with pytest.raises(ValueError, match="augmentations not published"):
@@ -181,7 +181,7 @@ def test_load_eval_augmentations_rejects_payload_that_no_longer_matches_manifest
         kind="external",
         frame=frame,
         target_col="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
     augmentation, _ = eval_prepare.prepare_eval_augmentation(
         session=active,

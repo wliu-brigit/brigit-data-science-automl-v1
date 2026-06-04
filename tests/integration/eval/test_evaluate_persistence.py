@@ -128,7 +128,7 @@ def test_evaluate_persists_predictions_index_metrics_and_uses_cache(tmp_path, mo
         kind="external",
         frame=frame,
         target_col="target",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
 
     with trial.active(slug="score_model", strategy="baseline") as run_id:

@@ -139,7 +139,7 @@ class Predictions:
     eval_dataset_id: str
     eval_dataset_kind: str
     label: str
-    hash_key: tuple[str, ...]
+    unique_key: tuple[str, ...]
     frame: pd.DataFrame
     augmentations_used: tuple[Any, ...]
     written_at: str
@@ -152,7 +152,7 @@ class Predictions:
             "eval_dataset_id": self.eval_dataset_id,
             "eval_dataset_kind": self.eval_dataset_kind,
             "label": self.label,
-            "hash_key": list(self.hash_key),
+            "unique_key": list(self.unique_key),
             "row_count": int(len(self.frame)),
             "augmentations_used": _json_list(self.augmentations_used),
             "written_at": self.written_at,
@@ -166,7 +166,7 @@ class Predictions:
             eval_dataset_id=str(manifest["eval_dataset_id"]),
             eval_dataset_kind=str(manifest["eval_dataset_kind"]),
             label=str(manifest["label"]),
-            hash_key=tuple(str(item) for item in manifest.get("hash_key", ())),
+            unique_key=tuple(str(item) for item in manifest.get("unique_key", ())),
             frame=frame,
             augmentations_used=tuple(manifest.get("augmentations_used", ())),
             written_at=str(manifest["written_at"]),

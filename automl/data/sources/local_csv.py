@@ -9,15 +9,20 @@ from typing import Any
 import pandas as pd
 
 from automl.data.sources.base import DataSource
-from automl.data.split import HashKey, hash_key_columns
+from automl.data.split import Key
 
 
 @dataclass(frozen=True)
 class LocalCSVSource(DataSource):
     csv_path: str | Path
-    hash_key: HashKey | None = None
+    unique_key: Key
+    split_group_key: Key | None = None
 
     kind = "local_csv"
+
+    def __post_init__(self) -> None:
+        self.unique_key_columns  # validate declarations at construction
+        self.split_group_key_columns
 
     def load(
         self,
@@ -33,7 +38,8 @@ class LocalCSVSource(DataSource):
         return {
             "kind": self.kind,
             "csv_path": str(self.csv_path),
-            "hash_key": list(hash_key_columns(self.hash_key)),
+            "unique_key": list(self.unique_key_columns),
+            "split_group_key": list(self.split_group_key_columns),
         }
 
 

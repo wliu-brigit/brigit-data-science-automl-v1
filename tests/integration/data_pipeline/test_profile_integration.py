@@ -87,7 +87,7 @@ def _models() -> ModelsConfig:
 
 
 def _session(tmp_path: Path, csv_path: Path) -> Session:
-    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, hash_key="row_id"))
+    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"))
     return Session(
         config=ProjectConfig(
             project_name="demo",

@@ -8,31 +8,27 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
 
 ## Where things stand
 
-- **Active effort — APPROVED, plans written, ready to execute:**
+- **Active effort — step 1 of 4 landed:**
   [`execution/snowflake-source-and-split-keys/`](execution/snowflake-source-and-split-keys/)
   — the full design for the real `SnowflakeSource` plus the data-layer
-  contract work it surfaced: `unique_key`/`split_group_key`, `SPLIT_PCT`
-  rename, row-fallback removal, attach-as-pinned materialize with explicit
-  `--refresh-data`/`--refresh-source`, dataset records relocating GCS →
-  MLflow (`dataset.json`), order-insensitive identity, connector-python,
-  and flexible `Where(...)` predicate splits. **`design.md` is the source
-  of truth**; implementation plans for all four §14 steps live in
-  [`plans/`](execution/snowflake-source-and-split-keys/plans/README.md) —
-  status ledger + fresh-session protocol there. §15 open items were
-  resolved 2026-06-04 and recorded in the plan headers.
-- **Working tree (uncommitted):** the design dossier
-  (`docs/execution/snowflake-source-and-split-keys/`); the scaffolded
-  `projects/fraud_anomaly_detection/` (all `<TBD` placeholders — the
-  consumer waiting on this effort); small pre-existing edits to
-  `example_homecredit` config + notebooks 1–2.
+  contract work it surfaced. **`design.md` is the source of truth**;
+  the status ledger + fresh-session protocol live in
+  [`plans/`](execution/snowflake-source-and-split-keys/plans/README.md).
+  **Step 1 (keys & naming) landed 2026-06-04**: `SPLITID` → `SPLIT_PCT`,
+  `hash_key` → required `unique_key` + optional `split_group_key`, row
+  fallback deleted, materialize-edge validation (unique_key duplicate-free;
+  SPLIT_PCT present/integer/0–99; loud collision error on a source-provided
+  split column). Steps 2–4 (dataset record & lifecycle, Snowflake, flexible
+  splits) remain — one step per session, in order.
+- **Known-stale, deferred to the tail-end notebook pass:**
+  `example_homecredit` notebooks still reference `hash_key`/`SPLITID` in
+  code cells and outputs (see plans README "Tail-end activities").
 
 ## Next actions
 
-1. **Commit the design dossier + plans** (docs-only change).
-2. **Execute step 1** following the protocol in
-   [`plans/README.md`](execution/snowflake-source-and-split-keys/plans/README.md)
-   (one step per session, in order; the ledger there tracks status).
-3. Before/with step 2: **wendao manually wipes old MLflow/GCS state** for a
+1. **Execute step 2** (dataset record & lifecycle) following the protocol in
+   [`plans/README.md`](execution/snowflake-source-and-split-keys/plans/README.md).
+2. Before/with step 2: **wendao manually wipes old MLflow/GCS state** for a
    clean slate — the implementation must never delete or migrate old state
    itself (design §14 ground rule).
 

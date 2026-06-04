@@ -40,7 +40,7 @@ def test_metric_alias_sign_required_augmentations_and_scalar_records():
         y_pred,
         "target",
         augmentation_frames={"risk_weight": augmentation},
-        hash_key=("row_id",),
+        unique_key=("row_id",),
     )
 
     assert spec.metrics[0].resolved_name() == "custom_auc"
@@ -111,7 +111,7 @@ def test_eval_spec_rejects_missing_required_augmentation_even_if_column_exists()
             frame,
             pd.Series([0.2, 0.8]),
             "target",
-            hash_key=("row_id",),
+            unique_key=("row_id",),
         )
 
 

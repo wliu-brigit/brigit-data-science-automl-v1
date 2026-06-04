@@ -102,7 +102,8 @@ def _loaded_slice() -> LoadedSlice:
         n_columns=len(df.columns),
         target_column="target",
         split_pct_col="SPLIT_PCT",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
+        split_group_key=("row_id",),
     )
     registry = FeatureRegistry().build_from_df(df, target_column="target")
     return LoadedSlice(
@@ -238,7 +239,7 @@ def test_prepare_external_eval_dataset_partial_objects_raise_eval_error(tmp_path
             session=active,
             kind="external",
             frame=frame,
-            hash_key=("row_id",),
+            unique_key=("row_id",),
         )
 
 

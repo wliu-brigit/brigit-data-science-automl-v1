@@ -76,7 +76,8 @@ def _dataset() -> Dataset:
         n_columns=5,
         target_column="target",
         split_pct_col="SPLIT_PCT",
-        hash_key=("row_id",),
+        unique_key=("row_id",),
+        split_group_key=("row_id",),
         gcs_prefix="root",
     )
 

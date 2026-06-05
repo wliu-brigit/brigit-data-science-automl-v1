@@ -193,9 +193,28 @@ def create_project(
     }
 
 
+_TEMPLATES_DIR = Path(__file__).resolve().parent / "templates"
+
+
+def _readme_template(project_name: str) -> str:
+    # A real file (not an inline string) so it can be read, diffed, and
+    # evolved like the document it is. Explicit replace, not str.format:
+    # future markdown may legitimately contain literal braces.
+    text = (_TEMPLATES_DIR / "README.md").read_text(encoding="utf-8")
+    return text.replace("{project_name}", project_name)
+
+
 def _snowflake_templates(project_name: str) -> dict[str, str]:
     return {
         "__init__.py": "",
+        "README.md": _readme_template(project_name),
+        # Project code mirrors the library domain it extends (see README.md):
+        # eval/ for custom metrics, model/ for transformers/preprocessing,
+        # data/ for a custom DataPipeline. Stubs so the convention is the path
+        # of least resistance.
+        "eval/__init__.py": '"""Project-owned eval code: custom Metric classes (automl.eval protocol)."""\n',
+        "model/__init__.py": '"""Project-owned model code: transformers, preprocessing, overrides."""\n',
+        "data/__init__.py": '"""Project-owned data code: a custom DataPipeline when the default needs replacing."""\n',
         "config.py": _CONFIG_TEMPLATE.format(project_name=project_name),
         "PROJECT_INSTRUCTIONS.md": f"""
             # Project Instructions - {project_name}
@@ -212,10 +231,13 @@ def _snowflake_templates(project_name: str) -> dict[str, str]:
 
             - Start with a simple baseline.
         """,
+        "tests/__init__.py": "",
         "data/queries/base_table.sql": """
             -- The SELECT that defines your base data: joins, CTEs, filters, feature SQL.
             -- The harness wraps it in CREATE OR REPLACE TABLE and injects SPLIT_PCT from
             -- split_group_key — do not emit SPLIT_PCT yourself.
+            -- Building on a table that already exists? See README.md ("when your
+            -- base table already exists") — wrap it, don't point base_table at it.
             SELECT *
             FROM {database}.{schema}.<TBD_SOURCE_TABLE>
         """,

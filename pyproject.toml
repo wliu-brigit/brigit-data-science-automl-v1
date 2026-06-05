@@ -47,7 +47,9 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests/unit", "tests/contracts", "tests/integration", "tests/e2e"]
+# projects/*/tests: project-owned tests live inside their project folder,
+# not in the core tests/ tree, but still run with a bare `pytest`.
+testpaths = ["tests/unit", "tests/contracts", "tests/integration", "tests/e2e", "projects/*/tests"]
 pythonpath = ["."]
 addopts = ["--strict-markers"]
 markers = [

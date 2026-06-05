@@ -118,3 +118,18 @@ def test_eval_spec_rejects_missing_required_augmentation_even_if_column_exists()
 def test_threshold_sweep_requires_thresholds():
     with pytest.raises(ValueError, match="at least one threshold"):
         builtins.ThresholdSweep(thresholds=[])
+
+
+def test_average_precision_as_primary_metric():
+    # Perfect ranking → AP = 1.0 regardless of prevalence.
+    df = pd.DataFrame({"target": [0, 0, 0, 1]})
+    perfect = pd.Series([0.1, 0.2, 0.3, 0.9])
+    report = EvalSpec(primary=builtins.AveragePrecision()).evaluate(df, perfect, "target")
+    assert report["primary"] == "average_precision"
+    assert report["metrics"][0]["value"] == pytest.approx(1.0)
+
+    # Uninformative constant score → AP equals base prevalence (sklearn ties → 0.25),
+    # unlike ROC-AUC which would sit at 0.5. This is the property we pick it for.
+    constant = pd.Series([0.5, 0.5, 0.5, 0.5])
+    report = EvalSpec(primary=builtins.AveragePrecision()).evaluate(df, constant, "target")
+    assert report["metrics"][0]["value"] == pytest.approx(0.25)

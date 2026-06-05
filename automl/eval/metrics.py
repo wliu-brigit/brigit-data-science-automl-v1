@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from sklearn.metrics import average_precision_score
 from sklearn.metrics import log_loss as sklearn_log_loss
 from sklearn.metrics import precision_score, recall_score, roc_auc_score
 
@@ -18,6 +19,13 @@ class Auc(Metric):
 
     def compute(self, df: pd.DataFrame, y_pred, target_col: str) -> float:
         return float(roc_auc_score(df[target_col], y_pred))
+
+
+class AveragePrecision(Metric):
+    name = "average_precision"
+
+    def compute(self, df: pd.DataFrame, y_pred: Any, target_col: str) -> float:
+        return float(average_precision_score(df[target_col], y_pred))
 
 
 class LogLoss(Metric):
@@ -51,4 +59,4 @@ class ThresholdSweep(Metric):
         return records
 
 
-__all__ = ["Auc", "LogLoss", "ThresholdSweep"]
+__all__ = ["Auc", "AveragePrecision", "LogLoss", "ThresholdSweep"]

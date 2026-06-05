@@ -62,7 +62,10 @@ def _execute_notebook(path: Path) -> None:
 
 def test_homecredit_notebooks_execute_end_to_end(monkeypatch):
     require_notebook_e2e_env()
-    monkeypatch.chdir(REPO_ROOT)
+    # Run from the notebook directory, exactly as a Jupyter kernel would —
+    # the notebooks rely on cwd-based project inference (the repo now holds
+    # several projects, so inferring from the repo root is ambiguous).
+    monkeypatch.chdir(NOTEBOOK_DIR)
 
     try:
         for path in NOTEBOOKS:

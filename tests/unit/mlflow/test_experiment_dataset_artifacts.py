@@ -3,6 +3,7 @@ import json
 import pytest
 
 from automl.data import Profile
+from automl.errors import StorageError
 from automl.mlflow import client
 from automl.mlflow.experiment import artifacts
 
@@ -74,6 +75,29 @@ def test_list_dataset_records_returns_every_version_folder(bound_file_mlflow):
     artifacts.write_dataset_record({"id": "v2_b"}, dataset_id="v2_b")
     records = artifacts.list_dataset_records()
     assert [record["id"] for record in records] == ["v1_a", "v2_b"]
+
+
+def test_list_dataset_records_is_empty_for_a_fresh_experiment(bound_file_mlflow):
+    # Missing datasets/ folder lists cleanly as [] (verified against both
+    # file-backed MLflow and the live prod proxy, 2026-06-04).
+    assert artifacts.list_dataset_records() == []
+
+
+def test_list_dataset_records_propagates_transport_failures(bound_file_mlflow, monkeypatch):
+    # An exception from list_artifacts is a genuine transport/auth failure,
+    # never "no datasets yet" — it must surface, not read as an empty index.
+    artifacts.write_dataset_record({"id": "v1_a"}, dataset_id="v1_a")
+
+    class ExplodingClient:
+        def list_artifacts(self, run_id, path=None):
+            raise RuntimeError("proxy unreachable")
+
+    monkeypatch.setattr(
+        artifacts, "_overview_run_id_or_none", lambda experiment_id=None: "run-123"
+    )
+    monkeypatch.setattr(artifacts.client, "raw", lambda: ExplodingClient())
+    with pytest.raises(StorageError, match="list dataset records"):
+        artifacts.list_dataset_records()
 
 
 def test_write_and_read_profile_round_trips_via_experiment_overview(bound_file_mlflow, tmp_path):

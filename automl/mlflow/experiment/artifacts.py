@@ -58,10 +58,18 @@ def list_dataset_records(experiment_id: str | None = None) -> list[dict]:
     run_id = _overview_run_id_or_none(experiment_id)
     if run_id is None:
         return []
+    # Verified against the live prod proxy AND file-backed MLflow
+    # (2026-06-04): a missing datasets/ folder and an entirely empty
+    # artifact root both return [] from list_artifacts without raising —
+    # so an exception here is a genuine transport/auth failure and must
+    # propagate loudly, never read as "no datasets yet". (Resolves the
+    # step-2 swallow, which assumed missing paths 500 like downloads do.)
     try:
         entries = client.raw().list_artifacts(run_id, "datasets")
-    except Exception:
-        return []
+    except Exception as exc:
+        raise StorageError(
+            f"Failed to list dataset records for experiment run {run_id!r}"
+        ) from exc
     records: list[dict] = []
     for entry in entries:
         if not entry.is_dir:

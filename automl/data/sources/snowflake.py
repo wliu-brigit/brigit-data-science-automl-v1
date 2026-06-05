@@ -132,17 +132,25 @@ class SnowflakeSource(DataSource):
             )
 
     def _dry_run_sql(self, training_sql: str, nrows: int) -> str:
-        row = sf.fetch_one(f"SELECT COUNT(*) FROM {self._qualified_table()}")
+        # Count the training query, not the base table: training SQL may
+        # filter or downsample, and the bucket fraction must size the dry-run
+        # sample against the rows actually pulled (a base-table count made a
+        # 39k pull look like 10.7M rows and clamped the sample to one bucket).
+        row = sf.fetch_one(f"SELECT COUNT(*) FROM (\n{training_sql}\n)")
         total = int(row[0]) if row and row[0] else 0
         if total <= 0:
             buckets = 100
         else:
             buckets = max(1, min(100, round(100 * nrows / total)))
-        # Whole buckets trade exactness for determinism: the same sample every
-        # run, so dry-run identity is stable (design §4).
+        # Whole hash-buckets trade exactness for determinism: the same sample
+        # every run, so dry-run identity is stable (design §4). The bucket
+        # hash is over unique_key, NOT SPLIT_PCT: splits cut on SPLIT_PCT, so
+        # a prefix of it lands entirely inside one split (empty test
+        # partition); an independent hash samples uniformly across all splits.
+        key_args = ", ".join(self.unique_key_columns)
         return (
             f"SELECT * FROM (\n{training_sql}\n) "
-            f"WHERE {SPLIT_PCT_COL} < {buckets}"
+            f"WHERE MOD(ABS(HASH({key_args})), 100) < {buckets}"
         )
 
     # --- identity (design §3) -------------------------------------------

@@ -201,11 +201,16 @@ def test_invariant_mismatch_errors_naming_refresh_source(project, fake_seam):
     assert fake_seam["executed"] == []          # never auto-spends warehouse minutes
 
 
-def test_dry_run_wraps_with_deterministic_bucket_filter(project, fake_seam):
+def test_dry_run_samples_on_unique_key_hash_not_split_pct(project, fake_seam):
+    # Sampling must be orthogonal to SPLIT_PCT: splits cut on SPLIT_PCT, so a
+    # SPLIT_PCT prefix would land entirely inside one split (empty test
+    # partition in dry-run). An independent unique_key hash samples uniformly
+    # across all splits.
     fake_seam["total_rows"] = 1_000
     _source().load(project_dir=project, nrows=100)   # 100/1000 -> k = 10
     pull = fake_seam["fetched"][-1]
-    assert "WHERE SPLIT_PCT < 10" in pull
+    assert "WHERE MOD(ABS(HASH(TRANSACTION_ID)), 100) < 10" in pull
+    assert "SPLIT_PCT <" not in pull
     # same sample every run: repeat and compare
     _source().load(project_dir=project, nrows=100)
     assert fake_seam["fetched"][-1] == pull
@@ -214,4 +219,13 @@ def test_dry_run_wraps_with_deterministic_bucket_filter(project, fake_seam):
 def test_dry_run_bucket_count_is_clamped_to_at_least_one(project, fake_seam):
     fake_seam["total_rows"] = 10_000_000
     _source().load(project_dir=project, nrows=100)
-    assert "WHERE SPLIT_PCT < 1" in fake_seam["fetched"][-1]
+    assert "WHERE MOD(ABS(HASH(TRANSACTION_ID)), 100) < 1" in fake_seam["fetched"][-1]
+
+
+def test_dry_run_bucket_count_counts_the_training_query_not_the_base_table(project, fake_seam):
+    # Training SQL may filter/downsample the base table; sizing the sample
+    # against a base-table count under-samples by the downsample factor.
+    _source().load(project_dir=project, nrows=100)
+    count_sql = next(sql for sql in fake_seam["fetched"] if "COUNT(*)" in sql)
+    assert "COUNT(*) FROM (" in count_sql
+    assert "SELECT * FROM ML_DB.FRAUD.FRAUD_TRAINING_BASE" in count_sql

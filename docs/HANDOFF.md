@@ -8,69 +8,44 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
 
 ## Where things stand
 
-- **Active effort — steps 1–3 of 4 landed:**
+- **Active effort — steps 1–3 of 4 landed, step 4 is next:**
   [`execution/snowflake-source-and-split-keys/`](execution/snowflake-source-and-split-keys/)
-  — the full design for the real `SnowflakeSource` plus the data-layer
-  contract work it surfaced. **`design.md` is the source of truth**;
-  the status ledger + fresh-session protocol live in
-  [`plans/`](execution/snowflake-source-and-split-keys/plans/README.md).
-  **Step 1 (keys & naming) landed 2026-06-04**: `SPLITID` → `SPLIT_PCT`,
-  `hash_key` → required `unique_key` + optional `split_group_key`, row
-  fallback deleted, materialize-edge validation (unique_key duplicate-free;
-  SPLIT_PCT present/integer/0–99; loud collision error on a source-provided
-  split column). **Step 2 (dataset record & lifecycle) landed 2026-06-04**:
-  dataset records relocated GCS → MLflow (`datasets/<id>/dataset.json` on
-  the overview run; index/latest mirrors and GCS manifests deleted — the
-  folder structure is the index, the experiment tag the pointer); recipe
-  (config-derived identity) recorded on the record; `materialize()` attaches
-  as pinned by default, warns with a field diff on recipe drift, re-derives
-  only on `--refresh-data` (`--refresh-source` implies it); content hash now
-  row-order-insensitive; eval records renamed for their nouns
-  (`eval_dataset.json` / `augmentation.json`, `record_gcs_uri`); eval key
-  normalization unified onto the data normalizer. **Step 3 (Snowflake)
-  landed 2026-06-04**: the `utils/io/snowflake.py` seam
-  (connector-python; Snowpark dropped from the lockfile); real
-  `SnowflakeSource` — `base_table_sql` is a SELECT, the harness owns the
-  CREATE and injects `SPLIT_PCT` from `split_group_key` (collision error on
-  a body that emits it), bootstrap/rebuild + empirical split-invariant check
-  + deterministic bucket-sample dry-run inside `load()`, executed-SQL trace;
-  the pipeline adopts source-provided `SPLIT_PCT` (provenance recorded:
-  `split: sql` vs `python(...)`); `project.connections.snowflake` is now a
-  live probe; scaffold + fraud + payment_routing on the new contract
-  (`base_data_sql`/`base_data.sql` are gone); key construction-edge
-  validation hoisted to the `DataSource` base. The Snowflake e2e test is
-  **written but its live run is deferred to the tail-end pass**
-  (`AUTOML_SNOWFLAKE_E2E_SOURCE_TABLE`/`_TARGET`/`_UNIQUE_KEY` designate the
-  dev table at run time). Step 4 (flexible splits) remains — one step per
-  session, in order.
-- **Known-stale, deferred to the tail-end notebook pass:**
-  `example_homecredit` notebooks still reference `hash_key`/`SPLITID` in
-  code cells and outputs (see plans README "Tail-end activities").
+  — the real `SnowflakeSource` plus the data-layer contract work it
+  surfaced. **`design.md` is the source of truth**; the status ledger
+  (per-step commits, deviations, review outcomes) + fresh-session protocol
+  live in [`plans/`](execution/snowflake-source-and-split-keys/plans/README.md).
+  In one line each: **step 1** renamed the key/split vocabulary
+  (`unique_key`/`split_group_key`, `SPLIT_PCT`) and added materialize-edge
+  validation; **step 2** moved dataset records GCS → MLflow and made
+  `materialize()` attach-as-pinned with recipe-drift warnings and explicit
+  `--refresh-data`/`--refresh-source`; **step 3** made `SnowflakeSource`
+  real (SELECT-only `base_table_sql`, harness-owned DDL with `SPLIT_PCT`
+  injection, split-invariant check, bucket-sample dry-run, live validate
+  probe, Snowpark dropped) — suite 554-green after a five-agent post-landing
+  review (outcome + fixes in the ledger row).
+- **All live/VPN-dependent verification is deliberately batched** into one
+  tail-end session after step 4 lands (wendao 2026-06-04: getting on the
+  VPN is slow — finish everything first, then run the live items as one
+  isolated batch). The list lives in the plans README "Tail-end activities".
+- **Known-stale until that tail-end pass:** `example_homecredit` notebooks
+  (old `hash_key`/`SPLITID`/`base_data_sql` in cells and cached outputs;
+  notebook 2's `Splits(train=[(0, 80)]…)` breaks after step 4's hard cut).
 
 ## Next actions
 
-1. **Execute step 4** (flexible splits) following the protocol in
+1. **Execute step 4** (flexible splits — `Where` predicates replace bucket
+   ranges, hard cut) following the protocol in
    [`plans/README.md`](execution/snowflake-source-and-split-keys/plans/README.md).
-   After it lands, the tail-end pass unlocks: live Snowflake e2e, notebook
-   verification, and the first real `fraud_anomaly_detection` materialize
-   against the warehouse (the fraud/payment_routing configs are already on
-   the new contract — only their `TBD_` placeholders remain).
-2. For reference, the 2026-06-04 wipes (state deletions are always a human
-   call, never the code's — design §14 ground rule):
-   - **`dry_run/example_homecredit` route** (by wendao, before step 2): both
-     MLflow experiments (`overview` id 23 and `example-homecredit` id 24, each
-     renamed to `…__trash-2026-06-04` then soft-deleted so the route names are
-     free; hard delete waits on a platform-team `mlflow gc`), all 52 GCS
-     objects under `automl/dry_run/example_homecredit/`, and the local
-     `experiments/dry_run` folder. Verified empty.
-   - **Non-dry-run `example_homecredit` GCS route** (on wendao's instruction,
-     after step 2 landed): all 19 objects under
-     `automl/example_homecredit/` — old-format dataset indexes/manifests/bytes
-     from historical test runs plus the step-2 session's two orphans — deleted
-     and verified empty. Prod MLflow holds **no** non-dry-run
-     `example_homecredit` experiments (historical test runs used throwaway
-     file-backed MLflow), so nothing referenced these bytes; both stores are
-     clean on that route.
+   Read the step-4 row's heads-up notes first — they list range-API
+   consumers created after the plan was written.
+2. **Then the batched tail-end session** (needs wendao + VPN): live
+   Snowflake e2e, live notebook verification, first real
+   `fraud_anomaly_detection` materialize, archive the effort. Details in
+   the plans README.
+
+(State wipes are always a human call, never the code's — design §14 ground
+rule. The 2026-06-04 `example_homecredit` wipes are recorded in the step-2
+ledger row and git history; both stores verified clean on that route.)
 
 ## On hold — waiting, not next fixes
 

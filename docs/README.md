@@ -29,13 +29,7 @@ action (model: [`to-do/agent-orchestration/`](to-do/agent-orchestration/)). A
 single `<name>.md` is fine for something small; promote it to a folder if it
 grows. An empty file is a placeholder not yet expanded.
 
-Two rules that keep entries useful (wendao, 2026-06-05):
-
-- **Name the entry by the ask, not the provenance.** "leaderboard-dataset-
-  pinning" says what to do; "pilot-feedback" could mean anything. A grab-bag
-  findings list is a working note, not an entry — split it into named entries
-  before it lands here.
-- **Done means deleted, not status-updated.** When an item is fixed (git
-  history records it) or split into its own entry, take it out. `archive/` is
-  for substantial *efforts* whose design rationale is worth keeping — not for
-  finished checklists.
+**Name the entry by the ask, not the provenance.** "leaderboard-dataset-
+pinning" says what to do; "pilot-feedback" could mean anything. A grab-bag
+findings list is a working note, not an entry — split it into named entries
+before it lands here.

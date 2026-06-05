@@ -20,10 +20,6 @@ class LocalCSVSource(DataSource):
 
     kind = "local_csv"
 
-    def __post_init__(self) -> None:
-        self.unique_key_columns  # validate declarations at construction
-        self.split_group_key_columns
-
     def load(
         self,
         *,

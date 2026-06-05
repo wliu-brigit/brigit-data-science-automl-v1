@@ -22,9 +22,8 @@ class GCSParquetSource(DataSource):
     kind = "gcs_parquet"
 
     def __post_init__(self) -> None:
+        super().__post_init__()  # construction-edge key validation (base)
         gcs.parse_gcs_uri(self.gcs_uri)
-        self.unique_key_columns  # validate declarations at construction
-        self.split_group_key_columns
 
     def load(
         self,

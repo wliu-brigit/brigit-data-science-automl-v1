@@ -29,13 +29,6 @@ def test_add_split_pct_assigns_deterministic_buckets_from_group_key():
     assert out1[SPLIT_PCT_COL].iloc[0] == out1[SPLIT_PCT_COL].iloc[3]
 
 
-def test_add_split_pct_errors_when_source_already_provides_the_column():
-    df = _frame()
-    df[SPLIT_PCT_COL] = 0
-    with pytest.raises(DataError, match="SPLIT_PCT"):
-        add_split_pct(df, split_group_key=("user_id",))
-
-
 def test_add_split_pct_errors_on_missing_group_key_column():
     with pytest.raises(KeyError, match="split_group_key"):
         add_split_pct(_frame(), split_group_key=("nope",))

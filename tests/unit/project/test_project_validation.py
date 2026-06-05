@@ -165,7 +165,7 @@ def test_validate_project_live_marks_snowflake_pending(monkeypatch, tmp_path):
     snowflake_spec = DataSpec(
         source=SnowflakeSource(
             base_table="demo.table",
-            base_data_sql="data/queries/base_data.sql",
+            base_table_sql="data/queries/base_table.sql",
             training_data_sql="data/queries/training_data.sql",
             unique_key="row_id",
         )

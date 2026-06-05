@@ -16,8 +16,16 @@ if TYPE_CHECKING:
 
 class DataSource(ABC):
     kind = "base"
+    provides_split_pct = False  # True when SPLIT_PCT arrives from the source (Snowflake)
     unique_key: Key
     split_group_key: Key | None = None
+
+    def __post_init__(self) -> None:
+        # Construction-edge guarantee for every dataclass source: bad key
+        # declarations fail at config time, not at first load. Subclasses
+        # that define their own __post_init__ must call super().__post_init__().
+        self.unique_key_columns
+        self.split_group_key_columns
 
     @property
     def unique_key_columns(self) -> tuple[str, ...]:
@@ -54,7 +62,12 @@ class DataSource(ABC):
         del project_dir
         return self.identity()
 
-    def artifact_files(self, pipeline: "DataPipeline") -> dict[str, Path]:
+    def artifact_files(
+        self,
+        pipeline: "DataPipeline | None" = None,
+        *,
+        project_dir: str | Path | None = None,
+    ) -> dict[str, Path]:
         """Return source trace artifacts to attach to project overview runs."""
         return {}
 

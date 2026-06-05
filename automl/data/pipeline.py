@@ -44,7 +44,10 @@ class DataPipeline:
             refresh_source=self.refresh_source,
         )
         df, original_names = self.standardize_columns(raw)
-        self._check_split_pct_collision(original_names)
+        if self.spec.source.provides_split_pct:
+            df = self._adopt_provided_split_pct(df, original_names)
+        else:
+            self._check_split_pct_collision(original_names)
         unique_key = self._normalize_key_columns(self.spec.source.unique_key_columns, original_names)
         split_group_key = self._normalize_key_columns(
             self.spec.source.split_group_key_columns, original_names
@@ -55,16 +58,23 @@ class DataPipeline:
         exclude_cols = self._normalize_declared(self.spec.exclude_cols, original_names)
         df = self._apply_quality_filters(
             df,
-            protected_cols=(target_column, *unique_key, *split_group_key, *metadata_cols),
+            protected_cols=(
+                target_column,
+                *unique_key,
+                *split_group_key,
+                *metadata_cols,
+                self.split_pct_col,  # source-provided buckets are pipeline state, never droppable
+            ),
         )
         if df.empty:
             raise DataError(
                 f"materialized frame has 0 rows from {self.spec.source.kind}; an empty "
                 "dataset is never useful — check the source data and quality thresholds"
             )
-        df = add_split_pct(
-            df, split_group_key=split_group_key, split_pct_col=self.split_pct_col
-        )
+        if not self.spec.source.provides_split_pct:
+            df = add_split_pct(
+                df, split_group_key=split_group_key, split_pct_col=self.split_pct_col
+            )
         validate_unique_key(df, unique_key=unique_key, source_label=self.spec.source.kind)
         validate_split_pct(df, split_pct_col=self.split_pct_col, source_label=self.spec.source.kind)
         registry = FeatureRegistry().build_from_df(
@@ -108,6 +118,25 @@ class DataPipeline:
         return tuple(
             raw_to_normalized.get(column, _normalize_column(column)) for column in columns
         )
+
+    def _adopt_provided_split_pct(
+        self, df: pd.DataFrame, original_names: dict[str, str]
+    ) -> pd.DataFrame:
+        """Restore the source-provided split column to its canonical name.
+
+        Column standardization lowercases SPLIT_PCT like any other column;
+        for sources that own bucket assignment it is a protected pipeline
+        column, never a feature — so it is renamed back, not recomputed.
+        """
+        lowered = self.split_pct_col.lower()
+        if lowered not in df.columns:
+            raise DataError(
+                f"{self.spec.source.kind} declares provides_split_pct but no "
+                f"{self.split_pct_col} column arrived; carry it through from the base table"
+            )
+        out = df.rename(columns={lowered: self.split_pct_col})
+        original_names[self.split_pct_col] = original_names.pop(lowered, self.split_pct_col)
+        return out
 
     def _check_split_pct_collision(self, original_names: dict[str, str]) -> None:
         collisions = [
@@ -175,6 +204,11 @@ class DataPipeline:
         source_identity = dict(self.spec.source.identity())
         source_identity["unique_key"] = list(unique_key)
         source_identity["split_group_key"] = list(split_group_key)
+        source_identity["split"] = (
+            "sql"
+            if self.spec.source.provides_split_pct
+            else f"python(split_group_key={list(split_group_key)})"
+        )
         component_hashes = ComponentHashes(
             source_identity=json_hash(source_identity),
             feature_registry=registry.content_hash(),
@@ -298,7 +332,10 @@ def _materialize_bound(
         dataset.to_dict(), dataset_id=dataset.id
     )
     dataset = replace(dataset, record_uri=record_uri)  # in memory only; the reader re-derives it
-    _log_source_trace(dataset, spec.source.artifact_files(pipeline))
+    _log_source_trace(
+        dataset,
+        spec.source.artifact_files(pipeline, project_dir=active.config.project_dir),
+    )
     mlflow_experiment.set_active_dataset(dataset.id, experiment_id=active.active_experiment_id)
     logger.info("minted %s and set it active", dataset.id)
     loaded = LoadedDataset(dataset=dataset, df=loaded.df, registry=loaded.registry)

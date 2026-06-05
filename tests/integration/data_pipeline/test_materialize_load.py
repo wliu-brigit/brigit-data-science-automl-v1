@@ -232,7 +232,7 @@ def test_materialize_routes_dataset_objects_by_dry_run_and_namespace(tmp_path, f
 class TraceCSVSource(LocalCSVSource):
     trace_file: Path | None = None
 
-    def artifact_files(self, pipeline) -> dict[str, Path]:
+    def artifact_files(self, pipeline=None, *, project_dir=None) -> dict[str, Path]:
         assert pipeline.session.project_name == "demo"
         if self.trace_file is None:
             return {}

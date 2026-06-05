@@ -45,8 +45,9 @@ def test_homecredit_data_model_breadth_external_gate():
             DataSpec(
                 source=SnowflakeSource(
                     base_table="APP",
-                    base_data_sql="sql/base.sql",
+                    base_table_sql="sql/base.sql",
                     training_data_sql="sql/train.sql",
+                    unique_key="row_id",
                 )
             ).source.kind
             == "snowflake"

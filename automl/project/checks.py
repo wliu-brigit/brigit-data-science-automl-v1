@@ -105,7 +105,7 @@ def placeholder_values(*, config: Any) -> Iterable[Issue]:
         paths.append(config.config_path)
     source = getattr(config.data_spec, "source", None)
     if getattr(source, "kind", "") == "snowflake":
-        for attr in ("base_data_sql", "training_data_sql"):
+        for attr in ("base_table_sql", "training_data_sql"):
             raw = getattr(source, attr, None)
             if not raw:
                 continue

@@ -76,9 +76,9 @@ TASK = BinaryClassification(target="<TBD_target_column>")  # positive_label=1 by
 # Deeper reference: agent-skills/references/setup/data-pipeline.md
 
 source = SnowflakeSource(
-    base_table="<TBD_base_table>",  # the snapshot table your base-data SQL builds
-    base_data_sql="data/queries/base_data.sql",
-    training_data_sql="data/queries/training_data.sql",
+    base_table="<TBD_base_table>",  # name only; lands at {{database}}.{{schema}}.{{base_table}}
+    base_table_sql="data/queries/base_table.sql",      # the SELECT defining the base data
+    training_data_sql="data/queries/training_data.sql",  # the SELECT pulling training rows
     unique_key="<TBD_unique_key>",  # stable row identifier; tuple for composite keys
     # split_group_key="USER_ID",    # declare only when splits must group by a coarser key
 )
@@ -202,18 +202,18 @@ def _snowflake_templates(project_name: str) -> dict[str, str]:
 
             - Start with a simple baseline.
         """,
-        "data/queries/base_data.sql": """
-            -- Snowflake base-data starter.
-            CREATE OR REPLACE TABLE {database}.{schema}.{base_table} AS
+        "data/queries/base_table.sql": """
+            -- The SELECT that defines your base data: joins, CTEs, filters, feature SQL.
+            -- The harness wraps it in CREATE OR REPLACE TABLE and injects SPLIT_PCT from
+            -- split_group_key — do not emit SPLIT_PCT yourself.
             SELECT *
-            FROM {database}.{schema}.<TBD_SOURCE_TABLE>;
+            FROM {database}.{schema}.<TBD_SOURCE_TABLE>
         """,
         "data/queries/training_data.sql": """
-            -- Snowflake training-data starter.
-            SELECT
-                *,
-                MOD(ABS(HASH(<TBD_SPLIT_GROUP_KEY_COLUMN>)), 100) AS SPLIT_PCT
-            FROM {database}.{schema}.{base_table};
+            -- The SELECT that pulls training rows from the base table.
+            -- SPLIT_PCT flows through; keep it in the projection.
+            SELECT *
+            FROM {database}.{schema}.{base_table}
         """,
     }
 

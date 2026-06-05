@@ -25,15 +25,10 @@ def add_split_pct(
 ) -> pd.DataFrame:
     """Return ``df`` with deterministic 0..99 split buckets hashed from ``split_group_key``.
 
-    The source must not already provide the column: a pre-existing split
-    column has ambiguous provenance, so it is a loud error (symmetric with
-    SnowflakeSource's injection collision error), never silently recomputed.
+    Pure mechanism: collision detection (a source column that would shadow
+    ``split_pct_col``) lives at the pipeline edge, where pre-standardization
+    column names are known — one altitude for the check, not two.
     """
-    if split_pct_col in df.columns:
-        raise DataError(
-            f"{source_label} already provides a {split_pct_col} column; the pipeline computes "
-            f"it from split_group_key — rename or remove the source column"
-        )
     missing = [column for column in split_group_key if column not in df.columns]
     if missing:
         raise KeyError(

@@ -1,4 +1,6 @@
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -327,6 +329,51 @@ def test_build_dataset_errors_when_source_provides_split_pct(tmp_path):
     spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10)
 
     with pytest.raises(DataError, match="SPLIT_PCT"):
+        build_dataset(session=_session_for(spec))
+
+
+@dataclass(frozen=True)
+class _ProvidedSplitSource(LocalCSVSource):
+    """File-backed stand-in for a source that owns bucket assignment (Snowflake)."""
+
+    kind = "provided_split_fake"
+    provides_split_pct = True
+
+
+def _provided_split_spec(tmp_path: Path, *, with_split_col: bool = True) -> DataSpec:
+    csv_path = tmp_path / "provided.csv"
+    frame: dict[str, Any] = {"row_id": [1, 2, 3], "TARGET": [0, 1, 0], "x": [0.1, 0.2, 0.3]}
+    if with_split_col:
+        frame["SPLIT_PCT"] = [7, 42, 93]
+    pd.DataFrame(frame).to_csv(csv_path, index=False)
+    return DataSpec(
+        source=_ProvidedSplitSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10
+    )
+
+
+def test_build_dataset_adopts_source_provided_split_pct_verbatim(tmp_path):
+    loaded = build_dataset(session=_session_for(_provided_split_spec(tmp_path)))
+
+    assert loaded.df["SPLIT_PCT"].tolist() == [7, 42, 93]  # adopted, not recomputed
+    assert "split_pct" not in loaded.df.columns  # canonical name restored
+    assert loaded.registry.get("SPLIT_PCT").model is False  # never a feature
+    assert loaded.dataset.source_identity["split"] == "sql"
+
+
+def test_build_dataset_records_python_split_provenance_for_file_sources(tmp_path):
+    csv_path = tmp_path / "plain.csv"
+    pd.DataFrame({"row_id": [1, 2], "TARGET": [0, 1]}).to_csv(csv_path, index=False)
+    spec = DataSpec(source=LocalCSVSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10)
+
+    loaded = build_dataset(session=_session_for(spec))
+
+    assert loaded.dataset.source_identity["split"] == "python(split_group_key=['row_id'])"
+
+
+def test_build_dataset_errors_when_provided_split_pct_is_missing(tmp_path):
+    spec = _provided_split_spec(tmp_path, with_split_col=False)
+
+    with pytest.raises(DataError, match="carry it through"):
         build_dataset(session=_session_for(spec))
 
 

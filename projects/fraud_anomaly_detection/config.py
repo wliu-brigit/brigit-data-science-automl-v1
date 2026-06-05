@@ -22,7 +22,7 @@ TASK = BinaryClassification(target="<TBD_target_column>")
 
 source = SnowflakeSource(
     base_table="<TBD_base_table>",
-    base_data_sql="data/queries/base_data.sql",
+    base_table_sql="data/queries/base_table.sql",
     training_data_sql="data/queries/training_data.sql",
     unique_key="<TBD_unique_key>",
 )

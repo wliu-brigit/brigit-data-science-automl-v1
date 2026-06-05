@@ -64,7 +64,11 @@ def test_create_project_scaffolds_new_import_paths(tmp_path):
     assert result["project"] == "new_project"
     assert config.exists()
     assert (tmp_path / "projects" / "new_project" / "PROJECT_INSTRUCTIONS.md").exists()
-    assert (tmp_path / "projects" / "new_project" / "data" / "queries" / "base_data.sql").exists()
+    base_table_sql = tmp_path / "projects" / "new_project" / "data" / "queries" / "base_table.sql"
+    assert base_table_sql.exists()
+    # The scaffolded SELECT carries its own placeholder (config placeholders
+    # stay config-only — see CONFIG_PLACEHOLDERS).
+    assert "<TBD_SOURCE_TABLE>" in base_table_sql.read_text(encoding="utf-8")
     text = config.read_text(encoding="utf-8")
     assert "automl.core" not in text
     assert "from automl.project import" in text

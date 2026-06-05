@@ -8,8 +8,7 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
 
 ## Where things stand
 
-- **Active effort — all 4 code steps landed; only the batched live session
-  remains:**
+- **Active effort — all 4 code steps landed; tail-end cleanup is partly done:**
   [`execution/snowflake-source-and-split-keys/`](execution/snowflake-source-and-split-keys/)
   — the real `SnowflakeSource` plus the data-layer contract work it
   surfaced. **`design.md` is the source of truth**; the status ledger

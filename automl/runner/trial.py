@@ -23,6 +23,7 @@ from automl.model import validate_model
 from automl.project import Session, find_repo_root, session as active_project_session, use_project
 from automl.trial.metadata import TrialMetadata
 from automl.trial.paths import trial_slug, verify_trial_dir
+from automl.trial.timing_summary import build_runner_timing_summary
 from automl.utils.hashing import dataframe_content_hash
 
 from .artifacts import (
@@ -55,14 +56,20 @@ class TrialExecutionContext:
     session: Session
     trial_dir: Path | None = None
     metadata: TrialMetadata | None = None
+    dataset_id: str | None = None
 
 
-def run_trial(path_or_project: str | Path, *, session: Session | None = None) -> TrialResult:
+def run_trial(
+    path_or_project: str | Path,
+    *,
+    session: Session | None = None,
+    dataset_id: str | None = None,
+) -> TrialResult:
     """Run one project model through the data->fit->eval->log chain."""
 
     # MLflow's HTTP retry budget is capped once, seam-wide, at import of
     # automl.mlflow.client (HTTP_MAX_RETRIES) — no runner-specific override.
-    context = _execution_context(path_or_project, session=session)
+    context = _execution_context(path_or_project, session=session, dataset_id=dataset_id)
     with mlflow_client.bound_for(
         context.session,
         experiment_id=_active_experiment_id_or_none(context.session),
@@ -87,7 +94,14 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
         with timing.phase("model_import"):
             model_cls = _load_model_class(context)
         with timing.phase("data_load"):
-            loaded_fit = data.load_dataset(split_name=run_config.train_split, session=active)
+            if context.dataset_id:
+                loaded_fit = data.load_dataset_by_id(
+                    context.dataset_id,
+                    split_name=run_config.train_split,
+                    session=active,
+                )
+            else:
+                loaded_fit = data.load_dataset(split_name=run_config.train_split, session=active)
         sample = loaded_fit.df.head(200)
         with timing.phase("pre_fit_validation"):
             require_validation_passed(
@@ -206,7 +220,8 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
                 timing=timing,
                 model_uri=model_ref.logged_uri,
             )
-            log_timing(run_id, timing.snapshot())
+            timing_summary = build_runner_timing_summary(timing.snapshot())
+            log_timing(run_id, timing_summary)
             log_manifest(
                 run_id=run_id,
                 active=active,
@@ -217,7 +232,7 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
                 contract=contract,
                 eval_result=eval_result,
                 validation_report=validation_report,
-                timing=timing.snapshot(),
+                timing=timing_summary,
                 has_agent_proposal=has_agent_proposal,
             )
             return TrialResult(
@@ -380,6 +395,7 @@ def _execution_context(
     path_or_project: str | Path,
     *,
     session: Session | None = None,
+    dataset_id: str | None = None,
 ) -> TrialExecutionContext:
     path = Path(path_or_project) if path_or_project not in (None, "") else None
     if path is not None and path.exists() and _should_execute_path(path, session):
@@ -395,8 +411,12 @@ def _execution_context(
             session=active,
             trial_dir=verified,
             metadata=metadata,
+            dataset_id=dataset_id,
         )
-    return TrialExecutionContext(session=_resolve_session(path_or_project, session=session))
+    return TrialExecutionContext(
+        session=_resolve_session(path_or_project, session=session),
+        dataset_id=dataset_id,
+    )
 
 
 def _should_execute_path(path: Path, session: Session | None) -> bool:
@@ -580,8 +600,7 @@ def _trial_data_contract(
         ),
         dataset=DatasetRef.from_dataset(loaded_fit.dataset),
         splits={
-            name: predicate.to_dict()
-            for name, predicate in run_config.splits.predicates.items()
+            name: predicate.to_dict() for name, predicate in run_config.splits.predicates.items()
         },
         slices=tuple(slices),
     )

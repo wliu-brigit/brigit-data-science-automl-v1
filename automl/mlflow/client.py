@@ -270,6 +270,14 @@ def delete_experiment(experiment_id: str) -> None:
         raise StorageError(f"Failed to delete MLflow experiment {experiment_id!r}") from exc
 
 
+def rename_experiment(experiment_id: str, name: str) -> None:
+    """Rename an MLflow experiment through the MLflow seam."""
+    try:
+        raw().rename_experiment(experiment_id, name)
+    except Exception as exc:
+        raise StorageError(f"Failed to rename MLflow experiment {experiment_id!r}") from exc
+
+
 def delete_run(run_id: str) -> None:
     """Soft-delete an MLflow run through the MLflow seam."""
     try:
@@ -318,6 +326,7 @@ __all__ = [
     "project_url",
     "raw",
     "remember_run_experiment",
+    "rename_experiment",
     "run_start_time",
     "run_url",
 ]

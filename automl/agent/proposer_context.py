@@ -6,7 +6,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any
 
 from automl.data.profile import get_profile
-from automl.data.registry import list_datasets
+from automl.data.selection import resolve_active_dataset
 from automl.experiment.views import leaderboard, recent_failures, strategies_attempted
 from automl.mlflow import client as mlflow_client
 from automl.mlflow import experiment as mlflow_experiment
@@ -145,17 +145,12 @@ def _mlflow_experiment_id(active: Session) -> str | None:
 
 
 def _data_context(active: Session, trial_rows: list[TrialSummary]) -> dict[str, Any]:
-    index = list_datasets(session=active)
-    active_dataset = index.active or (index.datasets[-1] if index.datasets else None)
-    profile = (
-        get_profile(dataset_id=active_dataset.id, session=active)
-        if active_dataset is not None
-        else None
-    )
+    active_dataset = resolve_active_dataset(session=active)
+    profile = get_profile(dataset_id=active_dataset.id, session=active)
     usage = _dataset_usage(trial_rows)
-    active_usage = usage.get(active_dataset.identity_hash, 0) if active_dataset is not None else 0
+    active_usage = usage.get(active_dataset.identity_hash, 0)
     return {
-        "active_dataset": active_dataset.to_dict() if active_dataset is not None else None,
+        "active_dataset": active_dataset.to_dict(),
         "profile": profile.to_dict() if profile is not None else None,
         "dataset_usage": usage,
         "trial_usage_count": active_usage,

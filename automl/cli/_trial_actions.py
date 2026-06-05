@@ -74,7 +74,7 @@ def _promote(args: argparse.Namespace) -> int:
 
 def _run(args: argparse.Namespace) -> int:
     active = session_from_args(args)
-    result = run_trial(args.path, session=active)
+    result = run_trial(args.path, session=active, dataset_id=getattr(args, "dataset_id", None))
     print_json(result)
     return trial_result_exit_code(result)
 
@@ -97,9 +97,6 @@ def _delete(args: argparse.Namespace) -> int:
         delete_trial(
             args.run_id,
             apply=args.apply,
-            hard_delete=args.hard_delete,
-            backend_store_uri=args.backend_store_uri,
-            artifacts_destination=args.artifacts_destination,
             session=active,
         )
     )

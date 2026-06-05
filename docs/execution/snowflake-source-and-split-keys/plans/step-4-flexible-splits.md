@@ -738,7 +738,7 @@ HANDOFF/README links pointing at it.
 - [x] **Step 2:** Update `docs/HANDOFF.md`: all four steps of the effort
 landed; tail-end activities remain (live notebook verification on
 example_homecredit — note
-`projects/example_homecredit/notebooks/2_run_agent_automl.ipynb` contains a
+`projects/example_homecredit/notebooks/3.1_run_agent_automl.ipynb` contains a
 `Splits(train=[(0, 80)]...)` cell that now raises and must be updated in
 that pass; fraud project first real materialize).
 

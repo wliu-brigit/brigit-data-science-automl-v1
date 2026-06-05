@@ -26,9 +26,6 @@ def add_parser(subparsers) -> None:
     delete = experiment_sub.add_parser("delete")
     delete.add_argument("experiment_id_arg")
     delete.add_argument("--apply", action="store_true")
-    delete.add_argument("--hard-delete", action="store_true")
-    delete.add_argument("--backend-store-uri", default="")
-    delete.add_argument("--artifacts-destination", default="")
     delete.set_defaults(func=actions._delete)
 
     board = experiment_sub.add_parser("leaderboard")

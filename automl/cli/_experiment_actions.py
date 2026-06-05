@@ -59,9 +59,6 @@ def _delete(args: argparse.Namespace) -> int:
         delete_experiment(
             args.experiment_id_arg,
             apply=args.apply,
-            hard_delete=args.hard_delete,
-            backend_store_uri=args.backend_store_uri,
-            artifacts_destination=args.artifacts_destination,
             session=active,
         )
     )

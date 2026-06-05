@@ -13,9 +13,6 @@ def delete(
     run_id: str,
     *,
     apply: bool = False,
-    hard_delete: bool = False,
-    backend_store_uri: str = "",
-    artifacts_destination: str = "",
     session: Session | None = None,
 ):
     active = session if session is not None else active_project_session()
@@ -33,9 +30,6 @@ def delete(
         run_id,
         scope="trial",
         apply=apply,
-        hard_delete=hard_delete,
-        backend_store_uri=backend_store_uri,
-        artifacts_destination=artifacts_destination,
         session=active,
         parent_experiment=parent,
     )

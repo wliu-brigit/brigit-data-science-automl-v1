@@ -52,8 +52,7 @@ class Profile:
             data_observations_uri=str(payload.get("data_observations_uri", "")),
             profile_manifest_uri=str(payload.get("profile_manifest_uri", "")),
             chart_uris={
-                str(key): str(value)
-                for key, value in dict(payload.get("chart_uris", {})).items()
+                str(key): str(value) for key, value in dict(payload.get("chart_uris", {})).items()
             },
             created_at=str(payload.get("created_at", "")),
         )
@@ -64,18 +63,15 @@ ChartFn = Callable[[pd.DataFrame, str, Path], None]
 
 
 def profile(dataset_id: str | None = None, *, session: Session | None = None) -> Profile:
-    from automl.data.registry import list_datasets, load_dataset_by_id
+    from automl.data.registry import load_dataset_by_id
+    from automl.data.selection import resolve_active_dataset
     from automl.mlflow.experiment import artifacts as experiment_artifacts
 
     active = _session(session)
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
         resolved_dataset_id = dataset_id
         if resolved_dataset_id is None:
-            index = list_datasets(session=active)
-            dataset = index.active or (index.datasets[-1] if index.datasets else None)
-            if dataset is None:
-                raise DataError("no dataset is available to profile")
-            resolved_dataset_id = dataset.id
+            resolved_dataset_id = resolve_active_dataset(session=active).id
         loaded = load_dataset_by_id(resolved_dataset_id, session=active)
         if not isinstance(loaded, LoadedDataset):
             raise DataError("profile requires a full loaded dataset")
@@ -95,18 +91,14 @@ def profile(dataset_id: str | None = None, *, session: Session | None = None) ->
 
 
 def get_profile(dataset_id: str | None = None, *, session: Session | None = None) -> Profile | None:
-    from automl.data.registry import list_datasets
+    from automl.data.selection import resolve_active_dataset
     from automl.mlflow.experiment import artifacts as experiment_artifacts
 
     active = _session(session)
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
         resolved_dataset_id = dataset_id
         if resolved_dataset_id is None:
-            index = list_datasets(session=active)
-            dataset = index.active or (index.datasets[-1] if index.datasets else None)
-            if dataset is None:
-                return None
-            resolved_dataset_id = dataset.id
+            resolved_dataset_id = resolve_active_dataset(session=active).id
         return experiment_artifacts.read_profile(resolved_dataset_id)
 
 

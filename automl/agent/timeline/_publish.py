@@ -33,6 +33,7 @@ from automl.mlflow import experiment as mlflow_experiment
 from automl.mlflow import routing as mlflow_routing
 from automl.mlflow import trial as mlflow_trial
 from automl.project import Session, session as active_project_session
+from automl.trial.timing_summary import enrich_agent_timing_summary
 from automl.utils.io import gcs
 
 
@@ -126,11 +127,7 @@ def _session_summary_payload(
     summary: dict[str, Any],
     gcs_refs: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    payload = {
-        key: value
-        for key, value in summary.items()
-        if key not in {"events", "iterations"}
-    }
+    payload = {key: value for key, value in summary.items() if key not in {"events", "iterations"}}
     payload.update(
         {
             "artifact_kind": "session_summary",
@@ -162,9 +159,7 @@ def _stage_trial_artifact(
     proposer_tool_events = [
         event for event in tool_events if str(event.get("phase") or "") == "proposer"
     ]
-    coder_tool_events = [
-        event for event in tool_events if str(event.get("phase") or "") == "coder"
-    ]
+    coder_tool_events = [event for event in tool_events if str(event.get("phase") or "") == "coder"]
     paths = {
         "agent_manifest_path": trial_dir / "manifest.json",
         "proposer_report_path": trial_dir / "proposer" / "report.json",
@@ -374,9 +369,7 @@ def _publish_raw_artifacts_to_gcs(
         if not run_id or not trial_id:
             continue
         with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
-            base_uri = mlflow_routing.bucket_uri_for(kind="agent_events", run_id=run_id).rstrip(
-                "/"
-            )
+            base_uri = mlflow_routing.bucket_uri_for(kind="agent_events", run_id=run_id).rstrip("/")
         raw_events_uri = f"{base_uri}/agent_timeline.jsonl"
         gcs.write_bytes(
             raw_events_uri,
@@ -405,9 +398,7 @@ def _upload_session_transcripts_to_gcs(
         return {}
     session_id = _latest_session_id_from_events(events)
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
-        base_uri = mlflow_routing.bucket_uri_for(kind="agent_events", run_id=session_id).rstrip(
-            "/"
-        )
+        base_uri = mlflow_routing.bucket_uri_for(kind="agent_events", run_id=session_id).rstrip("/")
     refs: dict[str, Any] = {"main": [], "subagents": {}}
     for index, transcript in enumerate(_main_transcript_paths(events), start=1):
         uri = f"{base_uri}/transcripts/main/main_{index}.jsonl.gz"
@@ -478,6 +469,7 @@ def _publish_to_mlflow(active: Session, *, staged: dict[str, Any]) -> None:
             _log_trial_json_artifacts(run_id, artifact)
             _log_trial_message_artifacts(run_id, artifact)
             _log_trial_metrics(run_id, artifact)
+            _log_trial_timing_summary(run_id, artifact, staged["session_summary"])
 
 
 def _log_trial_json_artifacts(run_id: str, artifact: dict[str, Any]) -> None:
@@ -520,6 +512,122 @@ def _log_trial_metrics(run_id: str, artifact: dict[str, Any]) -> None:
     for key, value in metrics.items():
         if value is not None:
             mlflow_trial.log_metric(run_id, key, value)
+
+
+def _log_trial_timing_summary(
+    run_id: str,
+    artifact: dict[str, Any],
+    session_summary: dict[str, Any],
+) -> None:
+    runner_summary = _read_trial_json_artifact(run_id, "timing/summary.json")
+    if runner_summary is None:
+        return
+    iteration = _iteration_for_artifact(artifact, session_summary)
+    if iteration is None:
+        return
+    spans = iteration.get("phase_spans") if isinstance(iteration.get("phase_spans"), dict) else {}
+    proposer = spans.get("proposer") if isinstance(spans.get("proposer"), dict) else {}
+    coder = spans.get("coder") if isinstance(spans.get("coder"), dict) else {}
+    runner = (
+        iteration.get("runner_span") if isinstance(iteration.get("runner_span"), dict) else None
+    )
+    steps = session_summary.get("steps") if isinstance(session_summary.get("steps"), list) else []
+    timing = enrich_agent_timing_summary(
+        runner_summary,
+        setup_steps=_setup_steps_for_iteration(steps, proposer),
+        proposer=proposer,
+        proposal_handoff_steps=_handoff_steps_for_iteration(steps, proposer, coder),
+        coder=coder,
+        runner=runner,
+        publish_s=float(session_summary.get("publish_s") or 0.0),
+    )
+    mlflow_trial.log_json(run_id, "timing/summary", timing)
+
+
+def _read_trial_json_artifact(run_id: str, path: str) -> dict[str, Any] | None:
+    try:
+        local_path = mlflow_client.download_artifact(run_id, path)
+    except Exception:
+        return None
+    if local_path is None:
+        return None
+    try:
+        payload = json.loads(Path(local_path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _iteration_for_artifact(
+    artifact: dict[str, Any],
+    session_summary: dict[str, Any],
+) -> dict[str, Any] | None:
+    run_id = str(artifact.get("run_id") or "")
+    trial_id = str(artifact.get("trial_id") or "")
+    iterations = session_summary.get("iterations")
+    if not isinstance(iterations, list):
+        return None
+    for iteration in iterations:
+        if not isinstance(iteration, dict):
+            continue
+        if (
+            str(iteration.get("run_id") or "") == run_id
+            and str(iteration.get("trial_id") or "") == trial_id
+        ):
+            return iteration
+    return None
+
+
+def _setup_steps_for_iteration(
+    steps: list[Any],
+    proposer: dict[str, Any],
+) -> list[dict[str, Any]]:
+    proposer_start = float(proposer.get("start_s") or 0.0)
+    if not proposer_start:
+        return []
+    return [
+        _timing_step(step)
+        for step in steps
+        if isinstance(step, dict) and _step_end(step) <= proposer_start
+    ]
+
+
+def _handoff_steps_for_iteration(
+    steps: list[Any],
+    proposer: dict[str, Any],
+    coder: dict[str, Any],
+) -> list[dict[str, Any]]:
+    proposer_end = float(proposer.get("end_s") or 0.0)
+    coder_start = float(coder.get("start_s") or 0.0)
+    if not proposer_end or not coder_start:
+        return []
+    return [
+        _timing_step(step)
+        for step in steps
+        if isinstance(step, dict)
+        and proposer_end <= _step_start(step)
+        and _step_end(step) <= coder_start
+    ]
+
+
+def _timing_step(step: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "name": str(step.get("step") or ""),
+        "duration_s": float(step.get("duration_s") or 0.0),
+        "start_s": _step_start(step),
+        "time_s": _step_end(step),
+    }
+
+
+def _step_start(step: dict[str, Any]) -> float:
+    return float(
+        step.get("start_s")
+        or (float(step.get("time_s") or 0.0) - float(step.get("duration_s") or 0.0))
+    )
+
+
+def _step_end(step: dict[str, Any]) -> float:
+    return float(step.get("time_s") or 0.0)
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:

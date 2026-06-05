@@ -16,6 +16,7 @@ from automl.data.pipeline import DataPipeline, build_dataset, materialize
 from automl.data.profile import Profile, get_profile, profile
 from automl.data.recipe import compute_recipe, recipe_diff
 from automl.data.registry import list_datasets, load_dataset, load_dataset_by_id, load_dataset_by_trial
+from automl.data.selection import activate_dataset, resolve_active_dataset, resolve_active_dataset_id
 from automl.data.sources import DataSource, GCSParquetSource, LocalCSVSource, SnowflakeSource
 from automl.data.spec import DataSpec
 from automl.data.split import Key, add_split_pct, split_report, validate_split_pct, validate_unique_key
@@ -41,6 +42,7 @@ __all__ = [
     "TrialDataContract",
     "TrialRef",
     "add_split_pct",
+    "activate_dataset",
     "build_dataset",
     "compute_recipe",
     "get_profile",
@@ -51,9 +53,13 @@ __all__ = [
     "materialize",
     "profile",
     "recipe_diff",
+    "resolve_active_dataset",
+    "resolve_active_dataset_id",
     "split_report",
     "validate_loaded_dataset",
+    "validate_split_pct",
     "validate_trial_data_contract",
+    "validate_unique_key",
     "verify_loaded_slice",
     "verify_trial_tag_lineage",
 ]

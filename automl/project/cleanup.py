@@ -3,25 +3,23 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, Mapping
 
-from automl.errors import ProjectError
 from automl.mlflow import client as mlflow_client
 from automl.mlflow import project as mlflow_project
 from automl.mlflow import routing as mlflow_routing
-from automl.project import Session, session as active_project_session
+from automl.project.session import Session, session as active_project_session
 from automl.trial.types import ParentExperimentRef
 from automl.utils.io import gcs
 
 
-CleanupScope = Literal["project", "experiment", "trial"]
+CleanupScope = Literal["project", "experiment", "trial", "qa"]
 
-# QA is a transient namespace convention: experiments routed under a ``qa-*`` or
-# ``qa/*`` namespace are throwaway test runs that the QA sweep wipes wholesale.
+# QA is a transient namespace convention: new throwaway test runs route under
+# ``qa/<purpose>``. The older ``qa-*`` prefix remains sweepable for cleanup.
 QA_NAMESPACE_PREFIXES = ("qa-", "qa/")
 
 
@@ -64,8 +62,6 @@ class CleanupResult:
     mlflow_runs: dict[str, str] = field(default_factory=dict)
     gcs: dict[str, int | str] = field(default_factory=dict)
     local: dict[str, str] = field(default_factory=dict)
-    mlflow_hard_delete_status: str = ""
-    mlflow_hard_delete_output: str = ""
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "CleanupResult":
@@ -75,8 +71,6 @@ class CleanupResult:
             mlflow_runs=dict(payload.get("mlflow_runs", {})),
             gcs=dict(payload.get("gcs", {})),
             local=dict(payload.get("local", {})),
-            mlflow_hard_delete_status=str(payload.get("mlflow_hard_delete_status", "")),
-            mlflow_hard_delete_output=str(payload.get("mlflow_hard_delete_output", "")),
         )
 
 
@@ -99,13 +93,10 @@ class CleanupReport:
 
 
 def delete(
-    name: str,
+    name: str | None = None,
     *,
     scope: CleanupScope = "project",
     apply: bool = False,
-    hard_delete: bool = False,
-    backend_store_uri: str = "",
-    artifacts_destination: str = "",
     session: Session | None = None,
     parent_experiment: ParentExperimentRef | None = None,
 ) -> CleanupReport:
@@ -115,71 +106,38 @@ def delete(
         result = (
             _apply_plan(
                 plan,
-                hard_delete=hard_delete,
-                backend_store_uri=backend_store_uri,
-                artifacts_destination=artifacts_destination,
                 session=active,
             )
             if apply
             else None
         )
     return CleanupReport(applied=apply, plan=plan, result=result)
-
-
-def delete_qa(
-    *,
-    apply: bool = False,
-    hard_delete: bool = False,
-    backend_store_uri: str = "",
-    artifacts_destination: str = "",
-    session: Session | None = None,
-) -> CleanupReport:
-    """Delete every QA experiment (``qa-*`` / ``qa/*`` namespace) and its artifacts.
-
-    QA is a transient namespace convention, so this is a cross-project sweep:
-    it targets every experiment whose route begins with a QA namespace, plus the
-    GCS subtree and local dirs of each distinct QA namespace. Preview by default;
-    ``apply=True`` executes and ``hard_delete=True`` purges permanently.
-    """
-    active = session if session is not None else active_project_session()
-    with mlflow_client.bound_for(active):
-        plan = _build_qa_plan(active)
-        result = (
-            _apply_plan(
-                plan,
-                hard_delete=hard_delete,
-                backend_store_uri=backend_store_uri,
-                artifacts_destination=artifacts_destination,
-                session=active,
-            )
-            if apply
-            else None
-        )
-    return CleanupReport(applied=apply, plan=plan, result=result)
-
-
-def _build_qa_plan(session: Session) -> CleanupPlan:
-    names = [name for name in _all_experiment_names() if _is_qa_namespace(name)]
-    namespaces = sorted({_namespace_of(name) for name in names})
-    return CleanupPlan(
-        scope="qa",
-        identifier="qa",
-        project_name=session.project_name,
-        namespace=session.namespace,
-        dry_run=session.dry_run,
-        mlflow_experiment_targets=[(name, "") for name in names],
-        gcs_prefix_patterns=[_namespace_gcs_prefix(session, ns) for ns in namespaces],
-        local_paths=[str(_namespace_local_root(session, ns)) for ns in namespaces],
-    )
 
 
 def _build_plan(
     scope: str,
-    identifier: str,
+    identifier: str | None,
     session: Session,
     *,
     parent_experiment: ParentExperimentRef | None = None,
 ) -> CleanupPlan:
+    if scope == "qa":
+        if identifier is not None:
+            raise ValueError("qa cleanup scope does not accept name")
+        names = [name for name in _all_experiment_names() if _is_qa_namespace(name)]
+        namespaces = sorted({_namespace_root_of(name) for name in names})
+        return CleanupPlan(
+            scope=scope,
+            identifier="qa",
+            project_name=session.project_name,
+            namespace=session.namespace,
+            dry_run=session.dry_run,
+            mlflow_experiment_targets=[(name, "") for name in names],
+            gcs_prefix_patterns=[_namespace_gcs_prefix(session, ns) for ns in namespaces],
+            local_paths=[str(_namespace_local_root(session, ns)) for ns in namespaces],
+        )
+    if identifier is None:
+        raise ValueError(f"{scope} cleanup requires name")
     if scope == "experiment":
         route = _route_for(session, identifier)
         return CleanupPlan(
@@ -238,15 +196,11 @@ def _build_plan(
 def _apply_plan(
     plan: CleanupPlan,
     *,
-    hard_delete: bool,
-    backend_store_uri: str,
-    artifacts_destination: str,
     session: Session,
 ) -> CleanupResult:
     mlflow_experiments: dict[str, str] = {}
     mlflow_runs: dict[str, str] = {}
-    deleted_experiment_ids: list[str] = []
-    deleted_run_ids: list[str] = []
+    archive_root = _archive_root()
 
     for name, known_id in plan.mlflow_experiment_targets:
         try:
@@ -258,9 +212,10 @@ def _apply_plan(
             if getattr(found, "lifecycle_stage", "active") == "deleted":
                 mlflow_experiments[name] = "skipped: already deleted"
             else:
+                archived_name = _available_archive_experiment_name(name, archive_root)
+                mlflow_client.rename_experiment(experiment_id, archived_name)
                 mlflow_client.delete_experiment(experiment_id)
-                mlflow_experiments[name] = "deleted"
-            deleted_experiment_ids.append(known_id or experiment_id)
+                mlflow_experiments[name] = f"archived: {archived_name}; deleted"
         except Exception as exc:
             mlflow_experiments[name] = f"failed: {exc}"
 
@@ -268,85 +223,54 @@ def _apply_plan(
         try:
             mlflow_client.delete_run(run_id)
             mlflow_runs[run_id] = "deleted"
-            deleted_run_ids.append(run_id)
         except Exception as exc:
             mlflow_runs[run_id] = f"failed: {exc}"
-            deleted_run_ids.append(run_id)
 
     gcs_results: dict[str, int | str] = {}
     for prefix in plan.gcs_prefix_patterns:
         try:
-            gcs_results[prefix] = gcs.delete_prefix(prefix)
+            archived_prefix = _archive_gcs_prefix(prefix, archive_root)
+            moved = gcs.move_prefix(prefix, archived_prefix)
+            gcs_results[prefix] = f"archived {moved} to {archived_prefix}"
         except Exception as exc:
             gcs_results[prefix] = f"failed: {exc}"
-    local_results = {path: _delete_local_path(path) for path in plan.local_paths}
-
-    hard_status = ""
-    hard_output = ""
-    if hard_delete:
-        hard_status, hard_output = _run_mlflow_gc(
-            experiment_ids=deleted_experiment_ids,
-            run_ids=deleted_run_ids,
-            backend_store_uri=backend_store_uri,
-            artifacts_destination=artifacts_destination,
-            session=session,
-        )
+    local_results = {
+        path: _archive_local_path(path, archive_root)
+        for path in plan.local_paths
+    }
 
     return CleanupResult(
         mlflow_experiments=mlflow_experiments,
         mlflow_runs=mlflow_runs,
         gcs=gcs_results,
         local=local_results,
-        mlflow_hard_delete_status=hard_status,
-        mlflow_hard_delete_output=hard_output,
     )
 
 
-def _run_mlflow_gc(
-    *,
-    experiment_ids: list[str],
-    run_ids: list[str],
-    backend_store_uri: str,
-    artifacts_destination: str,
-    session: Session,
-) -> tuple[str, str]:
-    if not experiment_ids and not run_ids:
-        return "skipped: no MLflow hard-delete targets", ""
-    backend_uri = _backend_store_uri(session, backend_store_uri)
-    if not backend_uri:
-        raise ProjectError("MLflow hard delete requires --backend-store-uri for remote stores")
-    command = [
-        "uv",
-        "run",
-        "mlflow",
-        "gc",
-        "--backend-store-uri",
-        backend_uri,
-    ]
-    if run_ids:
-        command.extend(["--run-ids", ",".join(run_ids)])
-    if experiment_ids:
-        command.extend(["--experiment-ids", ",".join(experiment_ids)])
-    if artifacts_destination:
-        command.extend(["--artifacts-destination", artifacts_destination])
-    completed = subprocess.run(command, check=False, capture_output=True, text=True)
-    output = "\n".join(part for part in (completed.stdout, completed.stderr) if part)
-    return ("success" if completed.returncode == 0 else f"failed: {completed.returncode}", output)
+def _archive_root() -> str:
+    return "deleted"
 
 
-def _backend_store_uri(session: Session, backend_store_uri: str) -> str:
-    if backend_store_uri:
-        return backend_store_uri
-    tracking_uri = session.config.mlflow_tracking_uri
-    if tracking_uri.startswith("file:"):
-        return tracking_uri
-    for candidate in (
-        session.config.repo_root / "mlflow_local" / "mlflow.db",
-        session.config.repo_root.parent / "mlflow_local" / "mlflow.db",
-    ):
-        if candidate.is_file():
-            return f"sqlite:///{candidate.resolve()}"
-    return ""
+def _available_archive_experiment_name(name: str, archive_root: str) -> str:
+    candidate = f"{archive_root}/{name}".strip("/")
+    if mlflow_client.get_experiment_by_name(candidate) is None:
+        return candidate
+    index = 2
+    while mlflow_client.get_experiment_by_name(f"{candidate}_{index}") is not None:
+        index += 1
+    return f"{candidate}_{index}"
+
+
+def _archive_gcs_prefix(prefix: str, archive_root: str) -> str:
+    bucket, blob_prefix = gcs.parse_gcs_uri(prefix.rstrip("/") + "/_")
+    blob_prefix = blob_prefix.removesuffix("_").strip("/")
+    configured_prefix = mlflow_client.bound().gcs_prefix.strip("/")
+    if configured_prefix and blob_prefix.startswith(configured_prefix + "/"):
+        route = blob_prefix.removeprefix(configured_prefix + "/")
+        archived_blob_prefix = f"{configured_prefix}/{archive_root}/{route}"
+    else:
+        archived_blob_prefix = f"{archive_root}/{blob_prefix}"
+    return f"gs://{bucket}/{archived_blob_prefix.strip('/')}/"
 
 
 def _delete_local_path(path: str) -> str:
@@ -358,6 +282,35 @@ def _delete_local_path(path: str) -> str:
         return "deleted"
     except Exception as exc:
         return f"failed: {exc}"
+
+
+def _archive_local_path(path: str, archive_root: str) -> str:
+    target = Path(path)
+    if not target.exists():
+        return "skipped: not found"
+    parts = target.parts
+    if "experiments" not in parts:
+        return _delete_local_path(path)
+    index = parts.index("experiments")
+    route_parts = parts[index + 1 :]
+    destination = Path(*parts[: index + 1], *Path(archive_root).parts, *route_parts)
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if destination.exists():
+            destination = _available_local_archive_path(destination)
+        shutil.move(str(target), str(destination))
+        return f"archived: {destination}"
+    except Exception as exc:
+        return f"failed: {exc}"
+
+
+def _available_local_archive_path(path: Path) -> Path:
+    index = 2
+    candidate = path
+    while candidate.exists():
+        candidate = path.with_name(f"{path.name}_{index}")
+        index += 1
+    return candidate
 
 
 def _route_experiment_names() -> list[str]:
@@ -378,6 +331,20 @@ def _all_experiment_names() -> list[str]:
 
 def _is_qa_namespace(name: str) -> bool:
     return name.startswith(QA_NAMESPACE_PREFIXES)
+
+
+def _is_archived_qa_namespace(name: str) -> bool:
+    parts = name.split("/")
+    return len(parts) >= 3 and parts[0] == "deleted" and (
+        parts[2] == "qa" or parts[2].startswith("qa-")
+    )
+
+
+def _namespace_root_of(name: str) -> str:
+    if _is_archived_qa_namespace(name):
+        parts = name.split("/")
+        return "/".join(parts[:4] if parts[2] == "qa" else parts[:3])
+    return _namespace_of(name)
 
 
 def _namespace_of(name: str) -> str:

@@ -12,7 +12,7 @@ from automl.data.contract import (
 )
 from automl.data.dataset import Dataset, DatasetIndex, LoadedDataset, LoadedSlice
 from automl.data.features import FeatureRegistry
-from automl.errors import DataError
+from automl.data.selection import resolve_active_dataset
 from automl.mlflow import client as mlflow_client
 from automl.mlflow import experiment as mlflow_experiment
 from automl.mlflow.trial import artifacts as trial_artifacts
@@ -39,10 +39,7 @@ def load_dataset(
     predicate: Predicate | None = None,
     session: Session | None = None,
 ) -> LoadedDataset | LoadedSlice:
-    index = list_datasets(session=session)
-    dataset = index.active or (index.datasets[-1] if index.datasets else None)
-    if dataset is None:
-        raise DataError("no active dataset is available")
+    dataset = resolve_active_dataset(session=session)
     return load_dataset_by_id(
         dataset.id,
         split_name=split_name,

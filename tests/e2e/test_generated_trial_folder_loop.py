@@ -27,7 +27,7 @@ pytestmark = [pytest.mark.e2e, pytest.mark.qa]
 def test_generated_trial_folder_full_loop_gate():
     repo_root = Path(__file__).resolve().parents[2]
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-    namespace = f"qa-generated-trial-folder-{stamp}"
+    namespace = f"qa/generated-trial-folder-{stamp}"
     experiment_id = f"generated-trial-folder-{stamp}"
     project = "example_homecredit"
     active = use_project(

@@ -83,6 +83,21 @@ def test_list_dataset_records_is_empty_for_a_fresh_experiment(bound_file_mlflow)
     assert artifacts.list_dataset_records() == []
 
 
+def test_write_and_read_active_dataset_pointer_round_trips(bound_file_mlflow):
+    uri = artifacts.write_active_dataset_pointer("v2_good")
+
+    assert uri.startswith("runs:/")
+    assert uri.endswith("datasets/active_pointer.json")
+    assert artifacts.read_active_dataset_pointer() == {
+        "schema_version": 1,
+        "active_dataset_id": "v2_good",
+    }
+
+
+def test_read_active_dataset_pointer_returns_none_when_absent(bound_file_mlflow):
+    assert artifacts.read_active_dataset_pointer() is None
+
+
 def test_list_dataset_records_propagates_transport_failures(bound_file_mlflow, monkeypatch):
     # An exception from list_artifacts is a genuine transport/auth failure,
     # never "no datasets yet" — it must surface, not read as an empty index.
@@ -92,9 +107,7 @@ def test_list_dataset_records_propagates_transport_failures(bound_file_mlflow, m
         def list_artifacts(self, run_id, path=None):
             raise RuntimeError("proxy unreachable")
 
-    monkeypatch.setattr(
-        artifacts, "_overview_run_id_or_none", lambda experiment_id=None: "run-123"
-    )
+    monkeypatch.setattr(artifacts, "_overview_run_id_or_none", lambda experiment_id=None: "run-123")
     monkeypatch.setattr(artifacts.client, "raw", lambda: ExplodingClient())
     with pytest.raises(StorageError, match="list dataset records"):
         artifacts.list_dataset_records()

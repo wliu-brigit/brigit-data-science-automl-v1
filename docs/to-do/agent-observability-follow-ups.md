@@ -5,7 +5,7 @@
 The change set below is unit/integration/contract-tested (478 green) and the
 hang fix is verified against production in isolation (`automl experiment
 proposer-context`: >120s hang → ~28s). The **full-loop validation via
-`2_run_agent_automl.ipynb` could not be completed on 2026-06-02**: the Claude
+`3.1_run_agent_automl.ipynb` could not be completed on 2026-06-02**: the Claude
 API was degraded that evening (manager-session requests hung ~16 min/attempt
 with `api_error: Request timed out`, retried — ~112 min of pure API wait in
 one run). Re-run the notebook on a healthy API day and check, in MLflow:
@@ -14,7 +14,7 @@ one run). Re-run the notebook on a healthy API day and check, in MLflow:
 |---|---|
 | Retry cap + list-first downloads | session report `step_durations_s["experiment proposer-context"]` is seconds, not minutes; the final loop-context render no longer needs to be killed; no "Downloading artifacts" stalls in the manager transcript |
 | Agent narratives | trial run has `agent/proposer/message.md` + `agent/coder/message.md`, full untruncated markdown |
-| Unified timing | session report has `steps`, `step_durations_s`, `publish_s`, `unattributed_s`; coder report has `runner_phases_s` (data/fit/eval/…) |
+| Unified timing | trial `timing/summary.json` is the canonical timing artifact: high-level phases are `setup`, `proposer`, `proposal_handoff`, `coder_implementation`, `runner`, `coder_report`, `publish`; detailed runner phases live under `phase_details.runner.phases`; session report still has `steps`, `step_durations_s`, `publish_s`, `unattributed_s` |
 | Step naming | step names read `"<noun> <verb>"` (e.g. `trial run`) — events recorded before the mid-run fix on 2026-06-02 show flag values instead; ignore those |
 | Stall self-diagnosis | `unattributed_s` ≈ session time spent waiting on the model/API; on a healthy run it should be small relative to `total_s` |
 

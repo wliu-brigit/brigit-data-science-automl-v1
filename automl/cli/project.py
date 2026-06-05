@@ -6,24 +6,20 @@ import argparse
 from pathlib import Path
 
 from automl.project import allowed_dependencies, create_project, list_projects
-from automl.project.cleanup import delete as delete_project, delete_qa
+from automl.project.cleanup import delete as delete_project
 
 from ._common import print_json, session_from_args
 
 
 def _add_cleanup_flags(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--apply", action="store_true")
-    parser.add_argument("--hard-delete", action="store_true")
-    parser.add_argument("--backend-store-uri", default="")
-    parser.add_argument("--artifacts-destination", default="")
+    parser.add_argument("--scope", choices=["project", "qa"], default="project")
 
 
 def _cleanup_kwargs(args: argparse.Namespace) -> dict:
     return {
         "apply": args.apply,
-        "hard_delete": args.hard_delete,
-        "backend_store_uri": args.backend_store_uri,
-        "artifacts_destination": args.artifacts_destination,
+        "scope": args.scope,
     }
 
 
@@ -40,13 +36,9 @@ def add_parser(subparsers) -> None:
     init.set_defaults(func=_init)
 
     delete = project_sub.add_parser("delete")
-    delete.add_argument("name")
+    delete.add_argument("name", nargs="?")
     _add_cleanup_flags(delete)
     delete.set_defaults(func=_delete)
-
-    delete_qa_parser = project_sub.add_parser("delete-qa")
-    _add_cleanup_flags(delete_qa_parser)
-    delete_qa_parser.set_defaults(func=_delete_qa)
 
 
 def _list(args: argparse.Namespace) -> int:
@@ -67,13 +59,7 @@ def _init(args: argparse.Namespace) -> int:
 
 def _delete(args: argparse.Namespace) -> int:
     active = session_from_args(args)
-    print_json(delete_project(args.name, scope="project", session=active, **_cleanup_kwargs(args)))
-    return 0
-
-
-def _delete_qa(args: argparse.Namespace) -> int:
-    active = session_from_args(args)
-    print_json(delete_qa(session=active, **_cleanup_kwargs(args)))
+    print_json(delete_project(args.name, session=active, **_cleanup_kwargs(args)))
     return 0
 
 

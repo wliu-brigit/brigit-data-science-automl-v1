@@ -6,7 +6,7 @@ import argparse
 import time
 from pathlib import Path
 
-from automl.cli import data, eval, experiment, project, trial, validate
+from automl.cli import data, eval, experiment, mlflow, project, trial, validate
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,6 +20,7 @@ def build_parser() -> argparse.ArgumentParser:
     project.add_parser(subparsers)
     experiment.add_parser(subparsers)
     trial.add_parser(subparsers)
+    mlflow.add_parser(subparsers)
     data.add_parser(subparsers)
     eval.add_parser(subparsers)
     validate.add_parser(subparsers)

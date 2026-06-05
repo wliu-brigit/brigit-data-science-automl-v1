@@ -742,7 +742,7 @@ example_homecredit — note
 `Splits(train=[(0, 80)]...)` cell that now raises and must be updated in
 that pass; fraud project first real materialize).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add -A automl tests projects agent-skills docs

@@ -31,22 +31,21 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
   tail-end session now that step 4 has landed (wendao 2026-06-04: getting on
   the VPN is slow — run the live items as one isolated batch). The list
   lives in the plans README "Tail-end activities".
-- **Known-stale until that tail-end pass:** `example_homecredit` notebooks
-  (old `hash_key`/`SPLITID`/`base_data_sql` in cells and cached outputs;
-  notebook 2's `Splits(train=[(0, 80)]…)` now **raises** after step 4's hard
-  cut — update it to `Where("SPLIT_PCT") < 80` in that pass).
+- **Notebooks verified live 2026-06-04:** all 8 `example_homecredit`
+  notebooks updated to the current vocabulary and executed end-to-end
+  against live services (33m55s incl. one dry-run agent-loop iteration).
 
 ## Next actions
 
-1. **The rest of the tail-end session**: live notebook verification (incl.
-   fixing notebook 2's now-raising `Splits` cell), first real
-   `fraud_anomaly_detection` materialize, the `list_dataset_records`
-   swallow-to-`[]` revisit, the retired-range contracts ratchet, then
-   archive the effort. Details in the plans README "Tail-end activities".
-   (**Live Snowflake e2e: done 2026-06-04** — passed in 91s against a
-   sampled `fct_loans` dev table; details in the tail-end list. Snowflake
-   is confirmed reachable with `.env` configured — the one gotcha was the
-   `SNOWFLAKE_ACCOUNT` identifier form, now documented in `.env.example`.)
+1. **The last two tail-end items**: the first real
+   `fraud_anomaly_detection` materialize (needs wendao's domain choices to
+   fill the `TBD_` placeholders — source table, target, keys; the
+   duplicate-unique-key conversation is expected), then archive the effort
+   `execution/ → archive/`. Everything else on the tail-end list is done
+   as of 2026-06-04: live Snowflake e2e (91s green), live notebook
+   verification (33m55s, all 8), the `list_dataset_records` narrowing
+   (verified against the live proxy), and the retired-vocabulary ratchet.
+   Details in the plans README "Tail-end activities".
 
 (State wipes are always a human call, never the code's — design §14 ground
 rule. The 2026-06-04 `example_homecredit` wipes are recorded in the step-2

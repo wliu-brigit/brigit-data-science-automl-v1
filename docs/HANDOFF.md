@@ -1,66 +1,69 @@
 # Handoff — continue here
 
 The running note of where the last working session left off. **Read this first
-when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it to
-*current state + next actions* (git history is the changelog, not this).
+when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it
+to *current state + next actions* (git history is the changelog, not this).
 
 **Last updated:** 2026-06-05
 
 ## Where things stand
 
-- **Active effort — all 4 code steps landed; tail-end cleanup is partly done:**
-  [`execution/snowflake-source-and-split-keys/`](execution/snowflake-source-and-split-keys/)
-  — the real `SnowflakeSource` plus the data-layer contract work it
-  surfaced. **`design.md` is the source of truth**; the status ledger
-  (per-step commits, deviations, review outcomes) + fresh-session protocol
-  live in [`plans/`](execution/snowflake-source-and-split-keys/plans/README.md).
-  In one line each: **step 1** renamed the key/split vocabulary
-  (`unique_key`/`split_group_key`, `SPLIT_PCT`) and added materialize-edge
-  validation; **step 2** moved dataset records GCS → MLflow and made
-  `materialize()` attach-as-pinned with recipe-drift warnings and explicit
-  `--refresh-data`/`--refresh-source`; **step 3** made `SnowflakeSource`
-  real (SELECT-only `base_table_sql`, harness-owned DDL with `SPLIT_PCT`
-  injection, split-invariant check, bucket-sample dry-run, live validate
-  probe, Snowpark dropped); **step 4** hard-cut `Splits` from bucket ranges
-  to `Where(...)` predicates (serializable JSON AST; trial contracts and
-  eval split-view identities carry the AST; `SPLIT_PCT` is an ordinary
-  column; `to_pyarrow` push-down compiled but deliberately not wired —
-  layout + reader ship together later). Suite 573-green.
-- **All live/VPN-dependent verification is deliberately batched** into one
-  tail-end session now that step 4 has landed (wendao 2026-06-04: getting on
-  the VPN is slow — run the live items as one isolated batch). The list
-  lives in the plans README "Tail-end activities".
-- **Notebooks verified live 2026-06-04:** all 8 `example_homecredit`
-  notebooks updated to the current vocabulary and executed end-to-end
-  against live services (33m55s incl. one dry-run agent-loop iteration).
+- **Active effort: the fraud_anomaly_detection pilot**, on branch
+  `feature/fraud-anomaly-detection` (cut from main after the library
+  shakedown fixes merged). The project is fully set up and committed; six
+  dry-run trials ran during setup (Isolation Forest / PCA / GMM — on
+  *different* data snapshots, so their scores are not comparable to each
+  other).
+- **Background you need before touching it:**
+  - Step one of a two-step plan: unsupervised anomaly scoring now (fit never
+    sees labels — hard constraint in PROJECT_INSTRUCTIONS); a supervised
+    classifier later, once reviewer-confirmed labels exist.
+  - The label is a **proxy**: `is_fraud = heuristic_fraud_band ==
+    'EXTREMELY_LIKELY'`, a threshold on a heuristic computed upstream from
+    the same feature table — so AP measures agreement with the heuristic,
+    not ground truth, and high-scoring LOW-band rows (the "discovery queue"
+    in the band report) are candidates, not just false positives. The
+    non-circular check is the early-default (DPD45) capture metric.
+  - Data: Snowflake, wraps the pre-built `fraud_advance_feature_base`
+    (never written by the harness; harness owns `..._automl`). Training pull
+    is a fixed 99/1 composition, ~1.88M rows, `is_fraud` ≈ 0.17%
+    (production is ~0.03% — metric values rank trials, they are not
+    deployment claims). 80/20 user-grouped split on SPLIT_PCT.
+  - Eval: `AveragePrecision` primary + project-owned metrics in
+    `projects/fraud_anomaly_detection/eval/metrics.py` (review-depth
+    precision/recall, band report, early-default capture), tests in the
+    project's `tests/`.
 
-- **Fraud pilot ran end-to-end (2026-06-05)** — the `fraud_anomaly_detection`
-  project is set up, materialized (1.88M-row 99/1 pull over a pre-built
-  table), and has 6 dry-run trials logged (IF / PCA / GMM; first full metric
-  table on trial 6). The pilot shook out seven library issues — all fixed
-  same-day on branch `feature/fraud-pilot-library-feedback` (sampler,
-  Decimal seam, predicate case, error chains, scaffold front door, AP
-  metric); see `archive/fraud-pilot-library-feedback/` for symptom→fix
-  records. Spin-offs: `to-do/leaderboard-dataset-pinning.md`,
-  `to-do/loop-observability.md`, `to-do/split-pct-lowercase.md`. Fraud
-  project files are deliberately uncommitted (wendao: revisit later; next
-  steps accumulate in the session task list — fair 3-way comparison run,
-  per_trial_seconds bump, full run, projected precision, fraud-dive).
+## Next actions (fraud, in order)
 
-## Next actions
+1. **Fair three-way comparison**: `uv run automl --project
+   fraud_anomaly_detection --dry-run experiment run --max-budget-usd 1
+   --auto-confirm --refresh-data --max-iter 3`. `--refresh-data` is
+   required (the eval_pct cleanup changed the training-SQL hash → new
+   dataset identity). This puts IF/PCA/GMM on one snapshot with the full
+   metric table for the first honest leaderboard.
+2. **Bump `per_trial_seconds`** (config) before full scale — eval took 146s
+   on 93k rows; 600s will not survive the 1.88M-row dataset.
+3. **First full run** (drop `--dry-run`).
+4. After a winner: **production-projected precision** (reweight LOW ×~526,
+   the known sampling rate) for threshold/capacity setting — industry par is
+   ~10–20% alert precision; calibrate expectations accordingly.
+5. **Fraud-dive session** on the discovery queue (high-score LOW-band rows
+   from the predictions artifact) — generalize findings into explicit
+   rules/features/label categories.
+6. Reviewer labels → replace the proxy → step-2 supervised classifier.
 
-1. **Archive the Snowflake effort** `execution/ → archive/`: its last
-   tail-end item — the first real `fraud_anomaly_detection` materialize —
-   completed 2026-06-05 (the expected duplicate-unique-key conversation
-   resolved itself: the upstream table dedupes by advance_id). Everything
-   else on the tail-end list was done 2026-06-04. Follow the effort's own
-   plans-README protocol for the move.
-2. **Merge `feature/fraud-pilot-library-feedback`** (7 commits, suite
-   592-green) once wendao has reviewed.
+## Other pending (not fraud)
 
-(State wipes are always a human call, never the code's — design §14 ground
-rule. The 2026-06-04 `example_homecredit` wipes are recorded in the step-2
-ledger row and git history; both stores verified clean on that route.)
+- **Archive the Snowflake effort** `execution/snowflake-source-and-split-keys/
+  → archive/`: its last tail-end item (first real fraud materialize)
+  completed 2026-06-05. Follow the effort's own plans-README protocol.
+- Library to-dos live in [`to-do/`](to-do/), each named by its ask —
+  notably `leaderboard-dataset-pinning.md` (the loop compared AP across
+  snapshots twice during the pilot) and `loop-observability.md` (the run is
+  silent while it works).
+- `main` is local-only ahead of `origin/main` (the shakedown merge has not
+  been pushed).
 
 ## On hold — waiting, not next fixes
 

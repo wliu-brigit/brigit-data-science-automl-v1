@@ -6,7 +6,8 @@
 > why, this says what is — including where the two disagree. Expect it to drift as the code moves; regenerate before
 > trusting details.
 >
-> **As of:** 2026-06-04 (commit `d7c62ae`, working tree). Method: AST scan of
+> **As of:** 2026-06-04 (commit `38e91fb`, working tree clean — post step 4 +
+review fixes). Method: AST scan of
 > every `automl/**/*.py`, collecting internal `automl.*` imports at package
 > granularity and classifying each as *module-level* or *deferred* (inside a
 > function — usually a deliberate cycle-break).
@@ -17,12 +18,12 @@ Who lives at each altitude today:
 
 | Layer | Package | Role | Size |
 |---|---|---|---|
-| **Leaves** | `utils` | hashing, slugs, paths, logging, io | 7 files, ~350 loc |
+| **Leaves** | `utils` | hashing, keys, slugs, paths, logging, io | 9 files, ~530 loc |
 | | `errors` | the exception taxonomy | 1 file, ~60 loc |
 | | `validate` | check-result vocabulary: `Issue`, `ValidationReport`, `run_check` | 2 files, ~110 loc |
 | **Seam** | `mlflow` | the single place that talks to MLflow: client, routing, tags, artifact paths | 27 files, ~3,100 loc |
-| **Domains** | `project` | recipe loading, session, config, scaffold, overview | 12 files, ~1,750 loc |
-| | `data` | dataset specs, sources, materialization, synthetic fixtures | 15 files, ~1,950 loc |
+| **Domains** | `project` | recipe loading, session, config, split predicates, scaffold, overview | 13 files, ~2,140 loc |
+| | `data` | dataset specs, sources, materialization, synthetic fixtures | 16 files, ~2,330 loc |
 | | `eval` | metrics, evaluation, prediction versioning | 9 files, ~1,600 loc |
 | | `trial` | trial creation, manifest, packaging, fork | 11 files, ~1,000 loc |
 | | `experiment` | experiment store, leaderboard, cleanup | 10 files, ~450 loc |
@@ -77,9 +78,9 @@ statements):
 | `utils` | — |
 | `errors` | — |
 | `mlflow` | errors→18, utils→6, trial→3, eval→2, project→2, experiment→1(+1 def), data⇢2 |
-| `project` | errors→4, mlflow→3(+3 def), trial→1, validate→1, utils→1(+1 def) |
-| `data` | mlflow→9(+3 def), project→6, utils→5, errors→4 |
-| `eval` | mlflow→8, project→8, data→2, utils→2, errors→1 |
+| `project` | errors→4, mlflow→3(+3 def), trial→1, validate→1, utils→1(+2 def) |
+| `data` | mlflow→9(+3 def), project→6, utils→9, errors→6 |
+| `eval` | mlflow→8, project→8, utils→5, data→2, errors→1 |
 | `trial` | mlflow→8, project→6, eval→1(+1 def), errors→1, utils→1 |
 | `experiment` | mlflow→9, project→7, trial→3 |
 | `model` | errors→1, project→1, validate→1 |

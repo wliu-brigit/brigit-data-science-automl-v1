@@ -4,7 +4,7 @@ The running note of where the last working session left off. **Read this first
 when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it to
 *current state + next actions* (git history is the changelog, not this).
 
-**Last updated:** 2026-06-04
+**Last updated:** 2026-06-05
 
 ## Where things stand
 
@@ -34,17 +34,29 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
   notebooks updated to the current vocabulary and executed end-to-end
   against live services (33m55s incl. one dry-run agent-loop iteration).
 
+- **Fraud pilot ran end-to-end (2026-06-05)** — the `fraud_anomaly_detection`
+  project is set up, materialized (1.88M-row 99/1 pull over a pre-built
+  table), and has 6 dry-run trials logged (IF / PCA / GMM; first full metric
+  table on trial 6). The pilot shook out seven library issues — all fixed
+  same-day on branch `feature/fraud-pilot-library-feedback` (sampler,
+  Decimal seam, predicate case, error chains, scaffold front door, AP
+  metric); see `archive/fraud-pilot-library-feedback/` for symptom→fix
+  records. Spin-offs: `to-do/leaderboard-dataset-pinning.md`,
+  `to-do/loop-observability.md`, `to-do/split-pct-lowercase.md`. Fraud
+  project files are deliberately uncommitted (wendao: revisit later; next
+  steps accumulate in the session task list — fair 3-way comparison run,
+  per_trial_seconds bump, full run, projected precision, fraud-dive).
+
 ## Next actions
 
-1. **The last two tail-end items**: the first real
-   `fraud_anomaly_detection` materialize (needs wendao's domain choices to
-   fill the `TBD_` placeholders — source table, target, keys; the
-   duplicate-unique-key conversation is expected), then archive the effort
-   `execution/ → archive/`. Everything else on the tail-end list is done
-   as of 2026-06-04: live Snowflake e2e (91s green), live notebook
-   verification (33m55s, all 8), the `list_dataset_records` narrowing
-   (verified against the live proxy), and the retired-vocabulary ratchet.
-   Details in the plans README "Tail-end activities".
+1. **Archive the Snowflake effort** `execution/ → archive/`: its last
+   tail-end item — the first real `fraud_anomaly_detection` materialize —
+   completed 2026-06-05 (the expected duplicate-unique-key conversation
+   resolved itself: the upstream table dedupes by advance_id). Everything
+   else on the tail-end list was done 2026-06-04. Follow the effort's own
+   plans-README protocol for the move.
+2. **Merge `feature/fraud-pilot-library-feedback`** (7 commits, suite
+   592-green) once wendao has reviewed.
 
 (State wipes are always a human call, never the code's — design §14 ground
 rule. The 2026-06-04 `example_homecredit` wipes are recorded in the step-2

@@ -1,35 +1,19 @@
-"""Deterministic split-bucket helpers, key normalization, and ingestion-edge checks."""
+"""Deterministic split-bucket helpers and ingestion-edge checks.
+
+Key normalization and the unique-key frame check live in
+``automl.utils.keys`` (shared with eval); this module binds them to the
+data domain's error type and re-exports the vocabulary.
+"""
 
 from __future__ import annotations
-
-from collections.abc import Sequence
-from typing import TypeAlias
 
 import pandas as pd
 
 from automl.errors import DataError
+from automl.utils import keys as _keys
+from automl.utils.keys import Key
 
-
-Key: TypeAlias = str | Sequence[str]
 SPLIT_PCT_COL = "SPLIT_PCT"
-
-
-def _normalize_key(key: Key, *, field_name: str) -> tuple[str, ...]:
-    """Normalize a key declaration to a sorted tuple of column names."""
-    if isinstance(key, str):
-        columns = (key,)
-    else:
-        try:
-            columns = tuple(key)
-        except TypeError as exc:
-            raise ValueError(
-                f"{field_name} must be a column name or a non-empty sequence of column names"
-            ) from exc
-    if not columns or any(not isinstance(column, str) or not column.strip() for column in columns):
-        raise ValueError(f"{field_name} must contain non-empty column names")
-    if len(set(columns)) != len(columns):
-        raise ValueError(f"duplicate {field_name} columns are not allowed")
-    return tuple(sorted(columns))
 
 
 def add_split_pct(
@@ -72,28 +56,9 @@ def validate_unique_key(
     source_label: str = "data",
 ) -> None:
     """Hard ingestion-edge check: unique_key columns present, non-null, duplicate-free."""
-    missing = [column for column in unique_key if column not in df.columns]
-    if missing:
-        raise DataError(
-            f"unique_key column(s) {missing} not in {source_label} columns: {list(df.columns)}"
-        )
-    null_rows = df[list(unique_key)].isna().any(axis=1)
-    if bool(null_rows.any()):
-        raise DataError(
-            f"unique_key {unique_key} has {int(null_rows.sum())} row(s) with null key values in "
-            f"{source_label}; a stable row identifier must be non-null"
-        )
-    duplicated = df.duplicated(subset=list(unique_key))
-    if bool(duplicated.any()):
-        examples = (
-            df.loc[df.duplicated(subset=list(unique_key), keep=False), list(unique_key)]
-            .head(5)
-            .to_dict("records")
-        )
-        raise DataError(
-            f"unique_key {unique_key} has {int(duplicated.sum())} duplicate row(s) in "
-            f"{source_label}; examples: {examples}"
-        )
+    _keys.validate_unique_key(
+        df, unique_key=unique_key, source_label=source_label, error_cls=DataError
+    )
 
 
 def validate_split_pct(

@@ -12,6 +12,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from automl.utils.keys import normalize_key, validate_unique_key
+
 
 def _snake_case(name: str) -> str:
     first = re.sub("(.)([A-Z][a-z]+)", r"\1_\2", name)
@@ -111,9 +113,7 @@ def _required_attr(metric: Metric, attr: str) -> tuple[str, ...]:
 def _unique_key_columns(unique_key: str | Sequence[str] | None) -> tuple[str, ...]:
     if unique_key is None:
         raise ValueError("unique_key is required when joining augmentation frames")
-    if isinstance(unique_key, str):
-        return (unique_key,)
-    return tuple(str(column) for column in unique_key)
+    return normalize_key(unique_key, field_name="unique_key")
 
 
 class EvalSpec:
@@ -201,12 +201,7 @@ class EvalSpec:
             frame = frames[name]
             if not isinstance(frame, pd.DataFrame):
                 raise TypeError(f"augmentation {name!r} must be a pandas DataFrame")
-            missing_keys = [key for key in keys if key not in frame.columns]
-            if missing_keys:
-                raise KeyError(f"augmentation {name!r} missing unique_key columns: {missing_keys}")
-            duplicate_rows = frame.duplicated(subset=list(keys), keep=False)
-            if bool(duplicate_rows.any()):
-                raise ValueError(f"augmentation {name!r} contains duplicate unique_key rows")
+            validate_unique_key(frame, unique_key=keys, source_label=f"augmentation {name!r}")
             overlap = sorted(set(frame.columns) & set(joined.columns) - set(keys))
             if overlap:
                 raise ValueError(

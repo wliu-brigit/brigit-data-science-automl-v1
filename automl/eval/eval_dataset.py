@@ -9,10 +9,10 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
-from automl.data.split import _normalize_key
 from automl.mlflow import routing as mlflow_routing
 from automl.project import Session
 from automl.utils.hashing import dataframe_content_hash, json_hash, schema_hash
+from automl.utils.keys import normalize_key, validate_unique_key
 
 
 _AUGMENTATION_NAME_RE = re.compile(r"^[a-z][a-z0-9_]*$")
@@ -417,18 +417,14 @@ def _validate_external_frame(
 ) -> None:
     if target_column not in frame.columns:
         raise ValueError(f"target column {target_column!r} missing from external eval frame")
-    missing_key = [column for column in unique_key if column not in frame.columns]
-    if missing_key:
-        raise ValueError(f"unique_key column(s) missing from external eval frame: {missing_key}")
-    if frame.duplicated(subset=list(unique_key), keep=False).any():
-        raise ValueError("external eval frame contains duplicate unique_key rows")
+    validate_unique_key(frame, unique_key=unique_key, source_label="external eval frame")
 
 
 def _normalize_unique_key(unique_key: Sequence[str]) -> tuple[str, ...]:
-    # One shared normalizer with the data layer (sorted, blank/duplicate-free)
-    # so the same composite key always normalizes — and hashes — identically
-    # on both sides of the eval join (carried in from the step-1 review).
-    return _normalize_key(unique_key, field_name="unique_key")
+    # The shared normalizer (utils.keys: sorted, blank/duplicate-free) so the
+    # same composite key always normalizes — and hashes — identically on both
+    # sides of the eval join (carried in from the step-1 review).
+    return normalize_key(unique_key, field_name="unique_key")
 
 
 def _normalize_buckets(buckets: Sequence[Sequence[int]] | None) -> tuple[tuple[int, int], ...]:
@@ -457,11 +453,7 @@ def _validate_augmentation_name(name: str) -> None:
 
 
 def _validate_augmentation_frame(frame: pd.DataFrame, *, unique_key: Sequence[str]) -> None:
-    missing_key = [column for column in unique_key if column not in frame.columns]
-    if missing_key:
-        raise ValueError(f"unique_key column(s) missing from augmentation frame: {missing_key}")
-    if frame.duplicated(subset=list(unique_key), keep=False).any():
-        raise ValueError("augmentation frame contains duplicate unique_key rows")
+    validate_unique_key(frame, unique_key=unique_key, source_label="augmentation frame")
     value_columns = [column for column in frame.columns if column not in set(unique_key)]
     if not value_columns:
         raise ValueError("augmentation frame must contain at least one non-unique-key column")

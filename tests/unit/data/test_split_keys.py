@@ -95,19 +95,21 @@ def test_split_report_counts_buckets():
 
 
 def test_normalize_key_sorts_and_rejects_bad_declarations():
-    # _normalize_key is module-internal by settled decision (2026-06-04); these
-    # tests pin its invariants because dataset identity depends on them:
-    # sorted output keeps composite-key declaration order out of identity hashes.
-    from automl.data.split import _normalize_key
+    # normalize_key is the one shared normalizer (moved to utils.keys
+    # 2026-06-04 — cross-cutting between data and eval, per wendao); these
+    # tests pin its invariants because dataset AND eval identity depend on
+    # them: sorted output keeps composite-key declaration order out of
+    # identity hashes.
+    from automl.utils.keys import normalize_key
 
-    assert _normalize_key("TXN_ID", field_name="unique_key") == ("TXN_ID",)
-    assert _normalize_key(("user_id", "txn_id"), field_name="unique_key") == ("txn_id", "user_id")
-    assert _normalize_key(("txn_id", "user_id"), field_name="unique_key") == ("txn_id", "user_id")
+    assert normalize_key("TXN_ID", field_name="unique_key") == ("TXN_ID",)
+    assert normalize_key(("user_id", "txn_id"), field_name="unique_key") == ("txn_id", "user_id")
+    assert normalize_key(("txn_id", "user_id"), field_name="unique_key") == ("txn_id", "user_id")
     with pytest.raises(ValueError, match="duplicate"):
-        _normalize_key(("a", "a"), field_name="unique_key")
+        normalize_key(("a", "a"), field_name="unique_key")
     with pytest.raises(ValueError, match="non-empty"):
-        _normalize_key((), field_name="unique_key")
+        normalize_key((), field_name="unique_key")
     with pytest.raises(ValueError, match="non-empty"):
-        _normalize_key(("a", "  "), field_name="unique_key")
+        normalize_key(("a", "  "), field_name="unique_key")
     with pytest.raises(ValueError, match="split_group_key"):
-        _normalize_key(123, field_name="split_group_key")
+        normalize_key(123, field_name="split_group_key")

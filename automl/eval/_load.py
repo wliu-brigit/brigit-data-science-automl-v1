@@ -17,6 +17,7 @@ from automl.mlflow.experiment import eval_datasets
 from automl.project import Session
 from automl.project import session as active_project_session
 from automl.utils.hashing import dataframe_content_hash, schema_hash
+from automl.utils.keys import validate_unique_key
 
 
 @dataclass(frozen=True)
@@ -68,12 +69,11 @@ def load_eval_dataset(eval_dataset_id: str, *, session: Session | None = None) -
 
 
 def _validate_external_payload(recipe: EvalDataset, frame: pd.DataFrame) -> None:
-    required_columns = (*recipe.unique_key, recipe.target_column)
-    missing = [column for column in required_columns if column not in frame.columns]
-    if missing:
-        raise ValueError(f"external eval dataset is missing record column(s): {missing}")
-    if frame.duplicated(subset=list(recipe.unique_key), keep=False).any():
-        raise ValueError("external eval dataset contains duplicate unique_key rows")
+    if recipe.target_column not in frame.columns:
+        raise ValueError(
+            f"external eval dataset is missing record column(s): [{recipe.target_column!r}]"
+        )
+    validate_unique_key(frame, unique_key=recipe.unique_key, source_label="external eval dataset")
     actual_schema_hash = schema_hash(frame)
     if recipe.schema_hash and actual_schema_hash != recipe.schema_hash:
         raise ValueError(
@@ -131,8 +131,7 @@ def _validate_augmentation_payload(augmentation: Augmentation, frame: pd.DataFra
     missing = [column for column in augmentation.columns if column not in frame.columns]
     if missing:
         raise ValueError(f"augmentation is missing record column(s): {missing}")
-    if frame.duplicated(subset=list(augmentation.unique_key), keep=False).any():
-        raise ValueError("augmentation contains duplicate unique_key rows")
+    validate_unique_key(frame, unique_key=augmentation.unique_key, source_label="augmentation")
     actual_schema_hash = schema_hash(frame)
     if actual_schema_hash != augmentation.schema_hash:
         raise ValueError(

@@ -99,26 +99,37 @@ wendao-designated tiny `dev_` table (exported as
    (throwaway route; never deleted per ground rule). Side-note for future
    live work: `fetch_df` (Arrow fetch) supports SELECT result sets only —
    use `information_schema` queries instead of `DESCRIBE`/`SHOW`.
-2. **Notebook cleanup + execution** — **DONE 2026-06-04** (`de9baa7`,
-   `3f65d37`, current pass).
-   `example_homecredit` notebooks were updated to current
-   `unique_key`/`SPLIT_PCT`/`base_table_sql`/`Where(...)` vocabulary and
-   stale cached outputs were stripped. The workflow was renumbered so the
-   model-creation alternatives are `3.1_run_agent_automl`,
-   `3.2_author_new_trial`, and `3.3_fork_existing_trial`, followed by
-   `4_reevaluate_existing_model` and `5_inspect_logged_runs_and_artifacts`.
-   `AUTOML_E2E_NOTEBOOKS=1 uv run pytest tests/e2e/test_homecredit_notebooks.py -q`
-   passed in 8:48, including the agent-backed `3.1` path.
+2. **Live notebook verification** — **DONE 2026-06-04**: all 8
+   `example_homecredit` notebooks executed end-to-end against live services
+   (33m55s, incl. one real dry-run agent-loop iteration from notebook 2).
+   Fixes applied first: `hash_key`→`unique_key`, `split_id_col`→
+   `split_pct_col`, `SPLITID`→`SPLIT_PCT`, `manifest_gcs_uri`→`record_uri`,
+   `.buckets()`→`splits.resolve(...)` + `predicate.mask(...)`, Snowflake
+   markdown example to the SELECT contract, across notebooks 1/2-profile/
+   3/5/6; stale cached outputs cleared on all touched notebooks (notebook
+   2's `Splits(train=[(0, 80)]…)` turned out to live in a cached *output*,
+   not a code cell). One harness fix: the e2e runner chdir'd to the repo
+   root, which broke the notebooks' cwd-based project inference now that
+   the repo holds three projects — it now runs from the notebook dir,
+   exactly as a Jupyter kernel would; the notebooks keep teaching the
+   ambient auto-load flow.
 3. **First real `fraud_anomaly_detection` materialize** against the
    warehouse (fills the TBD placeholders; the duplicate-unique-key
    conversation is expected — that's the check working).
-4. **`list_dataset_records` swallow revisit** — **DONE 2026-06-04**
-   (`3f65d37`). Verified missing `datasets/` lists cleanly as `[]` against
-   file-backed MLflow and the live prod proxy; genuine list transport/auth
-   failures now raise `StorageError` instead of being read as empty.
-5. **Retired-range ratchet** — **DONE 2026-06-04** (`3f65d37`).
-   `tests/contracts/test_skill_commands.py::RETIRED_EXECUTABLE_PATTERNS`
-   now rejects the dead split vocabulary (`split_range`, `train_buckets`,
-   `test_buckets`, `.buckets(`, `Splits(train=[(`) across skills and active
-   project docs/notebooks.
+4. **`list_dataset_records` revisit — DONE 2026-06-04**: probed the live
+   prod proxy — a missing `datasets/` folder AND an entirely empty
+   artifact root both return `[]` from `list_artifacts` without raising
+   (the step-2 "500-on-missing" behavior is download-specific); file-backed
+   MLflow matches. The swallow is therefore narrowed: `[]` now means
+   *verified empty*, an exception is a genuine transport/auth failure and
+   propagates as `StorageError` (original cause chained); two pin tests
+   added. The probe left one empty run named `probe_empty_artifacts`
+   (8c2577562ff3412685ebca9d281923d8) on the throwaway `dev_snowflake_e2e`
+   route — recorded, never deleted per ground rule.
+5. **Retired-vocabulary ratchet — DONE 2026-06-04** (unblocked by the
+   notebook pass): `RETIRED_EXECUTABLE_PATTERNS` gains six entries —
+   `hash_key`, `SPLITID`, `base_data_sql`, `split_range`, the
+   `train_buckets`/`test_buckets`/`.buckets(` API, and bucket-range
+   `Splits(train=[(` — guarding agent-skills and the example project's
+   docs/notebooks.
 6. Move this effort `execution/ → archive/` per the docs lifecycle.

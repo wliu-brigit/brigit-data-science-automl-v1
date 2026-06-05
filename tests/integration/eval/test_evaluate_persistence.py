@@ -16,6 +16,7 @@ from automl.project import (
     RunConfig,
     Session,
     Splits,
+    Where,
 )
 
 pytestmark = pytest.mark.integration
@@ -39,7 +40,7 @@ def _session(tmp_path: Path, spec: EvalSpec | None = None) -> Session:
             eval_spec=spec or EvalSpec(primary=Auc()),
             run_config=RunConfig(
                 experiment_id="baseline",
-                splits=Splits({"train": ((0, 50),), "test": ((50, 100),)}),
+                splits=Splits({"train": Where("SPLIT_PCT") < 50, "test": Where("SPLIT_PCT") >= 50}),
                 models=ModelsConfig(manager=route, proposer=route, coder=route),
                 per_trial_seconds=120,
             ),

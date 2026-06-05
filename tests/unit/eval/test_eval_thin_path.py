@@ -25,7 +25,9 @@ from automl.project import (
     ProjectConfig,
     RunConfig,
     Session,
+    Predicate,
     Splits,
+    Where,
 )
 
 pytestmark = pytest.mark.unit
@@ -70,7 +72,7 @@ def _session(tmp_path: Path, spec: EvalSpec | None = None) -> Session:
             eval_spec=spec or EvalSpec(primary=Auc()),
             run_config=RunConfig(
                 experiment_id="baseline",
-                splits=Splits({"train": ((0, 50),), "test": ((50, 100),)}),
+                splits=Splits({"train": Where("SPLIT_PCT") < 50, "test": Where("SPLIT_PCT") >= 50}),
                 models=_models(),
                 per_trial_seconds=120,
             ),
@@ -111,7 +113,7 @@ def _loaded_slice() -> LoadedSlice:
         df=df,
         registry=registry,
         split_name="test",
-        split_ranges=((50, 100),),
+        predicate=Where("SPLIT_PCT") >= 50,
     )
 
 
@@ -251,8 +253,8 @@ def test_load_eval_dataset_delegates_to_data_load_dataset_by_id(tmp_path, monkey
     eval_dataset, _ = prepare_eval_dataset(session=active, dataset_id="dataset-1", split="test")
     calls = []
 
-    def fake_load_dataset_by_id(dataset_id, *, split_name=None, split_range=None, session=None):
-        calls.append((dataset_id, split_name, split_range, session))
+    def fake_load_dataset_by_id(dataset_id, *, split_name=None, predicate=None, session=None):
+        calls.append((dataset_id, split_name, predicate, session))
         return loaded_slice
 
     monkeypatch.setattr(
@@ -263,7 +265,7 @@ def test_load_eval_dataset_delegates_to_data_load_dataset_by_id(tmp_path, monkey
     loaded = load_eval_dataset(eval_dataset.id, session=active)
 
     assert loaded.df["target"].tolist() == [0, 0, 1, 1]
-    assert calls == [("dataset-1", None, ((50, 100),), active)]
+    assert calls == [("dataset-1", None, Predicate.from_dict((Where("SPLIT_PCT") >= 50).to_dict()), active)]
 
 
 def test_evaluate_loads_split_view_scores_injected_model_and_returns_result(tmp_path, monkeypatch):

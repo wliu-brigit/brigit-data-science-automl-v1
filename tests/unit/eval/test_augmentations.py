@@ -12,6 +12,7 @@ from automl.project import (
     RunConfig,
     Session,
     Splits,
+    Where,
 )
 
 pytestmark = pytest.mark.unit
@@ -28,7 +29,7 @@ def _session(tmp_path: Path, *, namespace: str = "", dry_run: bool = False) -> S
             task=BinaryClassification(target="target"),
             run_config=RunConfig(
                 experiment_id="baseline",
-                splits=Splits({"train": ((0, 50),), "test": ((50, 100),)}),
+                splits=Splits({"train": Where("SPLIT_PCT") < 50, "test": Where("SPLIT_PCT") >= 50}),
                 models=ModelsConfig(manager=route, proposer=route, coder=route),
                 per_trial_seconds=120,
             ),

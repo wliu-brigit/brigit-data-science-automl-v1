@@ -19,7 +19,7 @@ def _write_project(tmp_path, name="demo", config_source=""):
 
 def test_project_config_loads_project_config_symbol(tmp_path, monkeypatch):
     config_source = """
-from automl.project import BinaryClassification, ProjectConfig, RunConfig, Splits, ModelRoute, ModelsConfig
+from automl.project import BinaryClassification, ProjectConfig, RunConfig, Splits, Where, ModelRoute, ModelsConfig
 
 class DummyEvalSpec:
     primary_name = "auc"
@@ -29,7 +29,7 @@ DATA = object()
 EVAL = DummyEvalSpec()
 RUN_CONFIG = RunConfig(
     experiment_id="demo-exp",
-    splits=Splits(train=[(0, 80)], test=[(80, 100)]),
+    splits=Splits(train=Where("SPLIT_PCT") < 80, test=Where("SPLIT_PCT") >= 80),
     models=ModelsConfig(
         manager=ModelRoute("sonnet", "medium"),
         proposer=ModelRoute("sonnet", "medium"),

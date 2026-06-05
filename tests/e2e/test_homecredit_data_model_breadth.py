@@ -19,7 +19,7 @@ from automl.data import (
 )
 from automl.mlflow import client as mlflow_client
 from automl.mlflow import tags
-from automl.project import clear_session, use_project
+from automl.project import Where, clear_session, use_project
 from automl.runner import run_trial
 from automl.trial import TrialStatus
 
@@ -65,13 +65,12 @@ def test_homecredit_data_model_breadth_external_gate():
         assert trial_registry.get("homecredit_credit_log").derived is True
         assert trial_registry.get("homecredit_credit_log").source_columns == ("amt_credit",)
 
-        multi = load_dataset_by_id(
-            loaded.id,
-            split_range=((80, 90), (95, 100)),
-            session=active,
+        predicate = ((Where("SPLIT_PCT") >= 80) & (Where("SPLIT_PCT") < 90)) | (
+            Where("SPLIT_PCT") >= 95
         )
+        multi = load_dataset_by_id(loaded.id, predicate=predicate, session=active)
         assert multi.split_name is None
-        assert multi.split_ranges == ((80, 90), (95, 100))
+        assert multi.predicate == predicate
         assert set(multi.df["SPLIT_PCT"]).issubset(set(range(80, 90)) | set(range(95, 100)))
 
         result = run_trial("example_homecredit", session=active)

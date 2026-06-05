@@ -17,6 +17,7 @@ from automl.project import (
     RunConfig,
     Session,
     Splits,
+    Where,
 )
 from automl.trial.types import TrialStatus, TrialSummary
 
@@ -39,7 +40,7 @@ def _session(tmp_path: Path) -> Session:
             eval_spec=EvalSpec(primary=Auc()),
             run_config=RunConfig(
                 experiment_id="exp_b",
-                splits=Splits({"train": ((0, 80),), "test": ((80, 100),)}),
+                splits=Splits({"train": Where("SPLIT_PCT") < 80, "test": Where("SPLIT_PCT") >= 80}),
                 models=ModelsConfig(manager=route, proposer=route, coder=route),
                 per_trial_seconds=120,
             ),

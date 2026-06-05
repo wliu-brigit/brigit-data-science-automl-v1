@@ -13,6 +13,7 @@ from automl.project import (
     ProjectConfig,
     RunConfig,
     Splits,
+    Where,
 )
 
 
@@ -38,7 +39,7 @@ EVAL = EvalSpec(primary=Auc())
 
 RUN_CONFIG = RunConfig(
     experiment_id="TBD_experiment_id",
-    splits=Splits(train=[(0, 80)], test=[(80, 100)]),
+    splits=Splits(train=Where("SPLIT_PCT") < 80, test=Where("SPLIT_PCT") >= 80),
     models=ModelsConfig(
         manager=ModelRoute("sonnet", "medium"),
         proposer=ModelRoute("sonnet", "medium"),

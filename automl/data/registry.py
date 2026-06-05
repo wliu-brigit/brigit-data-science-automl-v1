@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Iterable
 
 from automl.data.contract import (
     validate_loaded_dataset,
@@ -18,7 +17,7 @@ from automl.mlflow import client as mlflow_client
 from automl.mlflow import experiment as mlflow_experiment
 from automl.mlflow.trial import artifacts as trial_artifacts
 from automl.mlflow.experiment import artifacts as experiment_artifacts
-from automl.project import Session, Splits
+from automl.project import Predicate, Session
 from automl.project import session as active_project_session
 
 
@@ -37,7 +36,7 @@ def list_datasets(*, session: Session | None = None) -> DatasetIndex:
 def load_dataset(
     *,
     split_name: str | None = None,
-    split_range: tuple[int, int] | tuple[tuple[int, int], ...] | None = None,
+    predicate: Predicate | None = None,
     session: Session | None = None,
 ) -> LoadedDataset | LoadedSlice:
     index = list_datasets(session=session)
@@ -47,7 +46,7 @@ def load_dataset(
     return load_dataset_by_id(
         dataset.id,
         split_name=split_name,
-        split_range=split_range,
+        predicate=predicate,
         session=session,
     )
 
@@ -56,11 +55,11 @@ def load_dataset_by_id(
     dataset_id: str,
     *,
     split_name: str | None = None,
-    split_range: tuple[int, int] | tuple[tuple[int, int], ...] | None = None,
+    predicate: Predicate | None = None,
     session: Session | None = None,
 ) -> LoadedDataset | LoadedSlice:
-    if split_name is not None and split_range is not None:
-        raise ValueError("split_name and split_range are mutually exclusive")
+    if split_name is not None and predicate is not None:
+        raise ValueError("split_name and predicate are mutually exclusive")
     active = _session(session)
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
         record = experiment_artifacts.read_dataset_record(dataset_id)
@@ -73,17 +72,16 @@ def load_dataset_by_id(
     loaded = LoadedDataset(dataset=dataset, df=df, registry=registry)
     validate_loaded_dataset(loaded, dataset)
 
-    ranges = _resolve_ranges(active, split_name=split_name, split_range=split_range)
-    if ranges is None:
+    resolved = _resolve_predicate(active, split_name=split_name, predicate=predicate)
+    if resolved is None:
         return loaded
-    buckets = set(_buckets(ranges))
-    sliced = df[df[dataset.split_pct_col].isin(buckets)].reset_index(drop=True)
+    sliced = df[resolved.mask(df)].reset_index(drop=True)
     return LoadedSlice(
         dataset=dataset,
         df=sliced,
         registry=registry,
         split_name=split_name,
-        split_ranges=ranges,
+        predicate=resolved,
     )
 
 
@@ -91,12 +89,12 @@ def load_dataset_by_trial(
     trial_id: str,
     *,
     split_name: str | None = None,
-    split_range: tuple[int, int] | tuple[tuple[int, int], ...] | None = None,
+    predicate: Predicate | None = None,
     session: Session | None = None,
     strict: bool = True,
 ) -> LoadedDataset | LoadedSlice:
-    if split_name is not None and split_range is not None:
-        raise ValueError("split_name and split_range are mutually exclusive")
+    if split_name is not None and predicate is not None:
+        raise ValueError("split_name and predicate are mutually exclusive")
     active = _session(session)
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
         run_id = mlflow_experiment.find_trial_run_id(
@@ -114,13 +112,13 @@ def load_dataset_by_trial(
                 raise KeyError(
                     f"split {split_name!r} not found; available contract splits: {available}"
                 )
-            ranges = contract.splits[split_name]
+            resolved = Predicate.from_dict(contract.splits[split_name])
         else:
-            ranges = _normalize_split_range(split_range) if split_range is not None else None
+            resolved = predicate
 
         loaded = load_dataset_by_id(
             contract.dataset.id,
-            split_range=ranges,
+            predicate=resolved,
             session=active,
         )
         if strict:
@@ -137,36 +135,17 @@ def _session(explicit: Session | None) -> Session:
     return explicit if explicit is not None else active_project_session()
 
 
-def _resolve_ranges(
+def _resolve_predicate(
     active: Session,
     *,
     split_name: str | None,
-    split_range: tuple[int, int] | tuple[tuple[int, int], ...] | None,
-) -> tuple[tuple[int, int], ...] | None:
-    if split_name is None and split_range is None:
+    predicate: Predicate | None,
+) -> Predicate | None:
+    if split_name is None and predicate is None:
         return None
     if split_name is not None:
         return active.config.require_run_config().splits.resolve(split_name)
-    return _normalize_split_range(split_range)
-
-
-def _normalize_split_range(
-    value: tuple[int, int] | tuple[tuple[int, int], ...] | None,
-) -> tuple[tuple[int, int], ...]:
-    if value is None:
-        raise ValueError("split_range required")
-    if len(value) == 2 and all(
-        isinstance(item, int) and not isinstance(item, bool) for item in value
-    ):
-        value = (value,)  # type: ignore[assignment]
-    return Splits({"slice": value}).resolve("slice")  # type: ignore[arg-type]
-
-
-def _buckets(ranges: Iterable[tuple[int, int]]) -> frozenset[int]:
-    buckets: set[int] = set()
-    for low, high in ranges:
-        buckets.update(range(low, high))
-    return frozenset(buckets)
+    return predicate
 
 
 __all__ = ["list_datasets", "load_dataset", "load_dataset_by_id", "load_dataset_by_trial"]

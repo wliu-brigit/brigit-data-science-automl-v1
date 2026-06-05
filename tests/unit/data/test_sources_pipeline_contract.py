@@ -24,6 +24,7 @@ from automl.project import (
     ProjectConfig,
     RunConfig,
     Session,
+    Where,
 )
 
 pytestmark = pytest.mark.unit
@@ -442,11 +443,14 @@ def test_trial_data_contract_round_trips_distinct_trial_id_and_run_id():
             n_rows=10,
             n_columns=4,
         ),
-        splits={"train": ((0, 80),), "test": ((80, 100),)},
+        splits={
+            "train": (Where("SPLIT_PCT") < 80).to_dict(),
+            "test": (Where("SPLIT_PCT") >= 80).to_dict(),
+        },
         slices=(
             SliceContract(
                 name="train",
-                ranges=((0, 80),),
+                predicate=(Where("SPLIT_PCT") < 80).to_dict(),
                 n_rows=8,
                 content_hash="sha256:train",
             ),

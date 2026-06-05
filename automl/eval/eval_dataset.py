@@ -10,7 +10,7 @@ from typing import Any, Mapping, Sequence
 import pandas as pd
 
 from automl.mlflow import routing as mlflow_routing
-from automl.project import Session
+from automl.project import Predicate, Session
 from automl.utils.hashing import dataframe_content_hash, json_hash, schema_hash
 from automl.utils.keys import normalize_key, validate_unique_key
 
@@ -24,23 +24,21 @@ def compute_eval_dataset_identity(
     target_column: str,
     unique_key: Sequence[str],
     of_dataset_id: str | None = None,
-    split_pct_col: str | None = None,
-    buckets: Sequence[Sequence[int]] | None = None,
+    predicate: Mapping[str, Any] | None = None,
     frame: pd.DataFrame | None = None,
 ) -> str:
     normalized_unique_key = _normalize_unique_key(unique_key)
     if kind == "split_view":
         if not of_dataset_id:
             raise ValueError("of_dataset_id required for split_view eval datasets")
-        if not split_pct_col:
-            raise ValueError("split_pct_col required for split_view eval datasets")
-        normalized_buckets = _normalize_buckets(buckets)
+        if not predicate:
+            raise ValueError("predicate required for split_view eval datasets")
+        # Identity hashes the serialized AST — what the split *means*.
         payload = {
             "schema_version": 1,
             "kind": kind,
             "of_dataset_id": of_dataset_id,
-            "split_pct_col": split_pct_col,
-            "buckets": normalized_buckets,
+            "predicate": dict(predicate),
             "target_column": target_column,
             "unique_key": normalized_unique_key,
         }
@@ -96,8 +94,7 @@ class EvalDataset:
     namespace: str
     of_dataset_id: str = ""
     split: str = ""
-    split_pct_col: str = ""
-    buckets: tuple[tuple[int, int], ...] = ()
+    predicate: Mapping[str, Any] | None = None
     content_hash: str = ""
     schema_hash: str = ""
     provenance: Mapping[str, Any] | None = None
@@ -113,18 +110,18 @@ class EvalDataset:
         session: Session,
         of_dataset_id: str,
         split: str,
-        split_pct_col: str,
-        buckets: Sequence[Sequence[int]],
+        predicate: Predicate,
         target_column: str,
         unique_key: Sequence[str],
     ) -> "EvalDataset":
-        normalized_buckets = _normalize_buckets(buckets)
+        # The Predicate object converts to its AST exactly once, here at the
+        # boundary; identity and the stored field carry the same mapping.
+        predicate_ast = predicate.to_dict()
         normalized_unique_key = _normalize_unique_key(unique_key)
         dataset_id = compute_eval_dataset_identity(
             kind="split_view",
             of_dataset_id=of_dataset_id,
-            split_pct_col=split_pct_col,
-            buckets=normalized_buckets,
+            predicate=predicate_ast,
             target_column=target_column,
             unique_key=normalized_unique_key,
         )
@@ -134,8 +131,7 @@ class EvalDataset:
             kind="split_view",
             of_dataset_id=of_dataset_id,
             split=split,
-            split_pct_col=split_pct_col,
-            buckets=normalized_buckets,
+            predicate=predicate_ast,
             target_column=target_column,
             unique_key=normalized_unique_key,
             created_at=_now(),
@@ -211,8 +207,7 @@ class EvalDataset:
             namespace=str(payload.get("namespace", "")),
             of_dataset_id=str(payload.get("of_dataset_id", "")),
             split=str(payload.get("split", "")),
-            split_pct_col=str(payload.get("split_pct_col", "")),
-            buckets=tuple(tuple(int(item) for item in pair) for pair in payload.get("buckets", ())),
+            predicate=dict(payload["predicate"]) if payload.get("predicate") else None,
             content_hash=str(payload.get("content_hash", "")),
             schema_hash=str(payload.get("schema_hash", "")),
             provenance=dict(payload["provenance"]) if "provenance" in payload else None,
@@ -243,8 +238,7 @@ class EvalDataset:
                 {
                     "of_dataset_id": self.of_dataset_id,
                     "split": self.split,
-                    "split_pct_col": self.split_pct_col,
-                    "buckets": [list(pair) for pair in self.buckets],
+                    "predicate": dict(self.predicate or {}),
                 }
             )
         elif self.kind == "external":
@@ -425,26 +419,6 @@ def _normalize_unique_key(unique_key: Sequence[str]) -> tuple[str, ...]:
     # same composite key always normalizes — and hashes — identically on both
     # sides of the eval join (carried in from the step-1 review).
     return normalize_key(unique_key, field_name="unique_key")
-
-
-def _normalize_buckets(buckets: Sequence[Sequence[int]] | None) -> tuple[tuple[int, int], ...]:
-    if not buckets:
-        raise ValueError("buckets must contain at least one range")
-    normalized: list[tuple[int, int]] = []
-    for pair in buckets:
-        if len(pair) != 2:
-            raise ValueError("each bucket range must contain exactly two integers")
-        low, high = (int(pair[0]), int(pair[1]))
-        if low < 0 or high > 100 or low >= high:
-            raise ValueError(f"invalid bucket range {(low, high)!r}")
-        normalized.append((low, high))
-    ordered = tuple(sorted(normalized))
-    previous_high = -1
-    for low, high in ordered:
-        if low < previous_high:
-            raise ValueError("buckets must not overlap")
-        previous_high = high
-    return ordered
 
 
 def _validate_augmentation_name(name: str) -> None:

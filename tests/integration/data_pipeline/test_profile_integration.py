@@ -13,6 +13,7 @@ from automl.project import (
     RunConfig,
     Session,
     Splits,
+    Where,
 )
 from automl.utils.io import gcs
 
@@ -98,7 +99,7 @@ def _session(tmp_path: Path, csv_path: Path) -> Session:
             data_spec=spec,
             run_config=RunConfig(
                 experiment_id="baseline",
-                splits=Splits({"train": ((0, 50),), "test": ((50, 100),)}),
+                splits=Splits({"train": Where("SPLIT_PCT") < 50, "test": Where("SPLIT_PCT") >= 50}),
                 models=_models(),
                 per_trial_seconds=120,
             ),

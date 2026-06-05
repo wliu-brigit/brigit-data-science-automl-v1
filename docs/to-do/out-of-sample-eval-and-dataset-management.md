@@ -53,6 +53,6 @@ and make out-of-sample evaluation native instead of assembled.
 - How does this interact with the three-level MLflow hierarchy — where do
   out-of-sample results land so they're comparable across trials?
 
-Related: [time-based splitting](time-based-splitting.md) — a time-based
+Related: [time-based splitting](../archive/2026-06-04-time-based-splitting.md) — a time-based
 holdout is one kind of out-of-sample evaluation, and both touch the split
 view.

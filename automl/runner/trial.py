@@ -554,7 +554,7 @@ def _trial_data_contract(
 ) -> TrialDataContract:
     run_config = active.config.require_run_config()
     slices: list[SliceContract] = []
-    for name, ranges in run_config.splits.ranges.items():
+    for name in run_config.splits.predicates:
         if name == loaded_fit.split_name:
             loaded = loaded_fit
         else:
@@ -566,7 +566,7 @@ def _trial_data_contract(
         slices.append(
             SliceContract(
                 name=name,
-                ranges=loaded.split_ranges,
+                predicate=loaded.predicate.to_dict(),
                 n_rows=loaded.n_rows,
                 content_hash=dataframe_content_hash(loaded.df),
             )
@@ -579,7 +579,10 @@ def _trial_data_contract(
             run_id=run_id,
         ),
         dataset=DatasetRef.from_dataset(loaded_fit.dataset),
-        splits=dict(run_config.splits.ranges),
+        splits={
+            name: predicate.to_dict()
+            for name, predicate in run_config.splits.predicates.items()
+        },
         slices=tuple(slices),
     )
 

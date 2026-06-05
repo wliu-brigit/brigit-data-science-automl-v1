@@ -55,6 +55,7 @@ from automl.project import (
     Regression,
     RunConfig,
     Splits,
+    Where,
 )
 
 
@@ -109,11 +110,20 @@ EVAL = EvalSpec(primary=Auc())
 # ── RUN_CONFIG — how the AutoML loop runs ────────────────────────────────────
 # experiment_id      names the MLflow experiment trials are logged under; pick
 #                    a short, stable slug.
-# splits             deterministic hash buckets 0-99: each row lands in a
-#                    bucket by hashing its key, and named ranges carve up the
-#                    buckets. The default below is an 80/20 train/test split;
-#                    add more named ranges if needed, e.g.
-#                    Splits(train=[(0, 70)], test=[(70, 85)], holdout=[(85, 100)])
+# splits             named row-criteria over the materialized dataset, written
+#                    as Where(...) predicates (ops: == != < <= > >= .isin
+#                    .notin .is_null .not_null, composed with & | ~). SPLIT_PCT
+#                    is an ordinary column: a deterministic 0-99 hash bucket of
+#                    each row's split_group_key, so the default below is an
+#                    80/20 train/test split. Any column works — time-based:
+#                    Splits(
+#                        train=Where("application_date") < "2026-03-01",
+#                        test=(Where("application_date") >= "2026-03-01")
+#                             & (Where("SPLIT_PCT") < 50),
+#                    )
+#                    Rolling/backtesting windows are just a family of named
+#                    splits (train_q1/test_q2, ...). Overlap is allowed and
+#                    recorded, never policed.
 # models             the three agent roles in the loop: the manager
 #                    orchestrates, the proposer designs the next trial, the
 #                    coder implements it. Each is ModelRoute(model, effort);
@@ -123,7 +133,7 @@ EVAL = EvalSpec(primary=Auc())
 
 RUN_CONFIG = RunConfig(
     experiment_id="TBD_experiment_id",
-    splits=Splits(train=[(0, 80)], test=[(80, 100)]),
+    splits=Splits(train=Where("SPLIT_PCT") < 80, test=Where("SPLIT_PCT") >= 80),
     models=ModelsConfig(
         manager=ModelRoute("sonnet", "medium"),
         proposer=ModelRoute("sonnet", "medium"),

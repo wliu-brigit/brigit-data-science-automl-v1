@@ -147,7 +147,9 @@ class LoadedSlice:
     df: pd.DataFrame
     registry: FeatureRegistry
     split_name: str | None
-    split_ranges: tuple[tuple[int, int], ...]
+    # A Predicate (automl.project.predicates); typed Any to keep the data
+    # layer's import surface unchanged — the object arrives via registry.py.
+    predicate: Any
 
     @property
     def id(self) -> str:

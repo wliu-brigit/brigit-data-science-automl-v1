@@ -14,6 +14,7 @@ from automl.project import (
     ProjectConfig,
     RunConfig,
     Splits,
+    Where,
 )
 from projects.example_homecredit.model.preprocessing import WOEEncoder
 
@@ -31,7 +32,7 @@ DATA = DataSpec(
 EVAL = EvalSpec(primary=Auc())
 RUN_CONFIG = RunConfig(
     experiment_id="example-homecredit",
-    splits=Splits(train=[(0, 80)], test=[(80, 100)]),
+    splits=Splits(train=Where("SPLIT_PCT") < 80, test=Where("SPLIT_PCT") >= 80),
     models=ModelsConfig(
         manager=ModelRoute("opus", "high"),
         proposer=ModelRoute("opus", "high"),

@@ -12,7 +12,9 @@ from automl.project import (
     ProjectConfig,
     RunConfig,
     Session,
+    Predicate,
     Splits,
+    Where,
 )
 
 pytestmark = pytest.mark.integration
@@ -33,7 +35,7 @@ def _session(tmp_path: Path) -> Session:
             task=BinaryClassification(target="target"),
             run_config=RunConfig(
                 experiment_id="baseline",
-                splits=Splits({"train": ((0, 50),), "test": ((50, 100),)}),
+                splits=Splits({"train": Where("SPLIT_PCT") < 50, "test": Where("SPLIT_PCT") >= 50}),
                 models=_models(),
                 per_trial_seconds=120,
             ),
@@ -76,7 +78,7 @@ def _loaded_slice() -> LoadedSlice:
         df=frame,
         registry=FeatureRegistry().build_from_df(frame, target_column="target"),
         split_name=None,
-        split_ranges=((50, 100),),
+        predicate=Where("SPLIT_PCT") >= 50,
     )
 
 
@@ -118,8 +120,8 @@ def test_split_view_prepare_writes_record_and_loads_lazily(tmp_path, monkeypatch
         lambda *, session=None: DatasetIndex((dataset,), active_dataset_id=dataset.id),
     )
 
-    def fake_load_dataset_by_id(dataset_id, *, split_name=None, split_range=None, session=None):
-        load_calls.append((dataset_id, split_name, split_range, session))
+    def fake_load_dataset_by_id(dataset_id, *, split_name=None, predicate=None, session=None):
+        load_calls.append((dataset_id, split_name, predicate, session))
         return _loaded_slice()
 
     monkeypatch.setattr("automl.eval._load.data.load_dataset_by_id", fake_load_dataset_by_id)
@@ -135,7 +137,7 @@ def test_split_view_prepare_writes_record_and_loads_lazily(tmp_path, monkeypatch
     assert len(json_store) == 1
     assert parquet_store == {}
     assert loaded.df["row_id"].tolist() == [1, 2]
-    assert load_calls == [(dataset.id, None, ((50, 100),), active)]
+    assert load_calls == [(dataset.id, None, Predicate.from_dict((Where("SPLIT_PCT") >= 50).to_dict()), active)]
 
 
 def test_external_prepare_writes_frame_and_loads_round_trip(tmp_path, monkeypatch):

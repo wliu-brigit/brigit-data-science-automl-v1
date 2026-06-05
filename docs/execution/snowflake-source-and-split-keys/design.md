@@ -412,7 +412,7 @@ per the validation-at-the-edges principle.
 
 **In scope — implemented as step 4** (settled on review: the design is done;
 it was deferred only by scoping, not by open questions). It absorbs the ask
-in [`../../to-do/time-based-splitting.md`](../../to-do/time-based-splitting.md)
+in [`../../archive/2026-06-04-time-based-splitting.md`](../../archive/2026-06-04-time-based-splitting.md)
 (treated as a requirement; that note's open questions are answered here).
 Note it is *not* an isolated runner concern: it touches the `Splits`
 declaration (project), slice loading (`automl/data/registry.py`), the trial

@@ -19,6 +19,7 @@ from automl.data import (
     verify_trial_tag_lineage,
 )
 from automl.errors import DataError
+from automl.project import Where
 from automl.mlflow import trial as mlflow_trial
 from automl.utils.hashing import dataframe_content_hash, schema_hash
 
@@ -74,11 +75,14 @@ def _contract(loaded: LoadedDataset) -> TrialDataContract:
             run_id="run-123",
         ),
         dataset=DatasetRef.from_dataset(loaded.dataset),
-        splits={"train": ((0, 50),), "holdout": ((90, 100),)},
+        splits={
+            "train": (Where("SPLIT_PCT") < 50).to_dict(),
+            "holdout": (Where("SPLIT_PCT") >= 90).to_dict(),
+        },
         slices=(
             SliceContract(
                 name="train",
-                ranges=((0, 50),),
+                predicate=(Where("SPLIT_PCT") < 50).to_dict(),
                 n_rows=len(train_df),
                 content_hash=dataframe_content_hash(train_df),
             ),
@@ -129,11 +133,11 @@ def test_l3_loaded_slice_rejects_row_count_and_content_hash_drift():
         df=loaded.df.iloc[:2].reset_index(drop=True),
         registry=loaded.registry,
         split_name="train",
-        split_ranges=((0, 50),),
+        predicate=Where("SPLIT_PCT") < 50,
     )
     contract = SliceContract(
         name="train",
-        ranges=((0, 50),),
+        predicate=(Where("SPLIT_PCT") < 50).to_dict(),
         n_rows=2,
         content_hash=dataframe_content_hash(loaded_slice.df),
     )

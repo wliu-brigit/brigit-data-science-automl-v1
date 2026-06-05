@@ -1,8 +1,11 @@
 # Time-based splitting
 
-**Status: placeholder (2026-06-03).** Not scoped — needs a deep-dive session
-before any design. This note captures the ask and where the current code
-stands so that session can start oriented.
+**Status: absorbed (2026-06-04).** Implemented as step 4 of
+[`snowflake-source-and-split-keys`](../execution/snowflake-source-and-split-keys/design.md)
+(§12, flexible splits): `Where(...)` predicates replace bucket ranges, so a
+time split is `Where("application_date") < "2026-03-01"` — no new
+materialize-time machinery. The note below is the original ask, kept as
+history; its open questions are answered by design §12.
 
 ## The ask
 

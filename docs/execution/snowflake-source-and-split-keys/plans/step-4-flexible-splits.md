@@ -67,7 +67,7 @@ Splits(
 - Create: `automl/project/predicates.py`
 - Modify: `automl/project/__init__.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 """Where builder + serializable predicate AST."""
@@ -155,10 +155,10 @@ def test_repr_reads_like_the_declaration():
     assert "&" in repr((Where("a") < 1) & (Where("b") == 2))
 ```
 
-- [ ] **Step 2:** `uv run pytest tests/unit/project/test_predicates.py -v` —
+- [x] **Step 2:** `uv run pytest tests/unit/project/test_predicates.py -v` —
 FAIL (module missing).
 
-- [ ] **Step 3: Implement `automl/project/predicates.py`**
+- [x] **Step 3: Implement `automl/project/predicates.py`**
 
 ```python
 """Serializable split predicates: criteria are data, not code (design §12).
@@ -405,12 +405,12 @@ Fix the repr test expectation against the implementation
 (`'Where("SPLIT_PCT") < 80'`) once written — repr is for humans; the test
 pins it loosely.
 
-- [ ] **Step 4:** Export from `automl/project/__init__.py`:
+- [x] **Step 4:** Export from `automl/project/__init__.py`:
 `from automl.project.predicates import Predicate, Where` (+ `__all__`).
 
-- [ ] **Step 5:** `uv run pytest tests/unit/project/test_predicates.py -v` — PASS.
+- [x] **Step 5:** `uv run pytest tests/unit/project/test_predicates.py -v` — PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add automl/project/predicates.py automl/project/__init__.py tests/unit/project/test_predicates.py
@@ -431,7 +431,7 @@ git commit -m "Add Where builder + serializable predicate AST (design step 4, pa
   tests; review note: `test_cli_catalog.py` has no `Splits(` construction —
   trust the grep, not memory).
 
-- [ ] **Step 1: Replace the `Splits` block** in `run_config.py` (delete
+- [x] **Step 1: Replace the `Splits` block** in `run_config.py` (delete
 `DEFAULT_SPLIT_RANGES`, `_coerce_ranges`, `_bucket_set`,
 `_validate_no_cross_name_overlap`):
 
@@ -520,12 +520,12 @@ the callers (each becomes a `resolve(name)` + predicate use).
 - Modify: `automl/data/contract.py`
 - Modify: `automl/runner/trial.py`
 
-- [ ] **Step 1: `LoadedSlice`** — `split_ranges: tuple[tuple[int, int], ...]`
+- [x] **Step 1: `LoadedSlice`** — `split_ranges: tuple[tuple[int, int], ...]`
 → `predicate: Any` (a `Predicate`; typed `Any` to keep the data layer's
 import surface unchanged — the object comes from `automl.project`, which
 `registry.py` already imports).
 
-- [ ] **Step 2: `registry.py`** — `load_dataset_by_id` /` load_dataset` /
+- [x] **Step 2: `registry.py`** — `load_dataset_by_id` /` load_dataset` /
 `load_dataset_by_trial` replace `split_range` with `predicate`:
 
 ```python
@@ -563,7 +563,7 @@ wrap with `Predicate.from_dict(...)`; the `split_range` normalization helpers
 (`df[dataset.split_pct_col].isin(buckets)`) disappears with them — the
 predicate mask is the only slicing path.
 
-- [ ] **Step 3: `contract.py`** — `SliceContract.ranges` → `predicate`
+- [x] **Step 3: `contract.py`** — `SliceContract.ranges` → `predicate`
 (stored as the raw AST mapping):
 
 ```python
@@ -579,7 +579,7 @@ class SliceContract:
 becomes `dict[str, Mapping[str, Any]]` (name → AST); its `to_dict`/`from_dict`
 pass ASTs through unchanged.
 
-- [ ] **Step 4: `runner/trial.py` `_trial_data_contract`** —
+- [x] **Step 4: `runner/trial.py` `_trial_data_contract`** —
 
 ```python
     for name, predicate in run_config.splits.predicates.items():
@@ -599,7 +599,7 @@ pass ASTs through unchanged.
     )
 ```
 
-- [ ] **Step 5:** Update the pinned tests:
+- [x] **Step 5:** Update the pinned tests:
 - `tests/integration/data_pipeline/test_trial_replay.py` — `_write_trial_contract`
   (~144–181) builds `SliceContract(ranges=...)` / `splits={...: ((0,50),)}`
   → ASTs. **`test_load_dataset_by_id_accepts_disjoint_multi_range` (~185) is
@@ -627,7 +627,7 @@ pass ASTs through unchanged.
   `tests/unit/eval/test_eval_thin_path.py`,
   `tests/integration/eval/*`
 
-- [ ] **Step 1: `eval_dataset.py`** — `EvalDataset` drops `split_pct_col`
+- [x] **Step 1: `eval_dataset.py`** — `EvalDataset` drops `split_pct_col`
 and `buckets`, gains `predicate: Mapping[str, Any] | None = None`. **Pinned
 contract (review finding — the two halves must agree):**
 `compute_eval_dataset_identity` takes the **AST mapping**
@@ -652,7 +652,7 @@ target_column, unique_key)` — `predicate: Predicate`. `_normalize_buckets`
 is deleted. `from_dict`/`to_dict` move the `predicate` AST instead of
 `split_pct_col`/`buckets`. (`ev_` ids change; forward-only.)
 
-- [ ] **Step 2: `prepare.py` `_prepare_split_view`** —
+- [x] **Step 2: `prepare.py` `_prepare_split_view`** —
 
 ```python
     predicate = active.config.require_run_config().splits.resolve(split)
@@ -667,7 +667,7 @@ is deleted. `from_dict`/`to_dict` move the `predicate` AST instead of
     )
 ```
 
-- [ ] **Step 3: `_load.py`** split_view branch —
+- [x] **Step 3: `_load.py`** split_view branch —
 
 ```python
         from automl.project.predicates import Predicate
@@ -679,7 +679,7 @@ is deleted. `from_dict`/`to_dict` move the `predicate` AST instead of
         )
 ```
 
-- [ ] **Step 4:** Update the eval tests: identity tests build predicates and
+- [x] **Step 4:** Update the eval tests: identity tests build predicates and
 assert the recipe-based properties (same predicate → same `ev_` id;
 different predicate → different id); persistence tests round-trip the AST
 through `eval_dataset.json`.
@@ -689,12 +689,15 @@ through `eval_dataset.json`.
 **Files:**
 - Modify: `projects/example_homecredit/config.py`
 - Modify: `projects/fraud_anomaly_detection/config.py`
+- Modify: `projects/payment_routing/config.py` (step-3 heads-up: consumer created after this plan)
+- Modify: `tests/e2e/test_snowflake_source_e2e.py` (config template, written in step 3)
+- Modify: `tests/e2e/test_homecredit_data_model_breadth.py` (ad-hoc `split_range=` slice → predicate)
 - Modify: `automl/project/scaffold.py`
 - Modify: `agent-skills/references/setup/run-config.md`
 - Check: `automl/cli/**`, `automl/agent/proposer_context.py`,
   `automl/trial/**` for range survivors
 
-- [ ] **Step 1: Configs** — in both project configs and the scaffold
+- [x] **Step 1: Configs** — in both project configs and the scaffold
 template, the import line gains `Where` and:
 
 ```python
@@ -705,7 +708,7 @@ Scaffold comments show the time-based example from §12 (and that rolling/
 backtesting windows are just a family of named splits). Update
 `tests/unit/project/test_metadata_and_scaffold.py` if it pins template text.
 
-- [ ] **Step 2: Survivor sweep** —
+- [x] **Step 2: Survivor sweep** —
 
 ```bash
 grep -rn "split_range\|split_ranges\|\[(0, 80)\]\|\[(80, 100)\]\|(0, 80)\|ranges=" automl tests projects agent-skills --include="*.py" --include="*.md" | grep -v docs/archive
@@ -715,24 +718,24 @@ Update every hit (CLI verbs exposing `--split-range` if any exist, proposer
 context renderings of splits, trial templates). The range API must not
 survive anywhere — one split vocabulary, not two.
 
-- [ ] **Step 3: Docs** — `agent-skills/references/setup/run-config.md`:
+- [x] **Step 3: Docs** — `agent-skills/references/setup/run-config.md`:
 rewrite the Splits section around `Where`, the op set, record-don't-police,
 column-availability-is-the-only-requirement, and `SPLIT_PCT` as an ordinary
 column. Check `tests/contracts/test_data_docs_truth.py` (pins "requires
 named splits" phrasing — named splits still exist, so likely unaffected;
 update if it pins range syntax).
 
-- [ ] **Step 4: Archive the absorbed to-do** — per the docs lifecycle
+- [x] **Step 4: Archive the absorbed to-do** — per the docs lifecycle
 (`docs/README.md`): `git mv docs/to-do/time-based-splitting.md
-docs/archive/2026-06-time-based-splitting.md` (prefix per the archive's
-naming convention — check `ls docs/archive/` and match), and remove the
+docs/archive/2026-06-04-time-based-splitting.md` (the archive convention is a
+full-date prefix), and remove the
 HANDOFF/README links pointing at it.
 
 ### Task 6: green suite, handoff, commit 2
 
-- [ ] **Step 1:** `uv run pytest tests/unit tests/contracts tests/integration` — PASS.
+- [x] **Step 1:** `uv run pytest tests/unit tests/contracts tests/integration` — PASS.
 
-- [ ] **Step 2:** Update `docs/HANDOFF.md`: all four steps of the effort
+- [x] **Step 2:** Update `docs/HANDOFF.md`: all four steps of the effort
 landed; tail-end activities remain (live notebook verification on
 example_homecredit — note
 `projects/example_homecredit/notebooks/2_run_agent_automl.ipynb` contains a
@@ -753,16 +756,16 @@ SPLIT_PCT is an ordinary column (design step 4)."
 
 ## Self-review checklist
 
-- [ ] No lambda/callable path anywhere in splits — criteria serialize as
+- [x] No lambda/callable path anywhere in splits — criteria serialize as
   JSON ASTs end to end (declare → trial contract → eval identity → replay).
-- [ ] `load_dataset_by_trial` replays a historical trial's split from the
+- [x] `load_dataset_by_trial` replays a historical trial's split from the
   serialized AST alone (test_trial_replay proves it).
-- [ ] Overlapping splits construct and record without complaint.
-- [ ] A predicate naming a missing column fails at load with the column
+- [x] Overlapping splits construct and record without complaint.
+- [x] A predicate naming a missing column fails at load with the column
   name and the available columns.
-- [ ] Push-down/`to_pyarrow` is implemented but **not wired** into the
+- [x] Push-down/`to_pyarrow` is implemented but **not wired** into the
   reader — sorting the persisted frame ships with the push-down reader
   later, as one unit (design §12). No premature `filters=` in
   `read_parquet`.
-- [ ] `grep -rn "split_range\|train_buckets\|_coerce_ranges" automl tests` → empty.
-- [ ] Default `Splits()` still yields train/test names with 80/20 semantics.
+- [x] `grep -rn "split_range\|train_buckets\|_coerce_ranges" automl tests` → empty.
+- [x] Default `Splits()` still yields train/test names with 80/20 semantics.

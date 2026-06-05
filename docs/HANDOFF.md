@@ -8,7 +8,8 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
 
 ## Where things stand
 
-- **Active effort — steps 1–3 of 4 landed, step 4 is next:**
+- **Active effort — all 4 code steps landed; only the batched live session
+  remains:**
   [`execution/snowflake-source-and-split-keys/`](execution/snowflake-source-and-split-keys/)
   — the real `SnowflakeSource` plus the data-layer contract work it
   surfaced. **`design.md` is the source of truth**; the status ledger
@@ -21,27 +22,27 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
   `--refresh-data`/`--refresh-source`; **step 3** made `SnowflakeSource`
   real (SELECT-only `base_table_sql`, harness-owned DDL with `SPLIT_PCT`
   injection, split-invariant check, bucket-sample dry-run, live validate
-  probe, Snowpark dropped) — suite 554-green after a five-agent post-landing
-  review (outcome + fixes in the ledger row).
+  probe, Snowpark dropped); **step 4** hard-cut `Splits` from bucket ranges
+  to `Where(...)` predicates (serializable JSON AST; trial contracts and
+  eval split-view identities carry the AST; `SPLIT_PCT` is an ordinary
+  column; `to_pyarrow` push-down compiled but deliberately not wired —
+  layout + reader ship together later). Suite 573-green.
 - **All live/VPN-dependent verification is deliberately batched** into one
-  tail-end session after step 4 lands (wendao 2026-06-04: getting on the
-  VPN is slow — finish everything first, then run the live items as one
-  isolated batch). The list lives in the plans README "Tail-end activities".
+  tail-end session now that step 4 has landed (wendao 2026-06-04: getting on
+  the VPN is slow — run the live items as one isolated batch). The list
+  lives in the plans README "Tail-end activities".
 - **Known-stale until that tail-end pass:** `example_homecredit` notebooks
   (old `hash_key`/`SPLITID`/`base_data_sql` in cells and cached outputs;
-  notebook 2's `Splits(train=[(0, 80)]…)` breaks after step 4's hard cut).
+  notebook 2's `Splits(train=[(0, 80)]…)` now **raises** after step 4's hard
+  cut — update it to `Where("SPLIT_PCT") < 80` in that pass).
 
 ## Next actions
 
-1. **Execute step 4** (flexible splits — `Where` predicates replace bucket
-   ranges, hard cut) following the protocol in
-   [`plans/README.md`](execution/snowflake-source-and-split-keys/plans/README.md).
-   Read the step-4 row's heads-up notes first — they list range-API
-   consumers created after the plan was written.
-2. **Then the batched tail-end session** (needs wendao + VPN): live
-   Snowflake e2e, live notebook verification, first real
-   `fraud_anomaly_detection` materialize, archive the effort. Details in
-   the plans README.
+1. **The batched tail-end session** (needs wendao + VPN): live Snowflake
+   e2e, live notebook verification (incl. fixing notebook 2's now-raising
+   `Splits` cell), first real `fraud_anomaly_detection` materialize, the
+   `list_dataset_records` swallow-to-`[]` revisit, then archive the effort.
+   Details in the plans README "Tail-end activities".
 
 (State wipes are always a human call, never the code's — design §14 ground
 rule. The 2026-06-04 `example_homecredit` wipes are recorded in the step-2

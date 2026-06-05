@@ -44,7 +44,7 @@ Not solutions — the bar the design should clear:
 - Keys are **named for their jobs** and validated at the ingestion edge, so
   the eval layer downstream is safe by construction.
 - Flexible/time-based splitting
-  ([`../../to-do/time-based-splitting.md`](../../to-do/time-based-splitting.md))
+  ([`../../archive/2026-06-04-time-based-splitting.md`](../../archive/2026-06-04-time-based-splitting.md))
   is **in scope** as the final step: a split should be a named, serializable
   row-criterion over the immutable dataset — declarable on time, buckets, or
   any column — recorded with every trial.

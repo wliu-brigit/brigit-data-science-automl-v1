@@ -14,6 +14,7 @@ from automl.project import (
     RunConfig,
     Session,
     Splits,
+    Where,
 )
 
 pytestmark = pytest.mark.unit
@@ -30,7 +31,7 @@ def _session(tmp_path: Path, *, namespace: str = "qa", dry_run: bool = False) ->
             task=BinaryClassification(target="target"),
             run_config=RunConfig(
                 experiment_id="baseline",
-                splits=Splits({"train": ((0, 50),), "test": ((50, 100),)}),
+                splits=Splits({"train": Where("SPLIT_PCT") < 50, "test": Where("SPLIT_PCT") >= 50}),
                 models=ModelsConfig(manager=route, proposer=route, coder=route),
                 per_trial_seconds=120,
             ),
@@ -43,60 +44,42 @@ def _session(tmp_path: Path, *, namespace: str = "qa", dry_run: bool = False) ->
 
 
 def test_split_view_identity_is_recipe_based_not_frame_based():
+    # The identity hashes the serialized predicate AST — what the split means.
+    recipe_ast = (
+        ((Where("SPLIT_PCT") >= 80) & (Where("SPLIT_PCT") < 90)) | (Where("SPLIT_PCT") >= 95)
+    ).to_dict()
     first = eval_dataset_module.compute_eval_dataset_identity(
         kind="split_view",
         of_dataset_id="dataset-v1",
-        split_pct_col="SPLIT_PCT",
-        buckets=((80, 90), (95, 100)),
+        predicate=recipe_ast,
         target_column="target",
         unique_key=("row_id",),
     )
     second = eval_dataset_module.compute_eval_dataset_identity(
         kind="split_view",
         of_dataset_id="dataset-v1",
-        split_pct_col="SPLIT_PCT",
-        buckets=((80, 90), (95, 100)),
+        predicate=recipe_ast,
         target_column="target",
         unique_key=("row_id",),
     )
     same_rows_different_recipe = eval_dataset_module.compute_eval_dataset_identity(
         kind="split_view",
         of_dataset_id="dataset-v1",
-        split_pct_col="SPLIT_PCT",
-        buckets=((80, 100),),
+        predicate=(Where("SPLIT_PCT") >= 80).to_dict(),
         target_column="target",
         unique_key=("row_id",),
     )
 
     assert first == second
     assert first != same_rows_different_recipe
+    assert first.startswith("ev_")
 
 
-def test_split_view_identity_sorts_and_rejects_overlapping_buckets():
-    ordered = eval_dataset_module.compute_eval_dataset_identity(
-        kind="split_view",
-        of_dataset_id="dataset-v1",
-        split_pct_col="SPLIT_PCT",
-        buckets=((10, 20), (30, 40)),
-        target_column="target",
-        unique_key=("row_id",),
-    )
-    reversed_order = eval_dataset_module.compute_eval_dataset_identity(
-        kind="split_view",
-        of_dataset_id="dataset-v1",
-        split_pct_col="SPLIT_PCT",
-        buckets=((30, 40), (10, 20)),
-        target_column="target",
-        unique_key=("row_id",),
-    )
-
-    assert reversed_order == ordered
-    with pytest.raises(ValueError, match="overlap"):
+def test_split_view_identity_requires_a_predicate():
+    with pytest.raises(ValueError, match="predicate"):
         eval_dataset_module.compute_eval_dataset_identity(
             kind="split_view",
             of_dataset_id="dataset-v1",
-            split_pct_col="SPLIT_PCT",
-            buckets=((10, 20), (15, 30)),
             target_column="target",
             unique_key=("row_id",),
         )
@@ -128,8 +111,7 @@ def test_eval_dataset_record_round_trips_route_and_kind(tmp_path):
         session=active,
         of_dataset_id="dataset-v1",
         split="test",
-        split_pct_col="SPLIT_PCT",
-        buckets=((50, 100),),
+        predicate=Where("SPLIT_PCT") >= 50,
         target_column="target",
         unique_key=("row_id",),
     )

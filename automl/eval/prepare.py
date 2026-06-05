@@ -110,14 +110,13 @@ def _prepare_split_view(
     split: str,
     overwrite: bool,
 ) -> tuple[EvalDataset, bool]:
-    buckets = active.config.require_run_config().splits.resolve(split)
+    predicate = active.config.require_run_config().splits.resolve(split)
     parent = _dataset_by_id(data.list_datasets(session=active), dataset_id)
     recipe = EvalDataset.split_view(
         session=active,
         of_dataset_id=parent.id,
         split=split,
-        split_pct_col=parent.split_pct_col,
-        buckets=buckets,
+        predicate=predicate,
         target_column=parent.target_column,
         unique_key=parent.unique_key,
     )

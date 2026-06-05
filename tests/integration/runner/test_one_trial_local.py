@@ -12,7 +12,7 @@ from automl.mlflow import client as mlflow_client
 from automl.mlflow import tags
 from automl.mlflow import trial as mlflow_trial
 from automl.mlflow.trial import artifacts
-from automl.project import clear_session, use_project
+from automl.project import Where, clear_session, use_project
 from automl.runner import run_trial
 from automl.trial import TrialStatus
 from automl.trial.create import create as create_trial
@@ -97,20 +97,20 @@ def test_run_trial_executes_homecredit_chain_and_logs_artifacts(tmp_path, monkey
         original_runner_loader = runner_trial.data.load_dataset
         original_eval_loader = eval_load.data.load_dataset_by_id
 
-        def counting_runner_loader(*, split_name=None, split_range=None, session=None):
+        def counting_runner_loader(*, split_name=None, predicate=None, session=None):
             runner_loads.append(split_name)
             return original_runner_loader(
                 split_name=split_name,
-                split_range=split_range,
+                predicate=predicate,
                 session=session,
             )
 
-        def counting_eval_loader(dataset_id, *, split_name=None, split_range=None, session=None):
-            eval_loads.append((dataset_id, split_name, split_range))
+        def counting_eval_loader(dataset_id, *, split_name=None, predicate=None, session=None):
+            eval_loads.append((dataset_id, split_name, predicate))
             return original_eval_loader(
                 dataset_id,
                 split_name=split_name,
-                split_range=split_range,
+                predicate=predicate,
                 session=session,
             )
 
@@ -128,8 +128,8 @@ def test_run_trial_executes_homecredit_chain_and_logs_artifacts(tmp_path, monkey
         assert result.metrics["auc"] <= 1.0
         assert runner_loads == [active.config.require_run_config().train_split]
         assert eval_loads == [
-            (loaded.id, None, ((80, 100),)),
-            (loaded.id, None, ((0, 80),)),
+            (loaded.id, None, Where("SPLIT_PCT") >= 80),
+            (loaded.id, None, Where("SPLIT_PCT") < 80),
             (loaded.id, "test", None),
             (loaded.id, "test", None),
         ]
@@ -319,8 +319,8 @@ def test_run_trial_rebinds_explicit_session_and_restores_prior_binding(tmp_path,
 
     import automl.runner.trial as runner_trial
 
-    def stop_after_bind(*, split_name=None, split_range=None, session=None):
-        del split_name, split_range, session
+    def stop_after_bind(*, split_name=None, predicate=None, session=None):
+        del split_name, predicate, session
         observed["prefix_at_load"] = mlflow_client.bound().gcs_prefix
         raise RuntimeError("stop after binding check")
 

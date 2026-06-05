@@ -76,7 +76,9 @@ class DatasetRef:
 @dataclass(frozen=True)
 class SliceContract:
     name: str | None
-    ranges: tuple[tuple[int, int], ...]
+    # The serialized predicate AST (see automl.project.predicates) — carried
+    # verbatim so a historical trial's split replays from the record alone.
+    predicate: Mapping[str, Any]
     n_rows: int
     content_hash: str
 
@@ -84,7 +86,7 @@ class SliceContract:
     def from_dict(cls, payload: Mapping[str, Any]) -> "SliceContract":
         return cls(
             name=payload.get("name"),
-            ranges=_ranges_from(payload.get("ranges", ())),
+            predicate=_mapping(payload.get("predicate")),
             n_rows=int(payload.get("n_rows", 0)),
             content_hash=str(payload.get("content_hash", "")),
         )
@@ -92,7 +94,7 @@ class SliceContract:
     def to_dict(self) -> dict[str, Any]:
         return {
             "name": self.name,
-            "ranges": [[low, high] for low, high in self.ranges],
+            "predicate": dict(self.predicate),
             "n_rows": self.n_rows,
             "content_hash": self.content_hash,
         }
@@ -102,7 +104,7 @@ class SliceContract:
 class TrialDataContract:
     trial: TrialRef
     dataset: DatasetRef
-    splits: dict[str, tuple[tuple[int, int], ...]]
+    splits: dict[str, Mapping[str, Any]]
     slices: tuple[SliceContract, ...]
     schema_version: int = 1
 
@@ -111,10 +113,7 @@ class TrialDataContract:
             "schema_version": self.schema_version,
             "trial": self.trial.to_dict(),
             "dataset": self.dataset.to_dict(),
-            "splits": {
-                name: [[low, high] for low, high in ranges]
-                for name, ranges in self.splits.items()
-            },
+            "splits": {name: dict(ast) for name, ast in self.splits.items()},
             "slices": [slice_contract.to_dict() for slice_contract in self.slices],
         }
 
@@ -124,8 +123,8 @@ class TrialDataContract:
             trial=TrialRef.from_dict(_mapping(payload.get("trial"))),
             dataset=DatasetRef.from_dict(_mapping(payload.get("dataset"))),
             splits={
-                str(name): _ranges_from(ranges)
-                for name, ranges in _mapping(payload.get("splits")).items()
+                str(name): _mapping(ast)
+                for name, ast in _mapping(payload.get("splits")).items()
             },
             slices=tuple(
                 SliceContract.from_dict(_mapping(item)) for item in payload.get("slices", ())
@@ -204,10 +203,6 @@ def _mapping(value: object) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise TypeError(f"expected mapping, got {type(value).__name__}")
     return value
-
-
-def _ranges_from(value: object) -> tuple[tuple[int, int], ...]:
-    return tuple((int(low), int(high)) for low, high in value)
 
 
 __all__ = [

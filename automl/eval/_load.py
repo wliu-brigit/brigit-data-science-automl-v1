@@ -14,7 +14,7 @@ from automl.eval.eval_dataset import (
     record_uri_for,
 )
 from automl.mlflow.experiment import eval_datasets
-from automl.project import Session
+from automl.project import Predicate, Session
 from automl.project import session as active_project_session
 from automl.utils.hashing import dataframe_content_hash, schema_hash
 from automl.utils.keys import validate_unique_key
@@ -37,7 +37,7 @@ def load_eval_dataset(eval_dataset_id: str, *, session: Session | None = None) -
     if recipe.kind == "split_view":
         loaded = data.load_dataset_by_id(
             recipe.of_dataset_id,
-            split_range=recipe.buckets,
+            predicate=Predicate.from_dict(recipe.predicate),
             session=active,
         )
         frame = loaded.df.reset_index(drop=True)

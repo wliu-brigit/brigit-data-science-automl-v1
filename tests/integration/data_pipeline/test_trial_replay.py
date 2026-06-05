@@ -27,7 +27,9 @@ from automl.project import (
     ProjectConfig,
     RunConfig,
     Session,
+    Predicate,
     Splits,
+    Where,
 )
 from automl.utils.hashing import dataframe_content_hash
 from automl.utils.io import gcs
@@ -114,7 +116,7 @@ def _session(tmp_path: Path, csv_path: Path) -> Session:
             data_spec=spec,
             run_config=RunConfig(
                 experiment_id="baseline",
-                splits=Splits({"train": ((0, 50),), "test": ((50, 100),)}),
+                splits=Splits({"train": Where("SPLIT_PCT") < 50, "test": Where("SPLIT_PCT") >= 50}),
                 models=_models(),
                 per_trial_seconds=120,
             ),
@@ -141,8 +143,13 @@ def _write_trial_contract(active: Session, loaded, *, corrupt_tag: bool = False)
     with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
         mlflow_experiment.ensure(experiment_id=active.active_experiment_id)
         trial_id = "1_replay_contract"
-        splits = {"train": ((0, 50),), "holdout": ((90, 100),)}
-        train = load_dataset_by_id(loaded.id, split_range=splits["train"], session=active)
+        splits = {
+            "train": (Where("SPLIT_PCT") < 50).to_dict(),
+            "holdout": (Where("SPLIT_PCT") >= 90).to_dict(),
+        }
+        train = load_dataset_by_id(
+            loaded.id, predicate=Predicate.from_dict(splits["train"]), session=active
+        )
         with mlflow_trial.active(
             slug="replay_contract",
             strategy="test",
@@ -161,7 +168,7 @@ def _write_trial_contract(active: Session, loaded, *, corrupt_tag: bool = False)
                 slices=(
                     SliceContract(
                         name="train",
-                        ranges=splits["train"],
+                        predicate=splits["train"],
                         n_rows=train.n_rows,
                         content_hash=dataframe_content_hash(train.df),
                     ),
@@ -182,19 +189,20 @@ def _write_trial_contract(active: Session, loaded, *, corrupt_tag: bool = False)
         return trial_id
 
 
-def test_load_dataset_by_id_accepts_disjoint_multi_range(tmp_path, fake_gcs):
+def test_load_dataset_by_id_accepts_disjoint_predicate(tmp_path, fake_gcs):
+    # Ad-hoc disjoint slices stay expressible after the range API's removal.
     active = _session(tmp_path, _write_csv(tmp_path))
     loaded = materialize(session=active)
 
-    sliced = load_dataset_by_id(
-        loaded.id,
-        split_range=((80, 90), (95, 100)),
-        session=active,
+    predicate = ((Where("SPLIT_PCT") >= 80) & (Where("SPLIT_PCT") < 90)) | (
+        Where("SPLIT_PCT") >= 95
     )
+    sliced = load_dataset_by_id(loaded.id, predicate=predicate, session=active)
     expected_buckets = set(range(80, 90)) | set(range(95, 100))
 
     assert sliced.split_name is None
-    assert sliced.split_ranges == ((80, 90), (95, 100))
+    assert sliced.predicate.to_dict() == predicate.to_dict()
+    assert Predicate.from_dict(sliced.predicate.to_dict()) == predicate
     assert set(sliced.df["SPLIT_PCT"]).issubset(expected_buckets)
     assert sliced.df.to_dict("records") == loaded.df[
         loaded.df["SPLIT_PCT"].isin(expected_buckets)
@@ -205,14 +213,18 @@ def test_load_dataset_by_trial_uses_contract_splits_and_runs_l3_l4(tmp_path, fak
     active = _session(tmp_path, _write_csv(tmp_path))
     loaded = materialize(session=active)
     trial_id = _write_trial_contract(active, loaded)
+    splits_payload = {
+        "train": (Where("SPLIT_PCT") < 50).to_dict(),
+        "holdout": (Where("SPLIT_PCT") >= 90).to_dict(),
+    }
 
     holdout = load_dataset_by_trial(trial_id, split_name="holdout", session=active)
     train = load_dataset_by_trial(trial_id, split_name="train", session=active)
 
     assert holdout.id == loaded.id
     assert holdout.split_name == "holdout"
-    assert holdout.split_ranges == ((90, 100),)
-    assert train.split_ranges == ((0, 50),)
+    assert holdout.predicate.to_dict() == splits_payload["holdout"]
+    assert train.predicate.to_dict() == splits_payload["train"]
 
     with pytest.raises(KeyError, match="available contract splits"):
         load_dataset_by_trial(trial_id, split_name="missing", session=active)

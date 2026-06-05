@@ -3,145 +3,87 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Any
+
+from automl.project.predicates import Predicate, Where
 
 
 SAFE_ROUTE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 ALLOWED_EFFORTS = frozenset({"low", "medium", "high"})
-DEFAULT_SPLIT_RANGES = {
-    "train": ((0, 80),),
-    "test": ((80, 100),),
+DEFAULT_SPLIT_PREDICATES = {
+    "train": Where("SPLIT_PCT") < 80,
+    "test": Where("SPLIT_PCT") >= 80,
 }
-
-
-def _coerce_ranges(
-    value: Sequence[tuple[int, int]], field_name: str
-) -> tuple[tuple[int, int], ...]:
-    ranges: list[tuple[int, int]] = []
-    seen_buckets: set[int] = set()
-    for index, item in enumerate(value):
-        try:
-            low, high = item
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                f"{field_name}[{index}] must be a (low, high) pair, got {item!r}"
-            ) from exc
-        if (
-            isinstance(low, bool)
-            or isinstance(high, bool)
-            or not isinstance(low, int)
-            or not isinstance(high, int)
-        ):
-            raise ValueError(f"{field_name}[{index}] bounds must be ints, got {item!r}")
-        if not (0 <= low <= 100 and 0 <= high <= 100):
-            raise ValueError(f"{field_name}[{index}] bounds must be in [0, 100], got {item!r}")
-        if low >= high:
-            raise ValueError(f"{field_name}[{index}] must be ascending, got {item!r}")
-        buckets = set(range(low, high))
-        overlap = seen_buckets & buckets
-        if overlap:
-            raise ValueError(
-                f"{field_name}[{index}] overlaps another range in {field_name!r} "
-                f"at bucket {min(overlap)}"
-            )
-        seen_buckets.update(buckets)
-        ranges.append((low, high))
-    if not ranges:
-        raise ValueError(f"{field_name} must contain at least one range")
-    return tuple(ranges)
-
-
-def _bucket_set(ranges: Sequence[tuple[int, int]]) -> set[int]:
-    buckets: set[int] = set()
-    for low, high in ranges:
-        buckets.update(range(low, high))
-    return buckets
-
-
-def _validate_no_cross_name_overlap(ranges: Mapping[str, Sequence[tuple[int, int]]]) -> None:
-    bucket_owner: dict[int, str] = {}
-    for name, split_ranges in ranges.items():
-        for bucket in _bucket_set(split_ranges):
-            other = bucket_owner.get(bucket)
-            if other is not None:
-                raise ValueError(
-                    f"split {name!r} overlaps split {other!r} at bucket {bucket}"
-                )
-            bucket_owner[bucket] = name
 
 
 @dataclass(frozen=True, init=False)
 class Splits:
-    """Free-form named deterministic 0..99 bucket ranges."""
+    """Named, durable row-criteria over an immutable dataset.
 
-    ranges: Mapping[str, tuple[tuple[int, int], ...]]
+    Values are Predicate expressions (see automl.project.predicates).
+    Overlap is deliberately not policed — the harness records exactly what
+    each named split meant for any trial and enforces nothing about
+    disjointness (design §12).
+    """
+
+    predicates: Mapping[str, Predicate]
 
     def __init__(
         self,
-        ranges: Mapping[str, Sequence[tuple[int, int]]] | None = None,
+        predicates: Mapping[str, Predicate] | None = None,
         *,
-        train: Sequence[tuple[int, int]] | None = None,
-        test: Sequence[tuple[int, int]] | None = None,
-        **named_ranges: Sequence[tuple[int, int]],
+        train: Predicate | None = None,
+        test: Predicate | None = None,
+        **named: Predicate,
     ) -> None:
-        raw: dict[str, Sequence[tuple[int, int]]] = {}
-        has_explicit_ranges = (
-            ranges is not None
-            or train is not None
-            or test is not None
-            or bool(named_ranges)
+        raw: dict[str, Predicate] = {}
+        has_explicit = (
+            predicates is not None or train is not None or test is not None or bool(named)
         )
-        if ranges is not None:
-            raw.update(dict(ranges))
+        if predicates is not None:
+            raw.update(dict(predicates))
         if train is not None:
             raw["train"] = train
         if test is not None:
             raw["test"] = test
-        raw.update(named_ranges)
+        raw.update(named)
         if not raw:
-            if has_explicit_ranges:
-                raise ValueError("Splits must define at least one named range")
-            raw.update(DEFAULT_SPLIT_RANGES)
-
-        coerced: dict[str, tuple[tuple[int, int], ...]] = {}
+            if has_explicit:
+                raise ValueError("Splits must define at least one named predicate")
+            raw.update(DEFAULT_SPLIT_PREDICATES)
         for name, value in raw.items():
             if not isinstance(name, str) or not name.strip():
                 raise ValueError(f"split name must be a non-empty string, got {name!r}")
-            coerced[name] = _coerce_ranges(value, name)
-        _validate_no_cross_name_overlap(coerced)
-        object.__setattr__(self, "ranges", coerced)
+            if not isinstance(value, Predicate):
+                raise TypeError(
+                    f"split {name!r} must be a Where(...) predicate, got "
+                    f"{type(value).__name__} — bucket ranges were removed; "
+                    f'use Where("SPLIT_PCT") < 80'
+                )
+        object.__setattr__(self, "predicates", dict(raw))
 
-    def resolve(self, name: str) -> tuple[tuple[int, int], ...]:
+    def resolve(self, name: str) -> Predicate:
         try:
-            return self.ranges[name]
+            return self.predicates[name]
         except KeyError as exc:
-            known = ", ".join(sorted(self.ranges))
+            known = ", ".join(sorted(self.predicates))
             raise KeyError(f"split {name!r} is not defined; known splits: {known}") from exc
-
-    def buckets(self, name: str) -> frozenset[int]:
-        return frozenset(_bucket_set(self.resolve(name)))
-
-    def train_buckets(self) -> frozenset[int]:
-        return self.buckets("train")
-
-    def test_buckets(self) -> frozenset[int]:
-        return self.buckets("test")
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, object]) -> "Splits":
         if not isinstance(payload, Mapping):
             raise TypeError(f"Splits payload must be a mapping, got {type(payload).__name__}")
-        raw = payload.get("ranges", payload)
+        raw = payload.get("predicates", payload)
         if not isinstance(raw, Mapping):
-            raise ValueError("Splits payload must contain a 'ranges' mapping")
-        return cls(raw)
+            raise ValueError("Splits payload must contain a 'predicates' mapping")
+        return cls({str(name): Predicate.from_dict(ast) for name, ast in raw.items()})
 
-    def to_dict(self) -> dict[str, dict[str, list[list[int]]]]:
+    def to_dict(self) -> dict[str, Any]:
         return {
-            "ranges": {
-                name: [[low, high] for low, high in ranges]
-                for name, ranges in self.ranges.items()
+            "predicates": {
+                name: predicate.to_dict() for name, predicate in self.predicates.items()
             }
         }
 

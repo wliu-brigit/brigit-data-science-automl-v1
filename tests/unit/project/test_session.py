@@ -18,12 +18,12 @@ def _write_project(tmp_path, name="demo"):
     (project_dir / "__init__.py").write_text("")
     (project_dir / "config.py").write_text(
         """
-from automl.project import ProjectConfig, RunConfig, Splits, ModelRoute, ModelsConfig
+from automl.project import ProjectConfig, RunConfig, Splits, Where, ModelRoute, ModelsConfig
 
 PROJECT_CONFIG = ProjectConfig.partial(
     run_config=RunConfig(
         experiment_id="demo-exp",
-        splits=Splits(train=[(0, 80)], test=[(80, 100)]),
+        splits=Splits(train=Where("SPLIT_PCT") < 80, test=Where("SPLIT_PCT") >= 80),
         models=ModelsConfig(
             manager=ModelRoute("sonnet", "medium"),
             proposer=ModelRoute("sonnet", "medium"),

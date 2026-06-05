@@ -377,6 +377,38 @@ def test_build_dataset_errors_when_provided_split_pct_is_missing(tmp_path):
         build_dataset(session=_session_for(spec))
 
 
+def test_build_dataset_coerces_integral_provided_split_pct_to_int(tmp_path):
+    # A warehouse NUMBER can arrive as float/Decimal-typed through the Arrow
+    # fetch; integral values are adopted as int64 instead of tripping the
+    # integer-dtype validation with a cryptic error.
+    csv_path = tmp_path / "floaty.csv"
+    pd.DataFrame(
+        {"row_id": [1, 2, 3], "TARGET": [0, 1, 0], "SPLIT_PCT": [7.0, 42.0, 93.0]}
+    ).to_csv(csv_path, index=False)
+    # Re-read as float by forcing dtype through the CSV round-trip
+    spec = DataSpec(
+        source=_ProvidedSplitSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10
+    )
+
+    loaded = build_dataset(session=_session_for(spec))
+
+    assert loaded.df["SPLIT_PCT"].tolist() == [7, 42, 93]
+    assert pd.api.types.is_integer_dtype(loaded.df["SPLIT_PCT"])
+
+
+def test_build_dataset_rejects_non_integral_provided_split_pct(tmp_path):
+    csv_path = tmp_path / "fractional.csv"
+    pd.DataFrame(
+        {"row_id": [1, 2], "TARGET": [0, 1], "SPLIT_PCT": [7.5, 42.0]}
+    ).to_csv(csv_path, index=False)
+    spec = DataSpec(
+        source=_ProvidedSplitSource(csv_path=csv_path, unique_key="row_id"), dry_run_rows=10
+    )
+
+    with pytest.raises(DataError, match="integer"):
+        build_dataset(session=_session_for(spec))
+
+
 def test_build_dataset_groups_splits_by_split_group_key(tmp_path):
     csv_path = tmp_path / "grouped.csv"
     pd.DataFrame(

@@ -136,6 +136,15 @@ class DataPipeline:
             )
         out = df.rename(columns={lowered: self.split_pct_col})
         original_names[self.split_pct_col] = original_names.pop(lowered, self.split_pct_col)
+        series = out[self.split_pct_col]
+        if not pd.api.types.is_integer_dtype(series):
+            # A warehouse NUMBER can arrive float/Decimal-typed through the
+            # Arrow fetch; integral values are the declared contract, so adopt
+            # them as int64. Anything non-integral falls through to the
+            # validate_split_pct error.
+            numeric = pd.to_numeric(series, errors="coerce")
+            if bool(numeric.notna().all()) and bool((numeric % 1 == 0).all()):
+                out[self.split_pct_col] = numeric.astype("int64")
         return out
 
     def _check_split_pct_collision(self, original_names: dict[str, str]) -> None:

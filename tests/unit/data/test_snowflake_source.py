@@ -60,9 +60,38 @@ def test_base_table_sql_must_be_a_single_select(project):
         _source().generated_ddl(project_dir=project)
 
 
+def test_select_led_multi_statement_body_is_rejected(project):
+    path = project / "data" / "queries" / "base_table.sql"
+    path.write_text("SELECT 1; DROP TABLE T", encoding="utf-8")
+    with pytest.raises(DataError, match="single SELECT"):
+        _source().generated_ddl(project_dir=project)
+
+
 def test_base_table_sql_emitting_split_pct_is_a_collision_error(project):
     path = project / "data" / "queries" / "base_table.sql"
     path.write_text("SELECT 1 AS SPLIT_PCT", encoding="utf-8")
+    with pytest.raises(DataError, match="SPLIT_PCT"):
+        _source().generated_ddl(project_dir=project)
+
+
+def test_guards_ignore_inline_comments_and_string_literals(project):
+    # The enforcement guards must not false-positive on comment text or
+    # literal contents — only on what the statement actually does.
+    path = project / "data" / "queries" / "base_table.sql"
+    path.write_text(
+        "SELECT t.TRANSACTION_ID, -- note; SPLIT_PCT used to be emitted here\n"
+        "       'a;b' AS tag, 'SPLIT_PCT' AS label\n"
+        "FROM {database}.{schema}.RAW_TXNS t",
+        encoding="utf-8",
+    )
+    ddl = _source().generated_ddl(project_dir=project)
+    assert "'a;b' AS tag" in ddl  # the body itself is inserted verbatim
+
+
+def test_guards_still_catch_split_pct_behind_a_literal(project):
+    # Scrubbing literals must not blind the guard to a real emission.
+    path = project / "data" / "queries" / "base_table.sql"
+    path.write_text("SELECT 'x' AS tag, 1 AS SPLIT_PCT", encoding="utf-8")
     with pytest.raises(DataError, match="SPLIT_PCT"):
         _source().generated_ddl(project_dir=project)
 
@@ -140,6 +169,18 @@ def test_load_pulls_without_ddl_when_table_exists(project, fake_seam):
     out = _source().load(project_dir=project)
     assert fake_seam["executed"] == []          # no rebuild
     assert "SPLIT_PCT" in out.columns
+
+
+def test_table_exists_check_is_case_insensitive(project, fake_seam, monkeypatch):
+    # Snowflake folds unquoted identifiers to UPPERCASE in INFORMATION_SCHEMA;
+    # a lowercase SNOWFLAKE_SCHEMA in .env must not make the exists-check miss
+    # (which would silently rebuild the base table on every load).
+    monkeypatch.setenv("SNOWFLAKE_SCHEMA", "fraud")
+    _source().load(project_dir=project)
+    exists_sql = next(sql for sql in fake_seam["fetched"] if "INFORMATION_SCHEMA" in sql)
+    assert "UPPER(TABLE_SCHEMA) = UPPER('fraud')" in exists_sql
+    assert "UPPER(TABLE_NAME) = UPPER('FRAUD_TRAINING_BASE')" in exists_sql
+    assert fake_seam["executed"] == []          # still no rebuild
 
 
 def test_load_bootstraps_when_table_missing(project, fake_seam):

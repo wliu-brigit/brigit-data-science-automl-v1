@@ -39,6 +39,8 @@ class GCSParquetSource(DataSource):
         return df
 
     def identity(self) -> dict[str, Any]:
+        # The URI is recipe; the object's content is layer-1 data, invisible
+        # to the recipe until --refresh-data (see LocalCSVSource.identity).
         return {
             "kind": self.kind,
             "gcs_uri": self.gcs_uri,

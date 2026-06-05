@@ -33,6 +33,11 @@ class LocalCSVSource(DataSource):
         return pd.read_csv(csv_path, nrows=nrows)
 
     def identity(self) -> dict[str, Any]:
+        # The path is recipe (config names where the data lives); the file's
+        # CONTENT is layer-1 data, deliberately invisible to the recipe —
+        # edits surface only on --refresh-data via content identity. The
+        # inverse of SnowflakeSource's SQL files, which are transform
+        # definitions and enter the recipe as content hashes (design §2/§13).
         return {
             "kind": self.kind,
             "csv_path": str(self.csv_path),

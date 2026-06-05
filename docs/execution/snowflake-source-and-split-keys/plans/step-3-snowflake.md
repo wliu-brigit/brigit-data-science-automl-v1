@@ -1055,7 +1055,10 @@ leaves the lockfile (design step 3, part 3)."
   is the only path that replaces an existing table (ground rule).
 - [x] No credential value ever appears in code, logs, errors, or tests.
 - [x] `base_data_sql` no longer exists anywhere:
-  `grep -rn "base_data_sql\|base_data.sql" automl tests projects agent-skills | grep -v docs/archive` → empty.
+  `grep -rn "base_data_sql\|base_data.sql" automl tests projects agent-skills | grep -v docs/archive`
+  → empty **except** the known-deferred `example_homecredit` notebook
+  reference (cached output in `1_define_and_materialize_dataset.ipynb`;
+  cleared by the tail-end notebook pass).
 - [x] Composite `split_group_key` produces `HASH(t.A, t.B)` in sorted column
   order, matching `split_group_key_columns`.
 - [x] Stub-pinning tests are gone; `test_sources_breadth.py` keeps only the

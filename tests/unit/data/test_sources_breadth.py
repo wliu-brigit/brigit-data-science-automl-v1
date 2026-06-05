@@ -1,6 +1,6 @@
 import pytest
 
-from automl.data import DataSpec, GCSParquetSource, LocalCSVSource
+from automl.data import DataSpec, GCSParquetSource, LocalCSVSource, SnowflakeSource
 
 pytestmark = pytest.mark.unit
 
@@ -38,3 +38,34 @@ def test_split_group_key_defaults_to_unique_key_and_overrides():
 def test_sources_require_unique_key():
     with pytest.raises(TypeError):
         LocalCSVSource(csv_path="x.csv")  # unique_key is required
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        pytest.param(
+            lambda key: LocalCSVSource(csv_path="x.csv", unique_key=key), id="local_csv"
+        ),
+        pytest.param(
+            lambda key: GCSParquetSource(gcs_uri="gs://b/p.parquet", unique_key=key),
+            id="gcs_parquet",
+        ),
+        pytest.param(
+            lambda key: SnowflakeSource(
+                base_table="T",
+                base_table_sql="a.sql",
+                training_data_sql="b.sql",
+                unique_key=key,
+            ),
+            id="snowflake",
+        ),
+    ],
+)
+def test_every_source_validates_keys_at_construction(make):
+    # The DataSource base __post_init__ hook is the construction-edge
+    # guarantee; this pins it firing for every source (a subclass override
+    # that forgets super().__post_init__() would regress silently otherwise).
+    with pytest.raises(ValueError, match="non-empty"):
+        make(("a", "  "))
+    with pytest.raises(ValueError, match="duplicate"):
+        make(("a", "a"))

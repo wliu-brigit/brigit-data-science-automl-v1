@@ -61,7 +61,7 @@ class SnowflakeSource(DataSource):
     # --- DDL generation (design §9) -------------------------------------
     def generated_ddl(self, *, project_dir: str | Path | None = None) -> str:
         body = self._render(self.base_table_sql, project_dir).strip().rstrip(";").strip()
-        statement = _strip_sql_comments(body)
+        statement = _scrub_sql(body)
         first_token = statement.split(None, 1)[0].upper() if statement.split() else ""
         if first_token not in ("SELECT", "WITH"):
             raise DataError(
@@ -107,9 +107,13 @@ class SnowflakeSource(DataSource):
         # Identifiers interpolated below are config/env-owned (base_table,
         # database, schema from the recipe), not user input — no injection
         # surface beyond what the project author already controls.
+        # UPPER on both sides: Snowflake folds unquoted identifiers to
+        # uppercase in INFORMATION_SCHEMA, so a lowercase env value must not
+        # make this miss (a miss silently rebuilds the base table every load).
         row = sf.fetch_one(
             f"SELECT 1 FROM {self._database()}.INFORMATION_SCHEMA.TABLES "
-            f"WHERE TABLE_SCHEMA = '{self._schema()}' AND TABLE_NAME = '{self.base_table}'"
+            f"WHERE UPPER(TABLE_SCHEMA) = UPPER('{self._schema()}') "
+            f"AND UPPER(TABLE_NAME) = UPPER('{self.base_table}')"
         )
         return row is not None
 
@@ -186,9 +190,39 @@ class SnowflakeSource(DataSource):
         return out
 
 
-def _strip_sql_comments(sql: str) -> str:
-    lines = [line for line in sql.splitlines() if not line.lstrip().startswith("--")]
-    return "\n".join(lines).strip()
+def _scrub_sql(sql: str) -> str:
+    """Drop string literals and ``--`` comments — for the guard checks only.
+
+    The enforcement guards (single statement, SPLIT_PCT collision) must judge
+    what the statement *does*, not what its comments or literal values say;
+    the un-scrubbed body is what gets inserted into the DDL. Handles
+    single-quoted literals with '' escapes; comments are stripped only
+    outside literals.
+    """
+    out: list[str] = []
+    i, n = 0, len(sql)
+    in_literal = False
+    while i < n:
+        char = sql[i]
+        if in_literal:
+            if char == "'":
+                if i + 1 < n and sql[i + 1] == "'":  # escaped quote inside literal
+                    i += 2
+                    continue
+                in_literal = False
+            i += 1
+            continue
+        if char == "'":
+            in_literal = True
+            i += 1
+            continue
+        if char == "-" and i + 1 < n and sql[i + 1] == "-":
+            newline = sql.find("\n", i)
+            i = n if newline == -1 else newline
+            continue
+        out.append(char)
+        i += 1
+    return "".join(out).strip()
 
 
 def _file_sha256(sql_path: str | Path, project_dir: str | Path | None) -> str:

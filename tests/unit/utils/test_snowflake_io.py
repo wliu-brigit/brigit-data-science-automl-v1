@@ -96,3 +96,30 @@ def test_missing_env_raises_before_any_connection(monkeypatch):
     monkeypatch.delenv("SNOWFLAKE_ACCOUNT", raising=False)
     with pytest.raises(EnvironmentError, match="SNOWFLAKE_ACCOUNT"):
         sf.execute("SELECT 1")
+
+
+def test_coerce_decimal_columns_casts_computed_number_columns():
+    # Snowflake returns computed expressions (HASH, aggregates) as Decimal
+    # objects; stored columns arrive as real dtypes. Coercion happens once at
+    # the fetch seam so a Decimal can never reach MLflow's JSON encoder.
+    from decimal import Decimal
+
+    import pandas as pd
+
+    from automl.utils.io.snowflake import coerce_decimal_columns
+
+    df = pd.DataFrame(
+        {
+            "computed_int": [Decimal("42"), Decimal("7"), None],
+            "computed_frac": [Decimal("1.5"), Decimal("2.25"), Decimal("0")],
+            "stored_int": [1, 2, 3],
+            "text": ["a", "b", None],
+        }
+    )
+    out = coerce_decimal_columns(df)
+    assert pd.api.types.is_numeric_dtype(out["computed_int"])
+    assert pd.api.types.is_numeric_dtype(out["computed_frac"])
+    assert out["computed_int"].tolist()[:2] == [42, 7]
+    assert out["computed_frac"].tolist() == [1.5, 2.25, 0.0]
+    assert out["stored_int"].dtype == df["stored_int"].dtype  # untouched
+    assert out["text"].dtype == object  # non-Decimal object columns untouched

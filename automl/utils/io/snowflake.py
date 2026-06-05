@@ -60,9 +60,31 @@ def fetch_df(sql: str) -> pd.DataFrame:
         cursor = connection.cursor()
         try:
             cursor.execute(sql)
-            return cursor.fetch_pandas_all()
+            return coerce_decimal_columns(cursor.fetch_pandas_all())
         finally:
             cursor.close()
+
+
+def coerce_decimal_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Cast ``decimal.Decimal`` object columns to real numeric dtypes.
+
+    Snowflake types computed expressions (HASH, aggregates, ROUND) as
+    high-precision NUMBER, which the Arrow fetch returns as Python Decimal
+    objects; stored columns downcast fine. Everything downstream assumes
+    numpy dtypes — a Decimal once survived all the way to MLflow's JSON
+    encoder and cost a trial. Coerced once here, at the only place warehouse
+    data enters the system.
+    """
+    import decimal
+
+    for column in df.columns:
+        if df[column].dtype != object:
+            continue
+        sample = df[column].dropna()
+        if sample.empty or not isinstance(sample.iloc[0], decimal.Decimal):
+            continue
+        df[column] = pd.to_numeric(df[column])
+    return df
 
 
 def fetch_one(sql: str) -> tuple | None:
@@ -94,6 +116,7 @@ __all__ = [
     "DEFAULT_WAREHOUSE",
     "REQUIRED_ENV",
     "check_connection",
+    "coerce_decimal_columns",
     "connect",
     "connection_params",
     "execute",

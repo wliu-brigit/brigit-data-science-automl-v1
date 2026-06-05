@@ -141,11 +141,16 @@ the display order and should follow chronological execution.
 
 ### Timing Semantics
 
-- `setup`: loop setup before the proposer, including dataset materialization and
-  proposer-context rendering when those events are present.
+- `setup`: observed loop setup before the proposer. Include whatever measured
+  setup steps are present for that run, such as dataset materialization,
+  experiment context rendering, or proposer-context rendering. The breakdown is
+  data-driven: some runs may have several setup entries, and some may have only
+  the setup total.
 - `proposer`: wall-clock time of the proposer subagent.
 - `proposal_handoff`: main-session/tooling work between proposer and coder,
-  including proposal validation, proposal persistence, and trial creation.
+  including proposal validation, proposal persistence, and trial creation. If
+  validation and persistence are measured as one command, keep them as one
+  detail entry rather than inventing a split.
 - `coder_implementation`: coder subagent time before the runner starts, mainly
   reading context and editing `model.py`.
 - `runner`: actual trial runner execution.
@@ -153,12 +158,16 @@ the display order and should follow chronological execution.
   command output and writing the final response.
 - `publish`: agent timeline publish/reconciliation time.
 
-Current architecture runs the runner inside the coder subagent. To make the
-high-level phases non-overlapping and chronological, implementation must record
-runner start/end timestamps, not only runner duration.
+Current architecture runs the runner inside the coder subagent. The preferred
+implementation records runner start/end timestamps so `coder_implementation`,
+`runner`, and `coder_report` are exact chronological phases. If that proves too
+heavy for the first pass, a derived split is acceptable: use the coder wall-clock
+span and runner duration to estimate coder time outside the runner, keep the
+math simple, and avoid adding extra schema fields just to explain the estimate.
 
-`total_seconds` is the chronological span covered by the timing report. It is
-not required to equal the sum of `phases` if there is uninstrumented time.
+`total_seconds` is wall-clock time: the chronological span covered by the timing
+report. It is not required to equal the sum of `phases` if there is
+uninstrumented time.
 
 ## Error Handling
 
@@ -167,8 +176,10 @@ not required to equal the sum of `phases` if there is uninstrumented time.
 - Active tag and `datasets/active_pointer.json` disagree: error.
 - Timing enrichment cannot find agent spans: preserve runner-only
   `timing/summary.json` and do not invent agent timings.
-- Timing enrichment finds runner duration but no runner timestamps: do not split
-  coder into implementation/report; require the instrumentation fix first.
+- Timing enrichment finds runner duration but no runner timestamps: prefer
+  adding runner boundary instrumentation. If that is too invasive, derive the
+  coder split from coder wall-clock minus runner duration without introducing a
+  second timing artifact or extra timing schema.
 
 ## Testing
 

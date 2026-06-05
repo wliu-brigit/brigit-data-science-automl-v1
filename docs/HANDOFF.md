@@ -37,20 +37,22 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
 
 1. **Execute step 3** (Snowflake) following the protocol in
    [`plans/README.md`](execution/snowflake-source-and-split-keys/plans/README.md).
-2. **wendao: two orphan GCS objects to wipe at your discretion** — the step-2
-   session's first full-suite run (before the test was re-routed) minted
-   `…/example_homecredit/example-homecredit/data/datasets/v1_da6dbdc5/`
-   (`data.parquet` + `feature_registry.csv`) in the real bucket with no MLflow
-   record (its tmp `mlruns` is gone). The code never deletes state (design §14
-   ground rule); details in the step-2 deviations column.
-3. For reference, the 2026-06-04 wipe that preceded step 2: **the entire
-   `dry_run/example_homecredit` route** — both MLflow experiments (`overview`
-   id 23 and `example-homecredit` id 24, each renamed to `…__trash-2026-06-04`
-   then soft-deleted so the route names are free; hard delete waits on a
-   platform-team `mlflow gc`), all GCS objects under
-   `automl/dry_run/example_homecredit/` (52: dataset index + bytes, eval
-   datasets, trial artifacts), and the local `experiments/dry_run` folder.
-   Verified empty. Non-dry-run routes untouched.
+2. For reference, the 2026-06-04 wipes (state deletions are always a human
+   call, never the code's — design §14 ground rule):
+   - **`dry_run/example_homecredit` route** (by wendao, before step 2): both
+     MLflow experiments (`overview` id 23 and `example-homecredit` id 24, each
+     renamed to `…__trash-2026-06-04` then soft-deleted so the route names are
+     free; hard delete waits on a platform-team `mlflow gc`), all 52 GCS
+     objects under `automl/dry_run/example_homecredit/`, and the local
+     `experiments/dry_run` folder. Verified empty.
+   - **Non-dry-run `example_homecredit` GCS route** (on wendao's instruction,
+     after step 2 landed): all 19 objects under
+     `automl/example_homecredit/` — old-format dataset indexes/manifests/bytes
+     from historical test runs plus the step-2 session's two orphans — deleted
+     and verified empty. Prod MLflow holds **no** non-dry-run
+     `example_homecredit` experiments (historical test runs used throwaway
+     file-backed MLflow), so nothing referenced these bytes; both stores are
+     clean on that route.
 
 ## On hold — waiting, not next fixes
 

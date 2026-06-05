@@ -436,15 +436,18 @@ Splits(
 Agreed properties:
 
 - **Criteria are data, not code.** No lambdas — trial contracts and eval
-  split-view identities must serialize and hash what a split *means*. Target
-  representation: pyarrow's native filter vocabulary — DNF tuples
-  (`[("application_date", "<", X), ...]`) are already pure JSON-serializable
-  data accepted directly by `read_parquet(filters=…)`; a thin `Where`
-  builder compiles to that (and to pyarrow expressions for non-DNF nesting).
-  The op set (`== != < <= > >= in not-in is-null` + and/or/not) is the whole
-  needed vocabulary. The same criteria could later compile to a SQL `WHERE`
-  against the Snowflake base table — one representation, two push-down
-  targets.
+  split-view identities must serialize and hash what a split *means*. Record
+  representation *(amended 2026-06-04 at implementation, wendao-approved; an
+  earlier draft said pyarrow DNF tuples)*: a small **nested JSON AST** —
+  leaves `{"op": "<", "column": ..., "value": ...}`, composites
+  `{"op": "and"/"or"/"not", "items": [...]}` — which expresses arbitrary
+  nesting directly, with no DNF expansion. A thin `Where` builder emits it,
+  and it compiles to pyarrow dataset *expressions* (also accepted by
+  `read_parquet(filters=…)`, so push-down loses nothing).
+  The op set (`== != < <= > >= in not-in is-null not-null` + and/or/not) is
+  the whole needed vocabulary. The same criteria could later compile to a
+  SQL `WHERE` against the Snowflake base table — one representation, two
+  push-down targets.
 - **`SPLIT_PCT` is an ordinary column.** No `Bucket` sugar —
   `Where("SPLIT_PCT") < 80` covers it. **The range API is hard-cut in step
   4**: `Splits` values become predicates only, and the example/scaffold
@@ -525,7 +528,7 @@ scaffold templates (`base_table.sql`, `training_data.sql`, config template);
 Snowpark dropped from `pyproject.toml`; reference docs updated.
 
 **Step 4 — flexible splits (§12).**
-`Where` builder + serializable predicate AST (DNF/JSON record form, pyarrow
+`Where` builder + serializable predicate AST (nested JSON record form, pyarrow
 expression compile form); `Splits` hard-cut from ranges to predicates;
 slice loading via predicate filter; trial contract + eval split-view
 identity payloads carry the serialized predicate; example/scaffold configs

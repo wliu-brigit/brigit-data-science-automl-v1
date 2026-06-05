@@ -21,14 +21,26 @@ validation/scaffold/docs/deps.
 **Tech stack:** `snowflake-connector-python[pandas]` (Arrow → pandas via
 `fetch_pandas_all`), env-driven credentials from `.env` (loaded by the
 existing project-config `load_dotenv`; **never handle credential values**).
+The connector is already a **main project dependency** (`pyproject.toml:36`,
+`snowflake-connector-python[pandas]>=3.0`) — verify before Task 1, and if it
+were ever missing, add it with
+`uv add "snowflake-connector-python[pandas]>=3.0"` (project-level, **not**
+`--dev`: the seam is runtime library code, not tooling). Everything through
+`uv`, never pip.
 
 **Source of truth:** `../design.md` §9 (contract), §10 (connector), §11
 (validation), §4 steps 2a–2d, §14 step 3.
 
-**Prereqs:** Steps 1–2 landed. E2E work uses a throwaway `dev_`-prefixed
-project (gitignored); `fraud_anomaly_detection/` is touched **only** for the
-scaffold-contract updates listed in Task 8; pre-existing warehouse tables
-are never replaced without the explicit flag.
+**Prereqs:** Steps 1–2 landed. **No live Snowflake access is required to
+land this step**: every behavior is unit-tested with the seam mocked, and
+the green gate is `tests/unit tests/contracts tests/integration`. The e2e
+test is *written* in Task 9 but **running it live is deferred to the
+tail-end pass after step 4** (see the ledger's tail-end activities) — gated
+on `AUTOML_E2E=1` + `SNOWFLAKE_*`, it skips cleanly until then. E2E work
+uses a throwaway `dev_`-prefixed project (gitignored);
+`fraud_anomaly_detection/` is touched **only** for the scaffold-contract
+updates listed in Task 8; pre-existing warehouse tables are never replaced
+without the explicit flag.
 
 **Carried in from the step-1 review session (2026-06-04):** when rewriting
 `SnowflakeSource`, give it the construction-time key validation the file
@@ -1011,7 +1023,11 @@ def test_materialize_bootstraps_pulls_and_attaches(tmp_path):
 
 Write the body against whatever `dev_` table wendao designates at execution
 time — the table name comes from the env/conversation, never hardcoded to a
-production table. Run requires `AUTOML_E2E=1` plus credentials in `.env`.
+production table. **Write-only in this step: do not run it live.** The live
+run requires `AUTOML_E2E=1` plus credentials in `.env` and is **deferred to
+the tail-end pass after step 4** (ledger tail-end activities); in this
+session just verify the gate makes it *skip*, not fail
+(`uv run pytest tests/e2e/test_snowflake_source_e2e.py` → skipped).
 
 - [ ] **Step 4:** Full suite: `uv run pytest tests/unit tests/contracts tests/integration` — PASS.
 

@@ -14,7 +14,7 @@ import automl.data as data
 from automl.data import DatasetRef, SliceContract, TrialDataContract, TrialRef
 from automl.eval import evaluate, prepare_eval_dataset
 from automl.eval.base import scalar_metric_records
-from automl.errors import ProjectError
+from automl.errors import ProjectError, format_error_chain
 from automl.mlflow import client as mlflow_client
 from automl.mlflow import experiment as mlflow_experiment
 from automl.mlflow import tags as mlflow_tags
@@ -285,7 +285,7 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
             run_id=run_id,
             trial_id=trial_id,
             trial_number=trial_number,
-            error=f"{type(exc).__name__}: {exc}",
+            error=format_error_chain(exc),
         )
 
 

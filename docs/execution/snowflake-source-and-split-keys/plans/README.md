@@ -83,10 +83,22 @@ needs: VPN, `SNOWFLAKE_*` in `.env`, `AUTOML_E2E=1`, and a
 wendao-designated tiny `dev_` table (exported as
 `AUTOML_SNOWFLAKE_E2E_SOURCE_TABLE` / `_TARGET` / `_UNIQUE_KEY`).
 
-1. **Live Snowflake e2e** (`tests/e2e/test_snowflake_source_e2e.py`,
-   written in step 3): bootstrap → mint → attach → refresh-dedup against
-   the designated table. Each run creates a fresh
-   `DEV_AUTOML_E2E_BASE_<uuid>` base table — drop them after.
+1. **Live Snowflake e2e** — **DONE 2026-06-04** (ran ahead of the batched
+   session once wendao configured `.env`; the only connectivity issue was
+   the `SNOWFLAKE_ACCOUNT` form — must be the `<orgname>-<accountname>`
+   identifier, not the bare account name; documented in `.env.example`).
+   Designated source: 1000-row `DEV_AUTOML_E2E_SRC_FCT_LOANS`, sampled
+   read-only from `brigit_snowflake.dbt_analytics.fct_loans` (78.8M rows,
+   public/read-only role) into the sandbox schema — `LOAN_ID` unique key
+   (verified 1000 distinct), `TARGET_DPD45` = `IS_GROSS_DPD45::INT`,
+   mature-D45 rows only, 23 positives. `test_materialize_bootstraps_pulls_
+   and_attaches` **passed in 91s**: bootstrap (harness DDL + SPLIT_PCT
+   injection) → mint v1 → attach-as-pinned → refresh-data dedup back to v1,
+   against prod MLflow + GCS. Both `DEV_AUTOML_E2E_*` tables dropped and
+   verified gone; the `dev_snowflake_e2e` MLflow/GCS records remain
+   (throwaway route; never deleted per ground rule). Side-note for future
+   live work: `fetch_df` (Arrow fetch) supports SELECT result sets only —
+   use `information_schema` queries instead of `DESCRIBE`/`SHOW`.
 2. **Live notebook verification** on `example_homecredit` (notebooks 1–2
    churn was accepted in review with this as the check). Known breakage to
    fix in that pass: stale `hash_key`/`SPLITID`/`base_data_sql` cells and

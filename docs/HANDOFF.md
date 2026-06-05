@@ -38,11 +38,15 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
 
 ## Next actions
 
-1. **The batched tail-end session** (needs wendao + VPN): live Snowflake
-   e2e, live notebook verification (incl. fixing notebook 2's now-raising
-   `Splits` cell), first real `fraud_anomaly_detection` materialize, the
-   `list_dataset_records` swallow-to-`[]` revisit, then archive the effort.
-   Details in the plans README "Tail-end activities".
+1. **The rest of the tail-end session**: live notebook verification (incl.
+   fixing notebook 2's now-raising `Splits` cell), first real
+   `fraud_anomaly_detection` materialize, the `list_dataset_records`
+   swallow-to-`[]` revisit, the retired-range contracts ratchet, then
+   archive the effort. Details in the plans README "Tail-end activities".
+   (**Live Snowflake e2e: done 2026-06-04** — passed in 91s against a
+   sampled `fct_loans` dev table; details in the tail-end list. Snowflake
+   is confirmed reachable with `.env` configured — the one gotcha was the
+   `SNOWFLAKE_ACCOUNT` identifier form, now documented in `.env.example`.)
 
 (State wipes are always a human call, never the code's — design §14 ground
 rule. The 2026-06-04 `example_homecredit` wipes are recorded in the step-2

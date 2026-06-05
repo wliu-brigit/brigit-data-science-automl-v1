@@ -18,7 +18,7 @@ Two threads that probably want one holistic answer:
    Eval datasets are *not* tied to that level — they hang off individual
    trial runs, which is interesting but doesn't feel like the right home.
    And eval datasets work differently by nature: you point at the split view
-   with arguments (buckets, augmentation) and create a new one, rather than
+   with arguments (a `Where(...)` predicate, augmentation) and create a new one, rather than
    materializing through the pipeline.
 
 The current functionality *supports* what users want; the problem is
@@ -31,7 +31,7 @@ and make out-of-sample evaluation native instead of assembled.
   at the experiment level (`automl/data/`, experiment store in
   `automl/experiment/`).
 - **Eval datasets** — `automl/eval/eval_dataset.py`: created either from
-  the split view (`EvalDataset.split_view(...)` — buckets over `split_id`)
+  the split view (`EvalDataset.split_view(...)` — a `Where(...)` predicate over the frame)
   or from external data (`EvalDataset.external(...)`), with optional
   `Augmentation`s; identity is content-derived
   (`compute_eval_dataset_identity`). Their records ride on trial runs

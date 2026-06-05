@@ -75,7 +75,13 @@ class Splits:
     def from_dict(cls, payload: Mapping[str, object]) -> "Splits":
         if not isinstance(payload, Mapping):
             raise TypeError(f"Splits payload must be a mapping, got {type(payload).__name__}")
-        raw = payload.get("predicates", payload)
+        if "ranges" in payload:
+            # Loud tombstone, not a fallback: pre-step-4 payloads are dead.
+            raise ValueError(
+                "Splits payload carries 'ranges' — bucket ranges were removed; "
+                "re-serialize from Where(...) predicates"
+            )
+        raw = payload.get("predicates")
         if not isinstance(raw, Mapping):
             raise ValueError("Splits payload must contain a 'predicates' mapping")
         return cls({str(name): Predicate.from_dict(ast) for name, ast in raw.items()})

@@ -138,3 +138,18 @@ def test_run_config_rejects_retired_split_keyword():
             ),
             per_trial_seconds=600,
         )
+
+
+def test_splits_from_dict_rejects_bad_payloads():
+    with pytest.raises(TypeError, match="mapping"):
+        Splits.from_dict([("train", {})])
+    with pytest.raises(ValueError, match="'predicates' mapping"):
+        Splits.from_dict({"predicates": 123})
+    with pytest.raises(ValueError, match="'predicates' mapping"):
+        # No lenient bare-mapping fallback: the canonical wrapper is required.
+        Splits.from_dict({"train": (Where("SPLIT_PCT") < 80).to_dict()})
+
+
+def test_splits_from_dict_tombstones_old_ranges_payloads():
+    with pytest.raises(ValueError, match="bucket ranges were removed"):
+        Splits.from_dict({"ranges": {"train": [[0, 80]], "test": [[80, 100]]}})

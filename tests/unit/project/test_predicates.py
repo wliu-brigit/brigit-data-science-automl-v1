@@ -81,3 +81,46 @@ def test_values_must_be_json_scalars():
 def test_repr_reads_like_the_declaration():
     assert repr(Where("SPLIT_PCT") < 80) == 'Where("SPLIT_PCT") < 80'
     assert "&" in repr((Where("a") < 1) & (Where("b") == 2))
+
+
+@pytest.mark.parametrize(
+    "payload, message",
+    [
+        ({"op": "between", "column": "a", "value": 1}, "unknown predicate op"),
+        ({"op": "not", "items": []}, "exactly one item"),
+        ({"op": "not", "items": [{"op": "<", "column": "a", "value": 1}] * 2}, "exactly one item"),
+        ({"op": "and", "items": [{"op": "<", "column": "a", "value": 1}]}, "at least two"),
+        ({"op": "<", "value": 1}, "requires a column name"),
+        ({"op": "<", "column": "", "value": 1}, "requires a column name"),
+    ],
+)
+def test_from_dict_rejects_malformed_payloads(payload, message):
+    with pytest.raises(ValueError, match=message):
+        Predicate.from_dict(payload)
+
+
+def test_from_dict_rejects_non_scalar_membership_values():
+    with pytest.raises(TypeError, match="JSON"):
+        Predicate.from_dict({"op": "in", "column": "a", "value": [1, object()]})
+
+
+def test_comparisons_reject_none_values():
+    # `== None` silently matches nothing in pandas (even null rows) —
+    # nullness has its own ops, so the trap is rejected at the edge.
+    with pytest.raises(TypeError, match="is_null"):
+        Where("a") == None  # noqa: E711
+    with pytest.raises(TypeError, match="is_null"):
+        Where("a") < None
+    with pytest.raises(TypeError, match="is_null"):
+        Predicate.from_dict({"op": "==", "column": "a"})
+    with pytest.raises(TypeError, match="is_null"):
+        Predicate.from_dict({"op": "!=", "column": "a", "value": None})
+
+
+def test_nested_not_round_trips_and_reprs_with_parens():
+    predicate = ~((Where("a") < 1) & (Where("b") == 2))
+    rebuilt = Predicate.from_dict(predicate.to_dict())
+    assert rebuilt == predicate
+    assert repr(predicate) == '~((Where("a") < 1) & (Where("b") == 2))'
+    df = pd.DataFrame({"a": [0, 5], "b": [2, 2]})
+    assert list(df.index[predicate.mask(df)]) == [1]

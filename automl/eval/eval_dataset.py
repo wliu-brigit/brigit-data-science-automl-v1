@@ -193,6 +193,15 @@ class EvalDataset:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "EvalDataset":
+        # Forward-only: a split_view record must carry its predicate AST. A
+        # record without one is pre-step-4 state (split_pct_col/buckets) —
+        # fail here, loudly, instead of loading predicate=None and exploding
+        # at use. Old state is disposable; re-prepare the eval dataset.
+        if str(payload.get("kind", "")) == "split_view" and not payload.get("predicate"):
+            raise ValueError(
+                "split_view eval dataset record has no predicate AST — pre-step-4 "
+                "(bucket-range) records are not loadable; re-prepare the eval dataset"
+            )
         return cls(
             schema_version=int(payload.get("schema_version", 1)),
             id=str(payload["id"]),

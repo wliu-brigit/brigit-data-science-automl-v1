@@ -210,3 +210,23 @@ def test_external_identity_validates_target_unique_key_and_duplicates(tmp_path):
             target_column="target",
             unique_key=("row_id",),
         )
+
+
+def test_split_view_record_without_predicate_fails_loudly_at_load(tmp_path):
+    # Forward-only: pre-step-4 (bucket-range) records must not load silently.
+    active = _session(tmp_path)
+    dataset = EvalDataset.split_view(
+        session=active,
+        of_dataset_id="dataset-v1",
+        split="test",
+        predicate=Where("SPLIT_PCT") >= 50,
+        target_column="target",
+        unique_key=("row_id",),
+    )
+    old_shaped = {
+        key: value for key, value in dataset.to_dict().items() if key != "predicate"
+    }
+    old_shaped.update({"split_pct_col": "SPLIT_PCT", "buckets": [[50, 100]]})
+
+    with pytest.raises(ValueError, match="pre-step-4"):
+        EvalDataset.from_dict(old_shaped)

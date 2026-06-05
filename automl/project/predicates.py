@@ -4,6 +4,10 @@ A split is a named, durable row-criterion over an immutable dataset. The
 record form is a small JSON AST aligned with pyarrow's filter vocabulary;
 ``Where`` is a thin builder over it. No lambdas — trial contracts and eval
 split-view identities must serialize and hash what a split *means*.
+
+Authoring footgun: Python chains comparisons, so ``x == Where("c") < 80``
+silently evaluates to ``(x == Where("c")) and (Where("c") < 80)`` — keep the
+column on the left and parenthesize each clause when composing.
 """
 
 from __future__ import annotations
@@ -26,6 +30,16 @@ def _check_scalar(value: Any) -> Any:
     if isinstance(value, _SCALAR_TYPES):
         return value
     raise TypeError(f"predicate values must be JSON scalars, got {type(value).__name__}")
+
+
+def _check_comparison_value(value: Any) -> Any:
+    # Comparing against None silently matches nothing in pandas (even null
+    # rows) — nullness has its own ops, so reject the trap at the edge.
+    if value is None:
+        raise TypeError(
+            "comparison predicates cannot take None — use .is_null() / .not_null()"
+        )
+    return _check_scalar(value)
 
 
 @dataclass(frozen=True)
@@ -72,7 +86,7 @@ class Predicate:
         if not isinstance(column, str) or not column:
             raise ValueError(f"predicate op {op!r} requires a column name")
         if op in _COMPARISONS:
-            return cls(op=op, column=column, value=_check_scalar(payload.get("value")))
+            return cls(op=op, column=column, value=_check_comparison_value(payload.get("value")))
         if op in _MEMBERSHIP:
             values = tuple(_check_scalar(item) for item in payload.get("value", ()))
             return cls(op=op, column=column, value=values)
@@ -129,6 +143,12 @@ class Predicate:
 
     # --- evaluation: pyarrow expression (push-down target) -----------------
     def to_pyarrow(self):
+        # Known semantic gap vs mask(), to reconcile WHEN the push-down
+        # reader is wired (it is deliberately unwired today): pyarrow
+        # propagates nulls through comparisons, so `!=` and `~(==)` DROP
+        # null rows where pandas keeps them; nullable pandas dtypes
+        # (Int64/boolean) side with pyarrow. mask() is the authoritative
+        # evaluator until parity is settled.
         import pyarrow.dataset as ds
 
         if self.op == "and":
@@ -199,22 +219,22 @@ class Where:
         self._column = column
 
     def __lt__(self, value: Any) -> Predicate:
-        return Predicate(op="<", column=self._column, value=_check_scalar(value))
+        return Predicate(op="<", column=self._column, value=_check_comparison_value(value))
 
     def __le__(self, value: Any) -> Predicate:
-        return Predicate(op="<=", column=self._column, value=_check_scalar(value))
+        return Predicate(op="<=", column=self._column, value=_check_comparison_value(value))
 
     def __gt__(self, value: Any) -> Predicate:
-        return Predicate(op=">", column=self._column, value=_check_scalar(value))
+        return Predicate(op=">", column=self._column, value=_check_comparison_value(value))
 
     def __ge__(self, value: Any) -> Predicate:
-        return Predicate(op=">=", column=self._column, value=_check_scalar(value))
+        return Predicate(op=">=", column=self._column, value=_check_comparison_value(value))
 
     def __eq__(self, value: Any) -> Predicate:  # type: ignore[override]
-        return Predicate(op="==", column=self._column, value=_check_scalar(value))
+        return Predicate(op="==", column=self._column, value=_check_comparison_value(value))
 
     def __ne__(self, value: Any) -> Predicate:  # type: ignore[override]
-        return Predicate(op="!=", column=self._column, value=_check_scalar(value))
+        return Predicate(op="!=", column=self._column, value=_check_comparison_value(value))
 
     __hash__ = None  # equality builds predicates; Where is not hashable
 

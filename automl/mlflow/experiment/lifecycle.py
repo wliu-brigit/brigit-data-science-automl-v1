@@ -8,7 +8,9 @@ from typing import TYPE_CHECKING
 from automl.errors import StorageError
 from automl.mlflow import _routing
 from automl.mlflow import client
+from automl.mlflow import project as mlflow_project
 from automl.mlflow import tags
+from automl.project.overview import ProjectOverview
 
 if TYPE_CHECKING:
     from automl.experiment.store import ExperimentOverview
@@ -16,6 +18,7 @@ if TYPE_CHECKING:
 
 def ensure(experiment_id: str | None = None) -> None:
     """Create the routed MLflow experiment if absent."""
+    resolved_experiment_id = _resolved_experiment_id(experiment_id)
     try:
         mlflow_client = client.raw()
         name = _routing.experiment_route(experiment_id)
@@ -23,8 +26,9 @@ def ensure(experiment_id: str | None = None) -> None:
         if existing is not None:
             if getattr(existing, "lifecycle_stage", "active") == "deleted":
                 raise StorageError(
-                    f"MLflow experiment {name!r} is deleted; hard-delete it or choose another id"
+                    f"MLflow experiment {name!r} is deleted; purge it or choose another id"
                 )
+            _ensure_project_overview(resolved_experiment_id)
             return
         mlflow_experiment_id = mlflow_client.create_experiment(name)
         mlflow_client.set_experiment_tag(
@@ -32,6 +36,7 @@ def ensure(experiment_id: str | None = None) -> None:
             tags.CREATED_BY,
             "brigit-automl",
         )
+        _ensure_project_overview(resolved_experiment_id)
     except StorageError:
         raise
     except Exception as exc:
@@ -128,6 +133,23 @@ def set_active_dataset(dataset_id: str, experiment_id: str | None = None) -> Non
         )
     except Exception as exc:
         raise StorageError("Failed to set active dataset") from exc
+
+
+def _resolved_experiment_id(experiment_id: str | None = None) -> str:
+    return str(experiment_id or client.bound().experiment_id or "")
+
+
+def _ensure_project_overview(experiment_id: str) -> None:
+    if not experiment_id or experiment_id == "000_overview":
+        return
+    overview = mlflow_project.ensure_overview()
+    mlflow_project.write_overview(
+        ProjectOverview(
+            project_name=overview.project_name,
+            created_at=overview.created_at,
+            current_experiment_id=experiment_id,
+        )
+    )
 
 
 def _experiment_overview_from_run(run) -> ExperimentOverview:

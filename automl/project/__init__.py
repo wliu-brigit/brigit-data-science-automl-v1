@@ -1,5 +1,8 @@
 """Project domain exports."""
 
+from importlib import import_module
+from typing import Any
+
 from .checks import validate_project
 from .config import ProjectConfig
 from .dependencies import allowed_dependencies, parse_dependency_name
@@ -29,6 +32,7 @@ __all__ = [
     "active_session",
     "clear_session",
     "create_project",
+    "delete",
     "find_repo_root",
     "infer_project_name",
     "list_projects",
@@ -39,3 +43,15 @@ __all__ = [
     "use_project",
     "validate_project",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name == "delete":
+        value = getattr(import_module("automl.project.cleanup"), "delete")
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals()) | set(__all__))

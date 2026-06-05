@@ -37,9 +37,15 @@ def test_ensure_creates_routed_file_backed_experiment(bound_file_mlflow):
 
     mlflow_client = client.raw()
     created = mlflow_client.get_experiment_by_name("home_credit/baseline")
+    project_overview = mlflow_client.get_experiment_by_name("home_credit/000_overview")
 
     assert created is not None
     assert created.tags["created_by"] == "brigit-automl"
+    assert project_overview is not None
+    overview_runs = mlflow_client.search_runs([project_overview.experiment_id])
+    assert len(overview_runs) == 1
+    assert overview_runs[0].data.tags["run.kind"] == "project_overview"
+    assert overview_runs[0].data.tags["project.current_experiment_id"] == "baseline"
 
 
 def test_next_trial_number_returns_one_when_experiment_is_absent(bound_file_mlflow):
@@ -195,14 +201,14 @@ def test_list_all_experiment_names_returns_full_names_including_deleted(bound_fi
 
     experiment.ensure()  # home_credit/baseline
     raw = client.raw()
-    raw.create_experiment("qa-smoke/home_credit/x")
+    raw.create_experiment("qa/smoke/home_credit/x")
     gone = raw.create_experiment("qa/agent/home_credit/y")
     raw.delete_experiment(gone)  # soft-deleted must still be listed
 
     names = mlflow_project.list_all_experiment_names()
 
     assert "home_credit/baseline" in names
-    assert "qa-smoke/home_credit/x" in names
+    assert "qa/smoke/home_credit/x" in names
     assert "qa/agent/home_credit/y" in names
 
 

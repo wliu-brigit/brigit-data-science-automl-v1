@@ -26,7 +26,7 @@ pytestmark = [pytest.mark.e2e, pytest.mark.qa]
 def test_agent_timeline_hooks_gate():
     repo_root = Path(__file__).resolve().parents[2]
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-    namespace = f"qa-agent-timeline-hooks-{stamp}"
+    namespace = f"qa/agent-timeline-hooks-{stamp}"
     experiment_id = f"agent-timeline-hooks-{stamp}"
     active = use_project(
         "example_homecredit",

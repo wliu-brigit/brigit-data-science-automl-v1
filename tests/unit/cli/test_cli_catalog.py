@@ -57,6 +57,7 @@ def test_json_flag_is_reserved_for_experiment_run_output():
         ("project", "deps"),
         ("project", "init"),
         ("project", "delete"),
+        ("mlflow", "purge"),
         ("experiment", "list"),
         ("experiment", "delete"),
         ("experiment", "leaderboard"),
@@ -73,6 +74,7 @@ def test_json_flag_is_reserved_for_experiment_run_output():
         ("trial", "lock", "acquire"),
         ("trial", "lock", "release"),
         ("data", "list"),
+        ("data", "activate"),
         ("data", "profile"),
         ("data", "materialize"),
         ("eval", "list"),
@@ -174,8 +176,6 @@ def test_project_catalog_verbs_dispatch_to_library(monkeypatch, tmp_path, capsys
             "scope": "project",
             "name": name,
             "session": kwargs["session"] is active,
-            "backend_store_uri": kwargs["backend_store_uri"],
-            "artifacts_destination": kwargs["artifacts_destination"],
         },
     )
 
@@ -199,10 +199,6 @@ def test_project_catalog_verbs_dispatch_to_library(monkeypatch, tmp_path, capsys
                 "delete",
                 "demo",
                 "--apply",
-                "--backend-store-uri",
-                "sqlite:////tmp/mlflow.db",
-                "--artifacts-destination",
-                "gs://bucket/mlflow-artifacts",
             ]
         )
         == 0
@@ -211,12 +207,10 @@ def test_project_catalog_verbs_dispatch_to_library(monkeypatch, tmp_path, capsys
         "scope": "project",
         "name": "demo",
         "session": True,
-        "backend_store_uri": "sqlite:////tmp/mlflow.db",
-        "artifacts_destination": "gs://bucket/mlflow-artifacts",
     }
 
 
-def test_cleanup_hard_delete_options_forward_to_experiment_and_trial(monkeypatch, tmp_path, capsys):
+def test_cleanup_delete_and_purge_cli_forward_core_selectors(monkeypatch, tmp_path, capsys):
     from automl.cli import main
 
     active = types.SimpleNamespace(
@@ -224,24 +218,19 @@ def test_cleanup_hard_delete_options_forward_to_experiment_and_trial(monkeypatch
         config=types.SimpleNamespace(repo_root=tmp_path),
     )
     _patch_use_project(monkeypatch, active)
-    experiment_calls = []
-    trial_calls = []
+    project_calls = []
+    purge_calls = []
 
-    def fake_delete_experiment(experiment_id, **kwargs):
-        experiment_calls.append({"experiment_id": experiment_id, **kwargs})
-        return {"deleted": experiment_id}
+    def fake_delete_project(name=None, **kwargs):
+        project_calls.append({"name": name, **kwargs})
+        return {"deleted": name, "scope": kwargs.get("scope")}
 
-    def fake_delete_trial(run_id, **kwargs):
-        trial_calls.append({"run_id": run_id, **kwargs})
-        return {"deleted": run_id}
+    def fake_purge(name=None, **kwargs):
+        purge_calls.append({"name": name, **kwargs})
+        return {"purged": name, "scope": kwargs.get("scope")}
 
-    _patch_attr(
-        monkeypatch,
-        "automl.cli._experiment_actions",
-        "delete_experiment",
-        fake_delete_experiment,
-    )
-    _patch_attr(monkeypatch, "automl.cli._trial_actions", "delete_trial", fake_delete_trial)
+    _patch_attr(monkeypatch, "automl.cli.project", "delete_project", fake_delete_project)
+    _patch_attr(monkeypatch, "automl.cli.mlflow", "purge_mlflow", fake_purge)
 
     assert (
         main(
@@ -250,20 +239,16 @@ def test_cleanup_hard_delete_options_forward_to_experiment_and_trial(monkeypatch
                 "demo",
                 "--project-root",
                 str(tmp_path),
-                "experiment",
+                "project",
                 "delete",
-                "exp",
+                "--scope",
+                "qa",
                 "--apply",
-                "--hard-delete",
-                "--backend-store-uri",
-                "sqlite:////tmp/mlflow.db",
-                "--artifacts-destination",
-                "gs://bucket/mlflow-artifacts",
             ]
         )
         == 0
     )
-    assert json.loads(capsys.readouterr().out) == {"deleted": "exp"}
+    assert json.loads(capsys.readouterr().out) == {"deleted": None, "scope": "qa"}
 
     assert (
         main(
@@ -272,35 +257,59 @@ def test_cleanup_hard_delete_options_forward_to_experiment_and_trial(monkeypatch
                 "demo",
                 "--project-root",
                 str(tmp_path),
-                "trial",
-                "delete",
-                "run-1",
+                "mlflow",
+                "purge",
+                "--scope",
+                "qa",
                 "--apply",
-                "--hard-delete",
-                "--backend-store-uri",
-                "sqlite:////tmp/mlflow.db",
             ]
         )
         == 0
     )
-    assert json.loads(capsys.readouterr().out) == {"deleted": "run-1"}
+    assert json.loads(capsys.readouterr().out) == {"purged": None, "scope": "qa"}
 
-    assert experiment_calls == [
+    assert (
+        main(
+            [
+                "--project",
+                "demo",
+                "--project-root",
+                str(tmp_path),
+                "mlflow",
+                "purge",
+                "deleted/qa/dev-agent",
+                "--apply",
+            ]
+        )
+        == 0
+    )
+    assert json.loads(capsys.readouterr().out) == {
+        "purged": "deleted/qa/dev-agent",
+        "scope": None,
+    }
+
+    assert project_calls == [
         {
-            "experiment_id": "exp",
+            "name": None,
+            "scope": "qa",
             "apply": True,
-            "hard_delete": True,
-            "backend_store_uri": "sqlite:////tmp/mlflow.db",
-            "artifacts_destination": "gs://bucket/mlflow-artifacts",
             "session": active,
         }
     ]
-    assert trial_calls == [
+    assert purge_calls == [
         {
-            "run_id": "run-1",
+            "name": None,
+            "scope": "qa",
             "apply": True,
-            "hard_delete": True,
-            "backend_store_uri": "sqlite:////tmp/mlflow.db",
+            "backend_store_uri": "",
+            "artifacts_destination": "",
+            "session": active,
+        },
+        {
+            "name": "deleted/qa/dev-agent",
+            "scope": None,
+            "apply": True,
+            "backend_store_uri": "",
             "artifacts_destination": "",
             "session": active,
         }
@@ -406,6 +415,7 @@ def test_experiment_trial_data_eval_validate_catalog_verbs(monkeypatch, tmp_path
         lambda path, **kwargs: {
             "path": str(path),
             "session": kwargs["session"] is active,
+            "dataset_id": kwargs.get("dataset_id"),
             "status": "FINISHED",
         },
     )
@@ -441,6 +451,15 @@ def test_experiment_trial_data_eval_validate_catalog_verbs(monkeypatch, tmp_path
     )
 
     _patch_attr(monkeypatch, "automl.cli.data", "list_datasets", lambda **kwargs: {"datasets": []})
+    _patch_attr(
+        monkeypatch,
+        "automl.cli.data",
+        "activate_dataset",
+        lambda dataset_id, **kwargs: {
+            "activated": dataset_id,
+            "session": kwargs["session"] is active,
+        },
+    )
     _patch_attr(
         monkeypatch,
         "automl.cli.data",
@@ -549,6 +568,17 @@ def test_experiment_trial_data_eval_validate_catalog_verbs(monkeypatch, tmp_path
             "Promote a reviewed file.",
         ],
         ["--project", "demo", "--project-root", str(tmp_path), "trial", "run", "demo"],
+        [
+            "--project",
+            "demo",
+            "--project-root",
+            str(tmp_path),
+            "trial",
+            "run",
+            "demo",
+            "--dataset-id",
+            "v2_good",
+        ],
         ["--project", "demo", "--project-root", str(tmp_path), "trial", "show", "run-1"],
         ["--project", "demo", "--project-root", str(tmp_path), "trial", "delete", "run-1"],
         ["--project", "demo", "--project-root", str(tmp_path), "trial", "lock", "acquire"],
@@ -564,6 +594,7 @@ def test_experiment_trial_data_eval_validate_catalog_verbs(monkeypatch, tmp_path
             "lock-1",
         ],
         ["--project", "demo", "--project-root", str(tmp_path), "data", "list"],
+        ["--project", "demo", "--project-root", str(tmp_path), "data", "activate", "v2_good"],
         ["--project", "demo", "--project-root", str(tmp_path), "data", "profile"],
         ["--project", "demo", "--project-root", str(tmp_path), "data", "materialize"],
         ["--project", "demo", "--project-root", str(tmp_path), "eval", "list"],
@@ -1136,8 +1167,12 @@ def test_delete_wrappers_use_root_session_flags(monkeypatch, tmp_path, capsys):
         ["--project", "demo", "experiment", "delete", "cli-catalog", "--dry-run"],
         ["--project", "demo", "experiment", "delete", "cli-catalog", "--route", "dry_run"],
         ["--project", "demo", "experiment", "delete", "cli-catalog", "--route-namespace", "qa"],
+        ["--project", "demo", "experiment", "delete", "cli-catalog", "--hard-delete"],
         ["--project", "demo", "trial", "delete", "run-1", "--dry-run"],
+        ["--project", "demo", "trial", "delete", "run-1", "--hard-delete"],
         ["--project", "demo", "project", "delete", "demo", "--route-namespace", "qa"],
+        ["--project", "demo", "project", "delete", "demo", "--hard-delete"],
+        ["--project", "demo", "project", "delete-qa"],
     ],
 )
 def test_delete_verbs_reject_per_verb_routing_flags(command):

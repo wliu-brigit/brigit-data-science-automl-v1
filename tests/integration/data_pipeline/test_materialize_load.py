@@ -328,6 +328,12 @@ def test_first_materialize_mints_v1_and_sets_pointer(tmp_path, fake_gcs):
             mlflow_experiment.get_active_dataset(experiment_id=active.active_experiment_id)
             == loaded.dataset.id
         )
+        assert experiment_artifacts.read_active_dataset_pointer(
+            experiment_id=active.active_experiment_id
+        ) == {
+            "schema_version": 1,
+            "active_dataset_id": loaded.dataset.id,
+        }
         assert experiment_artifacts.read_dataset_record(loaded.dataset.id)["recipe"]["target"]
 
 
@@ -377,9 +383,9 @@ def test_refresh_source_without_refresh_data_still_rederives(tmp_path, fake_gcs)
     active = _session(tmp_path, csv_path)
     first = materialize(session=active, include_rows=False)
 
-    pd.DataFrame(
-        {"row_id": [11], "target": [1], "amount": [42]}
-    ).to_csv(csv_path, mode="a", header=False, index=False)
+    pd.DataFrame({"row_id": [11], "target": [1], "amount": [42]}).to_csv(
+        csv_path, mode="a", header=False, index=False
+    )
     second = materialize(session=active, refresh_source=True, include_rows=False)
 
     assert second.id.startswith("v2_")
@@ -391,9 +397,9 @@ def test_refresh_data_mints_new_version_when_content_changed(tmp_path, fake_gcs)
     active = _session(tmp_path, csv_path)
     first = materialize(session=active, include_rows=False)
 
-    pd.DataFrame(
-        {"row_id": [11], "target": [1], "amount": [42]}
-    ).to_csv(csv_path, mode="a", header=False, index=False)
+    pd.DataFrame({"row_id": [11], "target": [1], "amount": [42]}).to_csv(
+        csv_path, mode="a", header=False, index=False
+    )
     second = materialize(session=active, refresh_data=True, include_rows=False)
 
     assert second.id.startswith("v2_")
@@ -404,6 +410,24 @@ def test_refresh_data_mints_new_version_when_content_changed(tmp_path, fake_gcs)
             mlflow_experiment.get_active_dataset(experiment_id=active.active_experiment_id)
             == second.id
         )
+        assert (
+            experiment_artifacts.read_active_dataset_pointer(
+                experiment_id=active.active_experiment_id
+            )["active_dataset_id"]
+            == second.id
+        )
+
+
+def test_load_dataset_does_not_fallback_to_latest_when_pointer_missing(tmp_path, fake_gcs):
+    active = _session(tmp_path, _write_tiny_csv(tmp_path))
+    loaded = build_dataset(session=active)
+    dataset = replace(loaded.dataset, id="v1_manual")
+
+    with mlflow_client.bound_for(active, experiment_id=active.active_experiment_id):
+        experiment_artifacts.write_dataset_record(dataset.to_dict(), dataset_id=dataset.id)
+
+    with pytest.raises(DataError, match="active dataset pointer is not set"):
+        load_dataset(session=active)
 
 
 def test_attach_after_refresh_updates_recorded_recipe_last_wins(tmp_path, fake_gcs):

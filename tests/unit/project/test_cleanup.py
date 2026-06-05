@@ -1,9 +1,5 @@
-import subprocess
-from types import SimpleNamespace
-
 import pytest
 
-from automl.errors import ProjectError
 from automl.mlflow import client, experiment
 from automl.project import ProjectConfig, Session
 from automl.project import cleanup as cleanup_module
@@ -45,11 +41,21 @@ class DeleteBlob:
 class DeleteClient:
     def __init__(self, names):
         self.deleted = []
+        self.copied = []
         self._names = names
 
     def list_blobs(self, bucket, prefix):
         assert bucket == "automl-test-bucket"
         return [DeleteBlob(self, name) for name in self._names if name.startswith(prefix)]
+
+    def bucket(self, name):
+        assert name == "automl-test-bucket"
+        return self
+
+    def copy_blob(self, blob, destination_bucket, new_name):
+        assert destination_bucket is self
+        self.copied.append((blob.name, new_name))
+        self._names.append(new_name)
 
 
 class FailingDeleteBlob:
@@ -60,6 +66,14 @@ class FailingDeleteBlob:
 
 
 class FailingDeleteClient:
+    def bucket(self, name):
+        assert name == "automl-test-bucket"
+        return self
+
+    def copy_blob(self, blob, destination_bucket, new_name):
+        assert destination_bucket is self
+        assert new_name == "automl-root/deleted/home_credit/baseline/a.json"
+
     def list_blobs(self, bucket, prefix):
         assert bucket == "automl-test-bucket"
         assert prefix == "automl-root/home_credit/baseline/"
@@ -175,7 +189,7 @@ def test_project_delete_base_route_includes_cache_and_uses_project_prefix(tmp_pa
     }
 
 
-def test_delete_qa_plan_targets_only_qa_namespaces(tmp_path, monkeypatch):
+def test_project_delete_scope_qa_plan_targets_only_qa_namespaces(tmp_path, monkeypatch):
     active = _session(tmp_path)
     monkeypatch.setattr(
         cleanup_module,
@@ -188,7 +202,7 @@ def test_delete_qa_plan_targets_only_qa_namespaces(tmp_path, monkeypatch):
         ],
     )
 
-    report = cleanup_module.delete_qa(apply=False, session=active)
+    report = delete(scope="qa", apply=False, session=active)
 
     assert set(report.plan.mlflow_experiment_targets) == {
         ("qa-smoke-1/home_credit/run-1", ""),
@@ -203,6 +217,29 @@ def test_delete_qa_plan_targets_only_qa_namespaces(tmp_path, monkeypatch):
         str(active.config.project_dir / "experiments" / "qa-smoke-1"),
         str(active.config.project_dir / "experiments" / "qa" / "agent-e2e-1"),
     }
+
+
+def test_project_delete_scope_qa_plan_ignores_archived_qa_namespaces(tmp_path, monkeypatch):
+    active = _session(tmp_path)
+    monkeypatch.setattr(
+        cleanup_module,
+        "_all_experiment_names",
+        lambda: [
+            "deleted/qa/agent/dry_run/home_credit/example",
+            "deleted/prod/home_credit/example",
+            "qa/current/home_credit/example",
+        ],
+    )
+
+    report = delete(scope="qa", apply=False, session=active)
+
+    assert report.plan.mlflow_experiment_targets == [("qa/current/home_credit/example", "")]
+    assert report.plan.gcs_prefix_patterns == [
+        "gs://automl-test-bucket/automl-root/qa/current/"
+    ]
+    assert report.plan.local_paths == [
+        str(active.config.project_dir / "experiments" / "qa" / "current")
+    ]
 
 
 def test_trial_delete_preview_pins_current_route_gcs_and_local_plan(tmp_path, monkeypatch):
@@ -254,6 +291,20 @@ def test_project_delete_requires_name_to_match_active_project(tmp_path):
         raise AssertionError("expected project name mismatch to fail")
 
 
+def test_project_delete_scope_qa_rejects_name(tmp_path):
+    active = _session(tmp_path)
+
+    with pytest.raises(ValueError, match="does not accept name"):
+        delete("qa", scope="qa", apply=False, session=active)
+
+
+def test_project_delete_project_scope_requires_name(tmp_path):
+    active = _session(tmp_path)
+
+    with pytest.raises(ValueError, match="requires name"):
+        delete(scope="project", apply=False, session=active)
+
+
 def test_gcs_delete_prefix_collects_deleted_count():
     fake = DeleteClient(["automl-root/home_credit/baseline/a.json", "other/x.json"])
 
@@ -282,17 +333,43 @@ def test_apply_soft_deletes_mlflow_then_gcs_then_local(tmp_path, monkeypatch):
     monkeypatch.setattr(gcs, "_gcs_client", lambda: fake)
 
     report = delete("baseline", scope="experiment", apply=True, session=active)
+    archived_name = "deleted/home_credit/baseline"
+    archived_local = (
+        active.config.project_dir
+        / "experiments"
+        / "deleted"
+        / "home_credit"
+        / "baseline"
+    )
 
     assert report.applied is True
     assert isinstance(report.result, CleanupResult)
-    assert report.result.mlflow_experiments["home_credit/baseline"] == "deleted"
-    assert report.result.gcs["gs://automl-test-bucket/automl-root/home_credit/baseline/"] == 1
-    assert report.result.local[str(local_root)] == "deleted"
+    assert report.result.mlflow_experiments["home_credit/baseline"] == (
+        f"archived: {archived_name}; deleted"
+    )
+    assert report.result.gcs["gs://automl-test-bucket/automl-root/home_credit/baseline/"] == (
+        "archived 1 to "
+        "gs://automl-test-bucket/automl-root/deleted/home_credit/baseline/"
+    )
+    assert fake.copied == [
+        (
+            "automl-root/home_credit/baseline/runs/run-1/model.pkl",
+            "automl-root/deleted/home_credit/baseline/runs/run-1/model.pkl",
+        )
+    ]
+    assert report.result.local[str(local_root)] == f"archived: {archived_local}"
     assert not local_root.exists()
+    assert archived_local.exists()
+    assert client.raw().get_experiment_by_name("home_credit/baseline") is None
+    archived = client.raw().get_experiment_by_name(archived_name)
+    assert archived is not None
+    assert archived.lifecycle_stage == "deleted"
 
     rerun = delete("baseline", scope="experiment", apply=True, session=active)
     assert rerun.applied is True
-    assert rerun.result.gcs["gs://automl-test-bucket/automl-root/home_credit/baseline/"] == 0
+    assert (
+        rerun.result.mlflow_experiments["home_credit/baseline"] == "skipped: not found"
+    )
 
 
 def test_apply_records_gcs_delete_failure_and_continues(tmp_path, monkeypatch):
@@ -313,84 +390,36 @@ def test_apply_records_gcs_delete_failure_and_continues(tmp_path, monkeypatch):
 
     assert report.result.gcs[
         "gs://automl-test-bucket/automl-root/home_credit/baseline/"
-    ].startswith("failed: failed to delete")
-    assert report.result.local[str(local_root)] == "deleted"
+    ].startswith("failed: failed to move")
+    assert report.result.local[str(local_root)].startswith("archived:")
 
 
-def test_hard_delete_runs_mlflow_gc_after_soft_delete(tmp_path, monkeypatch):
+def test_trial_delete_archives_gcs_and_local(tmp_path, monkeypatch):
     active = _session(tmp_path)
-    client.bind(
-        tracking_uri=active.config.mlflow_tracking_uri,
-        bucket=active.config.gcs_bucket,
-        gcs_prefix=active.config.gcs_prefix,
-        project_name=active.project_name,
-        experiment_id=active.active_experiment_id,
+    fake = DeleteClient(
+        ["automl-root/home_credit/baseline/runs/2025-12/run-1/model.pkl"]
     )
-    experiment.ensure()
-    monkeypatch.setattr(gcs, "_gcs_client", lambda: DeleteClient([]))
-    calls = []
-
-    def fake_run(command, check, capture_output, text):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout="gc complete", stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
-
-    report = delete(
-        "baseline",
-        scope="experiment",
-        apply=True,
-        hard_delete=True,
-        backend_store_uri="sqlite:////tmp/mlflow.db",
-        artifacts_destination="gs://bucket/mlflow-artifacts",
-        session=active,
+    monkeypatch.setattr(gcs, "_gcs_client", lambda: fake)
+    monkeypatch.setattr(
+        cleanup_module.mlflow_client,
+        "run_start_time",
+        lambda run_id: 1764547200000,
     )
-
-    assert report.result.mlflow_hard_delete_status == "success"
-    assert calls and calls[0][:4] == ["uv", "run", "mlflow", "gc"]
-    assert calls[0][calls[0].index("--backend-store-uri") + 1] == "sqlite:////tmp/mlflow.db"
-    assert calls[0][calls[0].index("--artifacts-destination") + 1] == "gs://bucket/mlflow-artifacts"
-
-
-def test_mlflow_hard_delete_missing_backend_uri_raises_project_error(tmp_path):
-    active = Session(
-        config=ProjectConfig(
-            project_name="home_credit",
-            repo_root=tmp_path,
-            project_dir=tmp_path / "projects" / "home_credit",
-            gcs_bucket="automl-test-bucket",
-            gcs_prefix="automl-root",
-            mlflow_tracking_uri="http://mlflow.example",
-        )
+    deleted_runs = []
+    monkeypatch.setattr(cleanup_module.mlflow_client, "delete_run", deleted_runs.append)
+    local_root = (
+        active.config.project_dir
+        / "experiments"
+        / "home_credit"
+        / "baseline"
+        / "run-1"
     )
-
-    with pytest.raises(ProjectError, match="--backend-store-uri"):
-        cleanup_module._run_mlflow_gc(
-            experiment_ids=[],
-            run_ids=["run-1"],
-            backend_store_uri="",
-            artifacts_destination="",
-            session=active,
-        )
-
-
-def test_trial_hard_delete_filters_mlflow_gc_to_run_id(tmp_path, monkeypatch):
-    active = _session(tmp_path)
-    monkeypatch.setattr(gcs, "_gcs_client", lambda: DeleteClient([]))
-    calls = []
-
-    def fake_run(command, check, capture_output, text):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, 0, stdout="gc complete", stderr="")
-
-    monkeypatch.setattr(subprocess, "run", fake_run)
+    local_root.mkdir(parents=True)
 
     report = delete(
         "run-1",
         scope="trial",
         apply=True,
-        hard_delete=True,
-        backend_store_uri="sqlite:////tmp/mlflow.db",
         session=active,
         parent_experiment=ParentExperimentRef(
             mlflow_experiment_name="home_credit/baseline",
@@ -399,8 +428,28 @@ def test_trial_hard_delete_filters_mlflow_gc_to_run_id(tmp_path, monkeypatch):
         ),
     )
 
-    command = calls[0]
-    assert report.result.mlflow_hard_delete_status == "success"
-    assert "--run-ids" in command
-    assert command[command.index("--run-ids") + 1] == "run-1"
-    assert "--experiment-ids" not in command
+    archived_local = (
+        active.config.project_dir
+        / "experiments"
+        / "deleted"
+        / "home_credit"
+        / "baseline"
+        / "run-1"
+    )
+    assert report.result.mlflow_runs == {"run-1": "deleted"}
+    assert deleted_runs == ["run-1"]
+    assert report.result.gcs[
+        "gs://automl-test-bucket/automl-root/home_credit/baseline/runs/2025-12/run-1/"
+    ] == (
+        "archived 1 to "
+        "gs://automl-test-bucket/automl-root/deleted/home_credit/baseline/runs/2025-12/run-1/"
+    )
+    assert fake.copied == [
+        (
+            "automl-root/home_credit/baseline/runs/2025-12/run-1/model.pkl",
+            "automl-root/deleted/home_credit/baseline/runs/2025-12/run-1/model.pkl",
+        )
+    ]
+    assert report.result.local[str(local_root)] == f"archived: {archived_local}"
+    assert archived_local.exists()
+    assert not local_root.exists()

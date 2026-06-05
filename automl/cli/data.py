@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from automl.data import list_datasets, materialize, profile
+from automl.data import activate_dataset, list_datasets, materialize, profile
 
 from ._common import print_json, session_from_args
 
@@ -19,6 +19,10 @@ def add_parser(subparsers) -> None:
     profile_parser = data_sub.add_parser("profile")
     profile_parser.add_argument("dataset_id", nargs="?")
     profile_parser.set_defaults(func=_profile)
+
+    activate_parser = data_sub.add_parser("activate")
+    activate_parser.add_argument("dataset_id")
+    activate_parser.set_defaults(func=_activate)
 
     materialize_parser = data_sub.add_parser("materialize")
     materialize_parser.add_argument(
@@ -41,6 +45,11 @@ def _list(args: argparse.Namespace) -> int:
 
 def _profile(args: argparse.Namespace) -> int:
     print_json(profile(dataset_id=args.dataset_id, session=session_from_args(args)))
+    return 0
+
+
+def _activate(args: argparse.Namespace) -> int:
+    print_json(activate_dataset(args.dataset_id, session=session_from_args(args)))
     return 0
 
 

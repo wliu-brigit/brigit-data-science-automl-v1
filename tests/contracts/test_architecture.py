@@ -318,9 +318,7 @@ def test_layer_dependency_contracts_are_present():
         "test_domains_do_not_import_private_mlflow_routing",
     }
     current = {
-        name
-        for name, value in globals().items()
-        if name.startswith("test_") and callable(value)
+        name for name, value in globals().items() if name.startswith("test_") and callable(value)
     }
 
     assert required.issubset(current)
@@ -381,6 +379,7 @@ def test_runner_imports_only_approved_pure_trial_leaves():
         "automl.trial.manifest",
         "automl.trial.metadata",
         "automl.trial.paths",
+        "automl.trial.timing_summary",
         "automl.trial.types",
     }
     offenders = []

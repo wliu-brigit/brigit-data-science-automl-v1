@@ -227,6 +227,9 @@ def test_run_trial_executes_homecredit_chain_and_logs_artifacts(tmp_path, monkey
             "timing/summary.json",
         )
         timing = json.loads(Path(timing_path).read_text(encoding="utf-8"))
+        runner_phases = timing["phase_details"]["runner"]["phases"]
+        assert timing["schema_version"] == 2
+        assert list(timing["phases"]) == ["runner"]
         assert {
             "pre_fit_validation",
             "mlflow_setup",
@@ -239,7 +242,7 @@ def test_run_trial_executes_homecredit_chain_and_logs_artifacts(tmp_path, monkey
             "validation_fixture",
             "validation",
             "validation_publish",
-        }.issubset(timing["phases"])
+        }.issubset(runner_phases)
         manifest_path = mlflow_client.raw().download_artifacts(
             result.run_id,
             "manifest.json",
@@ -263,6 +266,9 @@ def test_run_trial_executes_homecredit_chain_and_logs_artifacts(tmp_path, monkey
         assert manifest["timing"]["unit"] == timing["unit"]
         assert manifest["timing"]["total_seconds"] >= timing["total_seconds"]
         assert set(manifest["timing"]["phases"]) == set(timing["phases"])
+        assert set(manifest["timing"]["phase_details"]["runner"]["phases"]) == set(
+            timing["phase_details"]["runner"]["phases"]
+        )
         assert manifest["validation"]["report_artifact"] == "validation/report.json"
         assert {item["path"] for item in manifest["artifacts"]} == {
             "data/contract.json",

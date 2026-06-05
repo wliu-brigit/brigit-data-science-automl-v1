@@ -15,10 +15,10 @@ import pandas as pd
 from automl.data.dataset import ComponentHashes, Dataset, LoadedDataset
 from automl.data.features import FeatureRegistry
 from automl.data.recipe import compute_recipe, recipe_diff
+from automl.data.selection import activate_dataset, resolve_active_dataset
 from automl.data.split import add_split_pct, validate_split_pct, validate_unique_key
 from automl.errors import DataError, ProjectError
 from automl.mlflow import client as mlflow_client
-from automl.mlflow import experiment as mlflow_experiment
 from automl.mlflow import routing as mlflow_routing
 from automl.mlflow.experiment import artifacts as experiment_artifacts
 from automl.project import Session
@@ -48,7 +48,9 @@ class DataPipeline:
             df = self._adopt_provided_split_pct(df, original_names)
         else:
             self._check_split_pct_collision(original_names)
-        unique_key = self._normalize_key_columns(self.spec.source.unique_key_columns, original_names)
+        unique_key = self._normalize_key_columns(
+            self.spec.source.unique_key_columns, original_names
+        )
         split_group_key = self._normalize_key_columns(
             self.spec.source.split_group_key_columns, original_names
         )
@@ -115,9 +117,7 @@ class DataPipeline:
         self, columns: tuple[str, ...], original_names: dict[str, str]
     ) -> tuple[str, ...]:
         raw_to_normalized = {raw: normalized for normalized, raw in original_names.items()}
-        return tuple(
-            raw_to_normalized.get(column, _normalize_column(column)) for column in columns
-        )
+        return tuple(raw_to_normalized.get(column, _normalize_column(column)) for column in columns)
 
     def _adopt_provided_split_pct(
         self, df: pd.DataFrame, original_names: dict[str, str]
@@ -318,7 +318,7 @@ def _materialize_bound(
             dataset.to_dict(), dataset_id=dataset.id
         )
         dataset = replace(dataset, record_uri=record_uri)
-        mlflow_experiment.set_active_dataset(dataset.id, experiment_id=active.active_experiment_id)
+        dataset = activate_dataset(dataset.id, session=active)
         logger.info("content unchanged — attached to %s (recipe updated)", dataset.id)
         loaded = LoadedDataset(dataset=dataset, df=loaded.df, registry=loaded.registry)
         return loaded if include_rows else dataset
@@ -337,15 +337,13 @@ def _materialize_bound(
         )
     experiment_artifacts.write_dataset_frame(dataset.data_gcs_uri, loaded.df)
     experiment_artifacts.write_registry(dataset.registry_gcs_uri, loaded.registry.to_dataframe())
-    record_uri = experiment_artifacts.write_dataset_record(
-        dataset.to_dict(), dataset_id=dataset.id
-    )
+    record_uri = experiment_artifacts.write_dataset_record(dataset.to_dict(), dataset_id=dataset.id)
     dataset = replace(dataset, record_uri=record_uri)  # in memory only; the reader re-derives it
     _log_source_trace(
         dataset,
         spec.source.artifact_files(pipeline, project_dir=active.config.project_dir),
     )
-    mlflow_experiment.set_active_dataset(dataset.id, experiment_id=active.active_experiment_id)
+    dataset = activate_dataset(dataset.id, session=active)
     logger.info("minted %s and set it active", dataset.id)
     loaded = LoadedDataset(dataset=dataset, df=loaded.df, registry=loaded.registry)
     return loaded if include_rows else dataset
@@ -353,13 +351,12 @@ def _materialize_bound(
 
 def _attach_active(active: Session, recipe: dict) -> Dataset | None:
     """The default fast path: resolve pointer -> record -> recipe compare."""
-    active_id = mlflow_experiment.get_active_dataset(experiment_id=active.active_experiment_id)
-    if active_id is None:
-        return None
-    record = experiment_artifacts.read_dataset_record(active_id)
-    if record is None:
-        return None
-    dataset = Dataset.from_dict(record)
+    try:
+        dataset = resolve_active_dataset(session=active)
+    except DataError:
+        if not experiment_artifacts.list_dataset_records(experiment_id=active.active_experiment_id):
+            return None
+        raise
     drift = recipe_diff(dataset.recipe, recipe)
     if drift:
         logger.warning(

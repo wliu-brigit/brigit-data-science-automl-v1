@@ -7,7 +7,7 @@ import pytest
 
 from automl.mlflow import client, experiment, trial
 from automl.mlflow.trial.artifacts import runner as runner_artifacts
-from automl.trial.metadata import TimingReport
+from automl.trial.timing_summary import build_runner_timing_summary
 
 pytestmark = pytest.mark.unit
 
@@ -51,7 +51,7 @@ def test_write_local_file_logs_to_exact_artifact_path(
     assert Path(downloaded).read_text(encoding="utf-8") == '{"ok": true}'
 
 
-def test_write_timing_logs_summary_json_with_timing_report_shape(active_run: str):
+def test_write_timing_logs_v2_summary_with_runner_details(active_run: str):
     timing = {
         "schema_version": 1,
         "unit": "seconds",
@@ -65,5 +65,5 @@ def test_write_timing_logs_summary_json_with_timing_report_shape(active_run: str
     runner_artifacts.write_timing(active_run, timing)
 
     assert _read_json_artifact(active_run, "timing/summary.json") == (
-        TimingReport.from_dict(timing).to_dict()
+        build_runner_timing_summary(timing)
     )

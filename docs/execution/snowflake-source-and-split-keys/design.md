@@ -1,10 +1,12 @@
 # Snowflake source & split keys — design
 
-**Status: APPROVED 2026-06-04 (wendao + Claude, four review rounds + final
-alignment pass). Ready to implement — next session starts step 1 (§14).** This is
-the source of truth for the effort; [`README.md`](README.md) is the
-decision-free front door. Code is the source of truth for current behavior —
-file references describe the tree as of this date.
+**Status: IMPLEMENTED 2026-06-04.** Approved by wendao + Claude after four
+review rounds + final alignment pass, then landed in four code steps with
+post-landing fixes. This remains the source of truth for the effort's decisions;
+[`README.md`](README.md) is the decision-free front door and
+[`plans/README.md`](plans/README.md) is the execution ledger. Code is the source
+of truth for current behavior — file references describe the tree as of this
+date.
 
 The design came out of a long working discussion; every decision carries its
 **why** so it doesn't get relitigated in passing.

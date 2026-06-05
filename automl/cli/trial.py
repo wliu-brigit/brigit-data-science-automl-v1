@@ -41,6 +41,7 @@ def add_parser(subparsers) -> None:
 
     run = trial_sub.add_parser("run")
     run.add_argument("path")
+    run.add_argument("--dataset-id")
     run.set_defaults(func=actions._run)
 
     show = trial_sub.add_parser("show")
@@ -50,9 +51,6 @@ def add_parser(subparsers) -> None:
     delete = trial_sub.add_parser("delete")
     delete.add_argument("run_id")
     delete.add_argument("--apply", action="store_true")
-    delete.add_argument("--hard-delete", action="store_true")
-    delete.add_argument("--backend-store-uri", default="")
-    delete.add_argument("--artifacts-destination", default="")
     delete.set_defaults(func=actions._delete)
 
     lock = trial_sub.add_parser("lock")

@@ -10,13 +10,14 @@ from automl.mlflow.client import (
     raw,
     run_url,
 )
-from automl.mlflow import experiment, project, routing, trial
+from automl.mlflow import cleanup, experiment, project, routing, trial
 
 __all__ = [
     "artifact_url",
     "bind",
     "bound",
     "bound_for",
+    "cleanup",
     "experiment",
     "experiment_url",
     "project",

@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 from sklearn.preprocessing import FunctionTransformer
 
-from automl.data.dataset import ComponentHashes, Dataset, DatasetIndex
+from automl.data.dataset import ComponentHashes, Dataset
 from automl.data.profile import Profile
 from automl.eval import Auc, EvalSpec
 from automl.experiment.store import ExperimentOverview
@@ -129,8 +129,8 @@ def test_gather_proposer_context_returns_a5_packet(monkeypatch, tmp_path):
         lambda **kwargs: {"baseline": 1, "feature_engineering": 1},
     )
     monkeypatch.setattr(
-        "automl.agent.proposer_context.list_datasets",
-        lambda **kwargs: DatasetIndex(datasets=(dataset,), active_dataset_id="dataset-v1"),
+        "automl.agent.proposer_context.resolve_active_dataset",
+        lambda **kwargs: dataset,
     )
     monkeypatch.setattr(
         "automl.agent.proposer_context.get_profile",

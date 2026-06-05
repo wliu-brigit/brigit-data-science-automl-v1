@@ -110,21 +110,32 @@ class TrialMetadata:
 
 @dataclass(frozen=True)
 class TimingReport:
-    schema_version: int = 1
+    schema_version: int = 2
     unit: str = "seconds"
     total_seconds: float = 0.0
     phases: dict[str, float] | None = None
+    phase_details: dict[str, Any] | None = None
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "TimingReport":
         phases = payload.get("phases") or {}
         if not isinstance(phases, Mapping):
             raise ValueError("timing phases must be a mapping")
+        details = payload.get("phase_details") or {}
+        if details and not isinstance(details, Mapping):
+            raise ValueError("timing phase_details must be a mapping")
         return cls(
-            schema_version=int(payload.get("schema_version", 1)),
+            schema_version=int(payload.get("schema_version", 2)),
             unit=str(payload.get("unit", "seconds")),
             total_seconds=float(payload.get("total_seconds", 0.0)),
             phases={str(key): float(value) for key, value in phases.items()},
+            phase_details={
+                str(key): dict(value)
+                for key, value in details.items()
+                if isinstance(value, Mapping)
+            }
+            if details
+            else None,
         )
 
     def to_dict(self) -> dict[str, Any]:

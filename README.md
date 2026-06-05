@@ -39,11 +39,11 @@ they walk the whole lifecycle and are made to be run and tinkered with:
 | `0_understand_project_sessions_and_routes` | The core concepts — projects, sessions, routing. |
 | `1_define_and_materialize_dataset` | Define a dataset and materialize it to GCS. |
 | `2_profile_logged_dataset` | Profile a logged dataset (EDA). |
-| `2_run_agent_automl` | Run the agent-driven AutoML loop. |
-| `3_author_new_trial` | Author a model trial by hand. |
-| `4_fork_existing_trial` | Fork and tweak an existing trial. |
-| `5_reevaluate_existing_model` | Re-evaluate a model on new data. |
-| `6_inspect_logged_runs_and_artifacts` | Inspect logged runs and artifacts. |
+| `3.1_run_agent_automl` | Run the agent-driven AutoML loop. |
+| `3.2_author_new_trial` | Author a model trial by hand. |
+| `3.3_fork_existing_trial` | Fork and tweak an existing trial. |
+| `4_reevaluate_existing_model` | Re-evaluate a model on new data. |
+| `5_inspect_logged_runs_and_artifacts` | Inspect logged runs and artifacts. |
 
 Run them with the project's venv as the kernel — register it once **from the repo
 root** so the kernel binds to *this* clone's `.venv`:

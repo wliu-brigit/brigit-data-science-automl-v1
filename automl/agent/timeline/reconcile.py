@@ -74,9 +74,7 @@ def _summarize_events(
             "end_s": end_s,
             "duration_s": max(0.0, end_s - start_s),
             "agent_transcript_path": str(
-                event.get("agent_transcript_path")
-                or started.get("agent_transcript_path")
-                or "",
+                event.get("agent_transcript_path") or started.get("agent_transcript_path") or "",
             ),
             "tool_uses": int(event.get("tool_uses") or 0),
             "trial_id": str(event.get("trial_id") or ""),
@@ -116,6 +114,9 @@ def _summarize_events(
             "trial_id": span["trial_id"] or str(matched.get("trial_id") or ""),
             "run_id": span["run_id"] or str(matched.get("run_id") or ""),
             "phases": {"coder_s": span["duration_s"]},
+            "phase_spans": {
+                "coder": {"start_s": span["start_s"], "end_s": span["end_s"]},
+            },
             "agent_ids": {"coder": span["agent_id"]},
             "tool_uses": {"coder": tool_uses},
             "runner_execution_s": _optional_float(
@@ -125,9 +126,18 @@ def _summarize_events(
             ),
             "runner_status": span["runner_status"] or str(matched.get("runner_status") or ""),
         }
+        if matched.get("start_s") or matched.get("end_s"):
+            item["runner_span"] = {
+                "start_s": _optional_float(matched.get("start_s")),
+                "end_s": _optional_float(matched.get("end_s")),
+            }
         if pending_proposers:
             proposer = pending_proposers.pop(0)
             item["phases"]["proposer_s"] = proposer["duration_s"]
+            item["phase_spans"]["proposer"] = {
+                "start_s": proposer["start_s"],
+                "end_s": proposer["end_s"],
+            }
             item["agent_ids"]["proposer"] = proposer["agent_id"]
             item["tool_uses"]["proposer"] = proposer["tool_uses"]
         iterations.append(item)
@@ -137,8 +147,7 @@ def _summarize_events(
     first = float(events[0].get("time_s") or 0.0) if events else 0.0
     last = float(events[-1].get("time_s") or first) if events else first
     covered = [(float(span["start_s"]), float(span["end_s"])) for span in spans] + [
-        (float(step["time_s"]) - float(step["duration_s"]), float(step["time_s"]))
-        for step in steps
+        (float(step["time_s"]) - float(step["duration_s"]), float(step["time_s"])) for step in steps
     ]
     return {
         "schema_version": 1,
@@ -182,6 +191,10 @@ def _step_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
             {
                 "step": step,
                 "duration_s": float(event.get("duration_s") or 0.0),
+                "start_s": float(
+                    event.get("start_s")
+                    or (float(event.get("time_s") or 0.0) - float(event.get("duration_s") or 0.0))
+                ),
                 "time_s": float(event.get("time_s") or 0.0),
                 "exit_code": int(event.get("exit_code") or 0),
             }

@@ -10,17 +10,20 @@ This README is intentionally **thin and decision-free**: it states the
 "how" (and every settled decision with its rationale) lives in
 [`design.md`](design.md).
 
-**Status:** APPROVED 2026-06-04 after four review rounds + final alignment
-pass. Implementation plans for all four §14 steps are written and reviewed —
-**executing? start at [`plans/README.md`](plans/README.md)** (the status
-ledger + fresh-session protocol; one step per session, in order).
+**Status:** IMPLEMENTED. All four §14 code steps landed on 2026-06-04 and the
+non-live suite is green. Tail-end cleanup is partly complete: live Snowflake
+e2e passed, the example notebooks were updated and executed end to end, the
+retired-vocabulary ratchet landed, and `list_dataset_records` behavior was
+resolved. Remaining work is the first real `fraud_anomaly_detection`
+materialize on VPN, then archiving this effort. See
+[`plans/README.md`](plans/README.md) for the ledger and tail-end list.
 
-## The problem (high level)
+## The original problem (high level)
 
-- `SnowflakeSource` is a stub: it has the constructor shape and a pending
+- `SnowflakeSource` was a stub: it had the constructor shape and a pending
   `NotImplementedError`, while `projects/fraud_anomaly_detection/` (a ~100K-row
-  internal dataset) is waiting on it. A past implementation existed and was
-  lost in a repo migration; its conventions survive only as fragments
+  internal dataset) was waiting on it. A past implementation existed and was
+  lost in a repo migration; its conventions survived only as fragments
   (scaffold SQL templates, doc phrases, a dead `--refresh-source` flag).
 - Designing it exposed contract debt in the data layer itself: one `hash_key`
   field doing two unrelated jobs (row identity vs. split bucketing), a

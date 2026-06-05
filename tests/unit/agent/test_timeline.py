@@ -209,12 +209,11 @@ def test_publish_stages_and_logs_agent_artifacts(monkeypatch, tmp_path):
     assert gcs_writes[0].startswith("gs://bucket/root/qa/dry_run/demo/exp/runs/")
 
 
-def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(
-    tmp_path, monkeypatch
-):
+def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(tmp_path, monkeypatch):
     from automl.agent.timeline import handle_event, publish
     from automl.agent.timeline.steps import record_cli_step
     from automl.mlflow import trial as mlflow_trial
+    from automl.mlflow.trial.artifacts import runner as runner_artifacts
 
     active = _session(tmp_path, gcs_bucket="")
     client.clear()
@@ -226,6 +225,15 @@ def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(
                 trial.log_metric(run_id, "eval.test.auc", 0.71)
                 trial.log_metric(run_id, "timing.fit_seconds", 1.5)
                 trial.log_metric(run_id, "timing.total_seconds", 2.0)
+                runner_artifacts.write_timing(
+                    run_id,
+                    {
+                        "schema_version": 1,
+                        "unit": "seconds",
+                        "total_seconds": 2.0,
+                        "phases": {"fit": 1.5, "evaluation": 0.5},
+                    },
+                )
             run = client.raw().get_run(run_id)
 
         start_s = float(run.info.start_time or 0) / 1000
@@ -245,7 +253,7 @@ def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(
             closing_message="## Trial report\n\nImplemented and ran; AUC 0.71.",
         )
 
-        handle_event(
+        first_event = handle_event(
             {
                 "hook_event_name": "SubagentStart",
                 "session_id": "session-2",
@@ -301,6 +309,18 @@ def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(
             duration_s=3.25,
             exit_code=0,
         )
+        timeline_path = Path(first_event["timeline_path"])
+        timeline_lines = [
+            json.loads(line) for line in timeline_path.read_text(encoding="utf-8").splitlines()
+        ]
+        for event in timeline_lines:
+            if event.get("event") == "step":
+                event["start_s"] = start_s - 33.25
+                event["time_s"] = start_s - 30.0
+        timeline_path.write_text(
+            "".join(json.dumps(event, sort_keys=True) + "\n" for event in timeline_lines),
+            encoding="utf-8",
+        )
 
         published = publish(session_id="session-2", session=active)
 
@@ -343,6 +363,25 @@ def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(
         assert session_summary["publish_s"] >= 0.0
         # Wall-clock not covered by agent spans or CLI steps (manager/API wait).
         assert 0.0 <= session_summary["unattributed_s"] <= session_summary["total_s"]
+        with client.bound_for(active, experiment_id=active.active_experiment_id):
+            timing_path = client.raw().download_artifacts(run_id, "timing/summary.json")
+        timing = json.loads(Path(timing_path).read_text(encoding="utf-8"))
+        assert list(timing["phases"]) == [
+            "setup",
+            "proposer",
+            "proposal_handoff",
+            "coder_implementation",
+            "runner",
+            "coder_report",
+            "publish",
+        ]
+        assert timing["phase_details"]["setup"]["phases"] == {"experiment_proposer_context": 3.25}
+        assert timing["phase_details"]["proposer"] == {"total_seconds": 10.0}
+        assert timing["phase_details"]["runner"]["phases"] == {
+            "fit": 1.5,
+            "evaluation": 0.5,
+        }
+        assert timing["phase_details"]["publish"]["total_seconds"] >= 0.0
         proposer_tool_events = json.loads(
             Path(trial_artifact["proposer_tool_events_path"]).read_text(encoding="utf-8")
         )

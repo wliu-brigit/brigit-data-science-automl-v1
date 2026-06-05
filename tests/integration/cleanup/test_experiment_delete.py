@@ -32,6 +32,9 @@ class FakeBucket:
     def blob(self, name):
         return FakeBlob(self._store, self.name, name)
 
+    def copy_blob(self, blob, destination_bucket, new_name):
+        self._store[(destination_bucket.name, new_name)] = self._store[(self.name, blob.name)]
+
     def list_blobs(self, prefix):
         return [
             FakeBlob(self._store, bucket, name)
@@ -105,19 +108,45 @@ def test_experiment_delete_apply_removes_only_current_universe(tmp_path, monkeyp
     ]
     assert report.plan.local_paths == [str(local_root)]
     assert report.result is not None
-    assert report.result.mlflow_experiments == {"qa/home_credit/cleanup-exp": "deleted"}
-    assert report.result.gcs == {"gs://automl-test-bucket/automl-root/qa/home_credit/cleanup-exp/": 1}
-    assert report.result.local == {str(local_root): "deleted"}
+    assert report.result.mlflow_experiments == {
+        "qa/home_credit/cleanup-exp": (
+            "archived: deleted/qa/home_credit/cleanup-exp; deleted"
+        )
+    }
+    assert report.result.gcs == {
+        "gs://automl-test-bucket/automl-root/qa/home_credit/cleanup-exp/": (
+            "archived 1 to "
+            "gs://automl-test-bucket/automl-root/deleted/qa/home_credit/cleanup-exp/"
+        )
+    }
+    archived_local = (
+        active.config.project_dir
+        / "experiments"
+        / "deleted"
+        / "qa"
+        / "home_credit"
+        / "cleanup-exp"
+    )
+    assert report.result.local == {str(local_root): f"archived: {archived_local}"}
     assert (
         "automl-test-bucket",
         "automl-root/qa/home_credit/cleanup-exp/runs/blob.json",
     ) not in fake.store
     assert (
         "automl-test-bucket",
+        "automl-root/deleted/qa/home_credit/cleanup-exp/runs/blob.json",
+    ) in fake.store
+    assert (
+        "automl-test-bucket",
         "automl-root/prod/home_credit/cleanup-exp/runs/blob.json",
     ) in fake.store
     assert not local_root.exists()
+    assert archived_local.exists()
     assert sibling_root.exists()
+    assert client.raw().get_experiment_by_name("qa/home_credit/cleanup-exp") is None
+    archived = client.raw().get_experiment_by_name("deleted/qa/home_credit/cleanup-exp")
+    assert archived is not None
+    assert archived.lifecycle_stage == "deleted"
 
 
 def test_trial_delete_rejects_run_from_other_namespace(tmp_path):

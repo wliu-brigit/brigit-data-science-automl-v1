@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import linecache
+import os
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -19,11 +21,11 @@ NOTEBOOKS = [
     NOTEBOOK_DIR / "0_understand_project_sessions_and_routes.ipynb",
     NOTEBOOK_DIR / "1_define_and_materialize_dataset.ipynb",
     NOTEBOOK_DIR / "2_profile_logged_dataset.ipynb",
-    NOTEBOOK_DIR / "2_run_agent_automl.ipynb",
-    NOTEBOOK_DIR / "3_author_new_trial.ipynb",
-    NOTEBOOK_DIR / "4_fork_existing_trial.ipynb",
-    NOTEBOOK_DIR / "5_reevaluate_existing_model.ipynb",
-    NOTEBOOK_DIR / "6_inspect_logged_runs_and_artifacts.ipynb",
+    NOTEBOOK_DIR / "3.1_run_agent_automl.ipynb",
+    NOTEBOOK_DIR / "3.2_author_new_trial.ipynb",
+    NOTEBOOK_DIR / "3.3_fork_existing_trial.ipynb",
+    NOTEBOOK_DIR / "4_reevaluate_existing_model.ipynb",
+    NOTEBOOK_DIR / "5_inspect_logged_runs_and_artifacts.ipynb",
 ]
 
 def _code_cells(path: Path) -> list[tuple[int, str]]:
@@ -66,6 +68,12 @@ def test_homecredit_notebooks_execute_end_to_end(monkeypatch):
     # the notebooks rely on cwd-based project inference (the repo now holds
     # several projects, so inferring from the repo root is ambiguous).
     monkeypatch.chdir(NOTEBOOK_DIR)
+    namespace = os.environ.get("AUTOML_NOTEBOOK_NAMESPACE") or (
+        "qa/notebook-e2e-" + datetime.now(UTC).strftime("%Y%m%d%H%M%S%f")
+    )
+    if not namespace.startswith("qa/"):
+        pytest.fail("AUTOML_NOTEBOOK_NAMESPACE for e2e runs must start with 'qa/'")
+    monkeypatch.setenv("AUTOML_NOTEBOOK_NAMESPACE", namespace)
 
     try:
         for path in NOTEBOOKS:

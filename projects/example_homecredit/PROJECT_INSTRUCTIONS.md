@@ -51,14 +51,14 @@ validation, logging, reproducibility, and MLflow artifact organization.
   then creates the logged immutable dataset.
 - `2_profile_logged_dataset.ipynb` loads the logged dataset artifacts and
   profiles the full dataset.
-- `2_run_agent_automl.ipynb` launches the normal agent-driven AutoML loop.
-- `3_author_new_trial.ipynb` creates a fresh notebook-authored model draft and
+- `3.1_run_agent_automl.ipynb` launches the normal agent-driven AutoML loop.
+- `3.2_author_new_trial.ipynb` creates a fresh notebook-authored model draft and
   can run it through the standard runner.
-- `4_fork_existing_trial.ipynb` starts from a logged run and edits its model
+- `3.3_fork_existing_trial.ipynb` starts from a logged run and edits its model
   source.
-- `5_reevaluate_existing_model.ipynb` logs new evaluations for an existing
+- `4_reevaluate_existing_model.ipynb` logs new evaluations for an existing
   model run.
-- `6_inspect_logged_runs_and_artifacts.ipynb` explains prior runs, model
+- `5_inspect_logged_runs_and_artifacts.ipynb` explains prior runs, model
   artifacts, datasets, validation outputs, and evaluation prediction loading.
 
 ## Full-data setup

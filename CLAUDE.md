@@ -182,6 +182,33 @@ route (`<project>/<experiment>`), our trials are runs inside them, and the
 project level is a dedicated `<project>/000_overview` experiment that acts
 as the project-level entity.
 
+Transient QA and development runs must use a namespace beginning with
+`qa/`, for example `qa/notebook-e2e-20260605` or
+`qa/agent-timeline-hooks-20260605`. That applies to automated e2e tests,
+manual one-off verification, and agent/dev experiments. The
+`project delete --scope qa` cleanup command archives active QA namespaces
+wholesale; putting temporary runs outside `qa/` makes cleanup manual and easy
+to miss. Use the default
+project namespace only for state the user intentionally wants to keep. Do
+not create new `qa-*` namespaces; that older prefix remains cleanup-compatible
+only so legacy artifacts can still be swept. For notebook QA runs, set
+`AUTOML_NOTEBOOK_NAMESPACE=qa/<purpose>-<stamp>` before executing the
+notebooks; the e2e notebook harness defaults to that shape and rejects
+non-`qa/` overrides.
+
+Cleanup is production-safe by default. `project delete` and `experiment
+delete` archive the route first, then soft-delete the renamed MLflow
+experiment: MLflow moves to `deleted/<original-route>`, GCS bytes move to the
+matching `deleted/...` prefix, and local experiment state moves under
+`projects/<name>/experiments/deleted/...`.
+That frees the original MLflow name without requiring database access. `trial
+delete` uses the same archive prefix for run-scoped GCS/local artifacts, then
+soft-deletes the MLflow run. Permanent cleanup is a second explicit step:
+`mlflow purge <deleted-route>` purges one archived route, `mlflow purge --scope
+qa` purges archived QA routes, and `mlflow purge --scope deleted` purges all
+archived routes. Purge is for local/admin contexts where `mlflow gc` and the
+backend/auth stores are reachable.
+
 **Why:** two well-known stores mean any machine or session can reconstruct
 the full picture by pointing at them — results survive the laptop they were
 produced on, and there is never a "which copy is right?" question. And

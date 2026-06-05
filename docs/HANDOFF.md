@@ -8,8 +8,7 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
 
 ## Where things stand
 
-- **Active effort — all 4 code steps landed; only the batched live session
-  remains:**
+- **Active effort — all 4 code steps landed; tail-end cleanup is partly done:**
   [`execution/snowflake-source-and-split-keys/`](execution/snowflake-source-and-split-keys/)
   — the real `SnowflakeSource` plus the data-layer contract work it
   surfaced. **`design.md` is the source of truth**; the status ledger
@@ -26,27 +25,34 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
   to `Where(...)` predicates (serializable JSON AST; trial contracts and
   eval split-view identities carry the AST; `SPLIT_PCT` is an ordinary
   column; `to_pyarrow` push-down compiled but deliberately not wired —
-  layout + reader ship together later). Suite 573-green.
-- **All live/VPN-dependent verification is deliberately batched** into one
-  tail-end session now that step 4 has landed (wendao 2026-06-04: getting on
-  the VPN is slow — run the live items as one isolated batch). The list
-  lives in the plans README "Tail-end activities".
-- **Known-stale until that tail-end pass:** `example_homecredit` notebooks
-  (old `hash_key`/`SPLITID`/`base_data_sql` in cells and cached outputs;
-  notebook 2's `Splits(train=[(0, 80)]…)` now **raises** after step 4's hard
-  cut — update it to `Where("SPLIT_PCT") < 80` in that pass).
+  layout + reader ship together later). Current non-live suite:
+  **587 passed** (`uv run pytest tests/unit tests/contracts tests/integration`,
+  2026-06-04 local check).
+- **Tail-end items already completed after the ledger row was written:**
+  live Snowflake e2e passed; `example_homecredit` notebooks were updated to
+  current vocabulary and stripped of stale cached outputs; the renamed
+  notebook workflow (`3.1`/`3.2`/`3.3`) executed end to end; the retired
+  split-vocabulary ratchet was added; `list_dataset_records` now propagates
+  transport failures and treats missing `datasets/` as a clean empty list.
+- **Still not done:** first real `fraud_anomaly_detection` materialize. The
+  project config intentionally still has TBD placeholders for target, base
+  table, source table, unique key, and experiment id, so it is not ready for
+  validation/materialization until those are filled in during the VPN session.
 
 ## Next actions
 
-1. **The rest of the tail-end session**: live notebook verification (incl.
-   fixing notebook 2's now-raising `Splits` cell), first real
-   `fraud_anomaly_detection` materialize, the `list_dataset_records`
-   swallow-to-`[]` revisit, the retired-range contracts ratchet, then
-   archive the effort. Details in the plans README "Tail-end activities".
-   (**Live Snowflake e2e: done 2026-06-04** — passed in 91s against a
-   sampled `fct_loans` dev table; details in the tail-end list. Snowflake
-   is confirmed reachable with `.env` configured — the one gotcha was the
-   `SNOWFLAKE_ACCOUNT` identifier form, now documented in `.env.example`.)
+1. **Finish the remaining tail-end work**: fill the
+   `fraud_anomaly_detection` TBDs with the designated warehouse values, run
+   the first real materialize on VPN, then move the effort
+   `execution/ → archive/`. Details live in the plans README "Tail-end
+   activities". (**Live Snowflake e2e: done 2026-06-04** — passed in 91s
+   against a sampled `fct_loans` dev table; details in the tail-end list.
+   Snowflake is confirmed reachable with `.env` configured — the one gotcha
+   was the `SNOWFLAKE_ACCOUNT` identifier form, now documented in
+   `.env.example`.)
+2. Notebook QA is complete for this pass: `AUTOML_E2E_NOTEBOOKS=1
+   uv run pytest tests/e2e/test_homecredit_notebooks.py -q` passed on
+   2026-06-04 in 8:48.
 
 (State wipes are always a human call, never the code's — design §14 ground
 rule. The 2026-06-04 `example_homecredit` wipes are recorded in the step-2

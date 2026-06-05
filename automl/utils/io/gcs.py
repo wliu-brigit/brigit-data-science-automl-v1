@@ -126,6 +126,41 @@ def delete_prefix(uri: str, *, client: Any | None = None) -> int:
     return deleted
 
 
+def move_prefix(source_uri: str, destination_uri: str, *, client: Any | None = None) -> int:
+    """Move all blobs under one GCS prefix to another prefix.
+
+    GCS has no atomic directory rename, so this performs copy-then-delete per
+    object. The destination prefix must be different from the source prefix.
+    """
+    source_bucket, source_prefix = parse_gcs_uri(source_uri.rstrip("/") + "/_")
+    destination_bucket, destination_prefix = parse_gcs_uri(destination_uri.rstrip("/") + "/_")
+    source_prefix = source_prefix.removesuffix("_")
+    destination_prefix = destination_prefix.removesuffix("_")
+    if source_bucket != destination_bucket:
+        raise ValueError("GCS prefix move requires source and destination in the same bucket")
+    if source_prefix == destination_prefix:
+        raise ValueError("GCS prefix move source and destination must differ")
+    moved = 0
+    storage_client = _client_or_default(client)
+    bucket = storage_client.bucket(source_bucket)
+    try:
+        blobs = list(storage_client.list_blobs(source_bucket, prefix=source_prefix))
+    except Exception as exc:
+        raise RuntimeError(f"failed to list GCS prefix {source_uri!r}: {exc}") from exc
+    for blob in blobs:
+        name = getattr(blob, "name", "<unknown>")
+        try:
+            suffix = name.removeprefix(source_prefix)
+            bucket.copy_blob(blob, bucket, f"{destination_prefix}{suffix}")
+            blob.delete()
+            moved += 1
+        except Exception as exc:
+            raise RuntimeError(
+                f"failed to move {name!r} from {source_uri!r} to {destination_uri!r}: {exc}"
+            ) from exc
+    return moved
+
+
 def read_json(uri: str, *, client: Any | None = None) -> dict[str, Any]:
     """Read a JSON object from GCS."""
     bucket, blob_name = parse_gcs_uri(uri)
@@ -239,6 +274,7 @@ __all__ = [
     "join_uri",
     "list_blob_names",
     "list_prefixes",
+    "move_prefix",
     "parse_gcs_uri",
     "read_bytes",
     "read_csv",

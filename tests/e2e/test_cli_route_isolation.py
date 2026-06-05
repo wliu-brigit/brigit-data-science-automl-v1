@@ -21,7 +21,7 @@ pytestmark = [pytest.mark.e2e, pytest.mark.qa]
 def test_cli_route_isolates_dry_run_and_namespace_universes(capsys):
     repo_root = Path(__file__).resolve().parents[2]
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-    namespace = f"qa-cli-route-isolation-{stamp}"
+    namespace = f"qa/cli-route-isolation-{stamp}"
     experiment_id = f"cli-route-isolation-{stamp}"
     project = "example_homecredit"
     real_route = f"{project}/{experiment_id}"

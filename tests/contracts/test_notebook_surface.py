@@ -15,6 +15,16 @@ pytestmark = pytest.mark.contract
 REPO_ROOT = Path(__file__).resolve().parents[2]
 NOTEBOOK_DIR = REPO_ROOT / "projects" / "example_homecredit" / "notebooks"
 NOTEBOOKS = sorted(NOTEBOOK_DIR.glob("*.ipynb"))
+EXPECTED_NOTEBOOK_NAMES = [
+    "0_understand_project_sessions_and_routes.ipynb",
+    "1_define_and_materialize_dataset.ipynb",
+    "2_profile_logged_dataset.ipynb",
+    "3.1_run_agent_automl.ipynb",
+    "3.2_author_new_trial.ipynb",
+    "3.3_fork_existing_trial.ipynb",
+    "4_reevaluate_existing_model.ipynb",
+    "5_inspect_logged_runs_and_artifacts.ipynb",
+]
 EVAL_RESULT_ATTRIBUTES = {field.name for field in fields(EvalResult)} | {"to_dict"}
 
 RETIRED_NOTEBOOK_PATTERNS = {
@@ -121,6 +131,10 @@ def test_homecredit_notebook_first_code_cells_import_clean():
         exec(compile(first, str(path), "exec"), namespace)
 
 
+def test_homecredit_notebooks_follow_workflow_order():
+    assert [path.name for path in NOTEBOOKS] == EXPECTED_NOTEBOOK_NAMES
+
+
 def test_homecredit_notebooks_use_final_facade_names():
     offenders = []
     for path in NOTEBOOKS:
@@ -159,7 +173,7 @@ def test_homecredit_notebooks_pass_required_feature_registry_fields():
 
 
 def test_prediction_inspection_follows_recorded_eval_artifact_pointers():
-    notebook = (NOTEBOOK_DIR / "6_inspect_logged_runs_and_artifacts.ipynb").read_text(
+    notebook = (NOTEBOOK_DIR / "5_inspect_logged_runs_and_artifacts.ipynb").read_text(
         encoding="utf-8"
     )
 

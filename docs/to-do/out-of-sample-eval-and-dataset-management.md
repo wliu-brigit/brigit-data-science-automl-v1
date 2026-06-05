@@ -38,7 +38,7 @@ and make out-of-sample evaluation native instead of assembled.
   rather than a home of their own.
 - **Re-evaluation** — existing flow for scoring an existing model on a
   different eval dataset (see `automl/eval/` and notebook
-  `5_reevaluate_existing_model`).
+  `4_reevaluate_existing_model`).
 
 ## Questions for the deep dive
 

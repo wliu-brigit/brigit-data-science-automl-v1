@@ -12,6 +12,7 @@ from typing import Mapping
 from automl.mlflow import client
 from automl.mlflow.trial.logging import log_json
 from automl.trial.metadata import TimingReport
+from automl.trial.timing_summary import build_runner_timing_summary
 
 
 def write_local_file(run_id: str, artifact_path: str, local_path: Path) -> None:
@@ -19,7 +20,7 @@ def write_local_file(run_id: str, artifact_path: str, local_path: Path) -> None:
 
 
 def write_timing(run_id: str, timing: Mapping[str, object]) -> None:
-    report = TimingReport.from_dict(timing).to_dict()
+    report = TimingReport.from_dict(build_runner_timing_summary(timing)).to_dict()
     log_json(run_id, "timing/summary", report)
 
 

@@ -24,7 +24,7 @@ pytestmark = [pytest.mark.e2e, pytest.mark.qa]
 def test_experiment_trial_cleanup_gate():
     repo_root = Path(__file__).resolve().parents[2]
     stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-    namespace = f"qa-experiment-trial-cleanup-{stamp}"
+    namespace = f"qa/experiment-trial-cleanup-{stamp}"
     experiment_id = f"experiment-trial-cleanup-{stamp}"
     active = use_project(
         "example_homecredit",

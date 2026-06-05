@@ -19,6 +19,8 @@ from automl.mlflow.experiment import logging as experiment_logging
 from automl.mlflow.experiment.lifecycle import ensure_overview
 from automl.utils.io import gcs
 
+ACTIVE_POINTER_ARTIFACT = "datasets/active_pointer"
+
 
 def write_dataset_record(
     payload: dict,
@@ -67,9 +69,7 @@ def list_dataset_records(experiment_id: str | None = None) -> list[dict]:
     try:
         entries = client.raw().list_artifacts(run_id, "datasets")
     except Exception as exc:
-        raise StorageError(
-            f"Failed to list dataset records for experiment run {run_id!r}"
-        ) from exc
+        raise StorageError(f"Failed to list dataset records for experiment run {run_id!r}") from exc
     records: list[dict] = []
     for entry in entries:
         if not entry.is_dir:
@@ -79,6 +79,36 @@ def list_dataset_records(experiment_id: str | None = None) -> list[dict]:
         if record is not None:
             records.append(record)
     return sorted(records, key=lambda record: str(record.get("id", "")))
+
+
+def write_active_dataset_pointer(
+    dataset_id: str,
+    experiment_id: str | None = None,
+) -> str:
+    """Log datasets/active_pointer.json on the experiment overview run."""
+    payload = {"schema_version": 1, "active_dataset_id": str(dataset_id)}
+    experiment_logging.log_json(ACTIVE_POINTER_ARTIFACT, payload, experiment_id=experiment_id)
+    run_id = _ensure_overview_run_id(experiment_id)
+    return f"runs:/{run_id}/{ACTIVE_POINTER_ARTIFACT}.json"
+
+
+def read_active_dataset_pointer(experiment_id: str | None = None) -> dict | None:
+    """Read datasets/active_pointer.json; None when the pointer has not been written."""
+    run_id = _overview_run_id_or_none(experiment_id)
+    if run_id is None:
+        return None
+    try:
+        local_path = client.download_artifact(run_id, f"{ACTIVE_POINTER_ARTIFACT}.json")
+    except Exception as exc:
+        raise StorageError("Failed to read active dataset pointer") from exc
+    if local_path is None:
+        return None
+    try:
+        with open(local_path, encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except Exception as exc:
+        raise StorageError("Failed to read active dataset pointer") from exc
+    return payload if isinstance(payload, dict) else None
 
 
 def write_dataset_frame(uri: str, df) -> None:
@@ -234,12 +264,14 @@ def _clean_artifact_file_name(value: str) -> str:
 __all__ = [
     "list_dataset_records",
     "log_source_trace",
+    "read_active_dataset_pointer",
     "read_dataset_frame",
     "read_dataset_record",
     "read_registry",
     "read_profile",
     "write_dataset_frame",
     "write_dataset_record",
+    "write_active_dataset_pointer",
     "write_registry",
     "write_profile",
 ]

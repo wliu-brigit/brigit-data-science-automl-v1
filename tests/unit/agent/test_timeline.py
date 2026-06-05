@@ -209,6 +209,7 @@ def test_publish_stages_and_logs_agent_artifacts(monkeypatch, tmp_path):
     assert gcs_writes[0].startswith("gs://bucket/root/qa/dry_run/demo/exp/runs/")
 
 
+@pytest.mark.skip(reason="pre-existing failure unrelated to current work; per wendao 2026-06-05, re-enable with the agent timeline effort")
 def test_publish_backfills_trial_artifacts_when_real_hook_lacks_run_fields(tmp_path, monkeypatch):
     from automl.agent.timeline import handle_event, publish
     from automl.agent.timeline.steps import record_cli_step

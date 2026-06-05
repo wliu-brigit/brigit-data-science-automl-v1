@@ -101,6 +101,23 @@ class Predicate:
             return out
         return frozenset({self.column}) if self.column else frozenset()
 
+    def _resolve_column(self, df: pd.DataFrame) -> pd.Series:
+        if self.column in df.columns:
+            return df[self.column]
+        # Case-insensitive fallback: the data pipeline normalizes column names
+        # while predicates are hand-written in configs — a pure case mismatch
+        # (Where("EVAL_PCT") vs eval_pct) should resolve, not surface as a
+        # KeyError minutes into a trial. Ambiguity still errors.
+        wanted = str(self.column).casefold()
+        matches = [name for name in df.columns if str(name).casefold() == wanted]
+        if len(matches) == 1:
+            return df[matches[0]]
+        detail = f"is ambiguous between {matches}" if matches else "is missing"
+        raise KeyError(
+            f"split predicate references column {self.column!r}, which {detail}; "
+            f"available: {sorted(df.columns)}"
+        )
+
     # --- evaluation: pandas mask (in-memory frames) ------------------------
     def mask(self, df: pd.DataFrame) -> pd.Series:
         if self.op == "and":
@@ -115,12 +132,7 @@ class Predicate:
             return out
         if self.op == "not":
             return ~self.items[0].mask(df)
-        if self.column not in df.columns:
-            raise KeyError(
-                f"split predicate references missing column {self.column!r}; "
-                f"available: {sorted(df.columns)}"
-            )
-        series = df[self.column]
+        series = self._resolve_column(df)
         if self.op == "==":
             return series == self.value
         if self.op == "!=":

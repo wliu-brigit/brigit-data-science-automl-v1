@@ -57,6 +57,22 @@ def test_missing_column_fails_loudly_at_evaluation():
         (Where("no_such_column") < 1).mask(_frame())
 
 
+def test_case_mismatch_resolves_to_the_normalized_column():
+    # The pipeline lowercases column names while predicates are hand-written
+    # in configs; a pure case mismatch must resolve instead of failing
+    # minutes into a trial.
+    df = _frame().rename(columns={"SPLIT_PCT": "split_pct"})
+    assert list(df.index[(Where("SPLIT_PCT") < 80).mask(df)]) == [0, 1, 3]
+    assert list(df.index[(Where("split_pct") >= 80).mask(_frame())]) == [2]
+
+
+def test_ambiguous_case_variants_still_error():
+    df = _frame()
+    df["split_pct"] = df["SPLIT_PCT"]
+    with pytest.raises(KeyError, match="ambiguous"):
+        (Where("Split_Pct") < 80).mask(df)
+
+
 def test_columns_lists_every_referenced_column():
     predicate = (Where("a") < 1) & ((Where("b") == 2) | ~Where("c").is_null())
     assert predicate.columns() == frozenset({"a", "b", "c"})

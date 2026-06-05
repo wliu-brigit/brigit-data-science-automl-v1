@@ -5,6 +5,7 @@ from .config import ProjectConfig
 from .dependencies import allowed_dependencies, parse_dependency_name
 from .metadata import find_repo_root, infer_project_name, list_projects, project_metadata
 from .overview import ProjectOverview
+from .predicates import Predicate, Where
 from .run_config import ModelRoute, ModelsConfig, RunConfig, Splits
 from .scaffold import create_project
 from .session import Session, active_session, clear_session, session, update_session, use_project
@@ -15,6 +16,7 @@ __all__ = [
     "ModelRoute",
     "ModelsConfig",
     "Multiclass",
+    "Predicate",
     "ProjectConfig",
     "ProjectOverview",
     "Regression",
@@ -22,6 +24,7 @@ __all__ = [
     "Session",
     "Splits",
     "Task",
+    "Where",
     "allowed_dependencies",
     "active_session",
     "clear_session",

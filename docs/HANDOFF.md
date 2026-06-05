@@ -8,7 +8,7 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
 
 ## Where things stand
 
-- **Active effort — steps 1–2 of 4 landed:**
+- **Active effort — steps 1–3 of 4 landed:**
   [`execution/snowflake-source-and-split-keys/`](execution/snowflake-source-and-split-keys/)
   — the full design for the real `SnowflakeSource` plus the data-layer
   contract work it surfaced. **`design.md` is the source of truth**;
@@ -27,16 +27,34 @@ when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it t
   only on `--refresh-data` (`--refresh-source` implies it); content hash now
   row-order-insensitive; eval records renamed for their nouns
   (`eval_dataset.json` / `augmentation.json`, `record_gcs_uri`); eval key
-  normalization unified onto the data normalizer. Steps 3–4 (Snowflake,
-  flexible splits) remain — one step per session, in order.
+  normalization unified onto the data normalizer. **Step 3 (Snowflake)
+  landed 2026-06-04**: the `utils/io/snowflake.py` seam
+  (connector-python; Snowpark dropped from the lockfile); real
+  `SnowflakeSource` — `base_table_sql` is a SELECT, the harness owns the
+  CREATE and injects `SPLIT_PCT` from `split_group_key` (collision error on
+  a body that emits it), bootstrap/rebuild + empirical split-invariant check
+  + deterministic bucket-sample dry-run inside `load()`, executed-SQL trace;
+  the pipeline adopts source-provided `SPLIT_PCT` (provenance recorded:
+  `split: sql` vs `python(...)`); `project.connections.snowflake` is now a
+  live probe; scaffold + fraud + payment_routing on the new contract
+  (`base_data_sql`/`base_data.sql` are gone); key construction-edge
+  validation hoisted to the `DataSource` base. The Snowflake e2e test is
+  **written but its live run is deferred to the tail-end pass**
+  (`AUTOML_SNOWFLAKE_E2E_SOURCE_TABLE`/`_TARGET`/`_UNIQUE_KEY` designate the
+  dev table at run time). Step 4 (flexible splits) remains — one step per
+  session, in order.
 - **Known-stale, deferred to the tail-end notebook pass:**
   `example_homecredit` notebooks still reference `hash_key`/`SPLITID` in
   code cells and outputs (see plans README "Tail-end activities").
 
 ## Next actions
 
-1. **Execute step 3** (Snowflake) following the protocol in
+1. **Execute step 4** (flexible splits) following the protocol in
    [`plans/README.md`](execution/snowflake-source-and-split-keys/plans/README.md).
+   After it lands, the tail-end pass unlocks: live Snowflake e2e, notebook
+   verification, and the first real `fraud_anomaly_detection` materialize
+   against the warehouse (the fraud/payment_routing configs are already on
+   the new contract — only their `TBD_` placeholders remain).
 2. For reference, the 2026-06-04 wipes (state deletions are always a human
    call, never the code's — design §14 ground rule):
    - **`dry_run/example_homecredit` route** (by wendao, before step 2): both

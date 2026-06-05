@@ -8,9 +8,11 @@ from automl.data.sources import SnowflakeSource
 
 DATA = DataSpec(
     source=SnowflakeSource(
-        base_table="MY_DB.MY_SCHEMA.TRAINING_TABLE",
-        base_data_sql="data/queries/base_data.sql",
+        base_table="TRAINING_TABLE",  # name only; lands at {database}.{schema}.{base_table}
+        base_table_sql="data/queries/base_table.sql",
         training_data_sql="data/queries/training_data.sql",
+        unique_key="TRANSACTION_ID",
+        split_group_key="USER_ID",  # optional; defaults to unique_key
     ),
     exclude_cols=[],
     metadata_cols=["USER_ID"],
@@ -65,7 +67,7 @@ on where the training data lives, then pass it into `DataSpec`.
 
 | Source class | External data | Required constructor args |
 |---|---|---|
-| `SnowflakeSource` | Snowflake | `base_table`, `base_data_sql`, `training_data_sql`, `unique_key` |
+| `SnowflakeSource` | Snowflake | `base_table`, `base_table_sql`, `training_data_sql`, `unique_key` |
 | `LocalCSVSource` | Local CSV file | `csv_path`, `unique_key` |
 | `GCSParquetSource` | Parquet file in GCS | `gcs_uri`, `unique_key` |
 
@@ -86,9 +88,12 @@ MLflow and GCS are platform requirements for every source. Snowflake
 credentials are needed only when the active project uses `SnowflakeSource`.
 
 All sources use the same dry-run interface. The default cap is
-`DataSpec.dry_run_rows == 10_001`. Snowflake applies the cap in SQL,
-Local CSV applies it while reading the CSV, and GCS parquet uses a
-row-limited PyArrow read.
+`DataSpec.dry_run_rows == 10_001`. File sources apply it exactly (CSV while
+reading, GCS parquet as a row-limited read). Snowflake instead pulls a
+**deterministic bucket sample** — `WHERE SPLIT_PCT < k`, with `k` sized so
+the sample approximates `dry_run_rows` — so the same dry-run sees the same
+rows every run and dry-run identity is stable (`dry_run_rows` is an
+approximate target there, not an exact cap).
 
 ## Common requirements
 
@@ -98,30 +103,56 @@ Whatever source you pick, the loaded dataframe must include:
   standardization.
 - Any columns listed as `exclude_cols` or `metadata_cols`.
 
-The pipeline adds `SPLIT_PCT` as a uniformly distributed integer 0-99 column
-during materialization, hashed from the source's `split_group_key` (which
-defaults to `unique_key`). A source column already named `SPLIT_PCT` is a
-loud error — the pipeline owns the column and never silently recomputes over
-an ambiguous one.
+Every materialized dataset carries `SPLIT_PCT`, a deterministic integer 0-99
+bucket column hashed from the source's `split_group_key` (which defaults to
+`unique_key`). Who computes it differs by source — file sources have the
+pipeline assign it in Python; Snowflake delivers it frozen from the base
+table (injected at DDL time) — and the record notes the provenance
+(`split: python(...)` vs `split: sql`). Downstream validation is shared:
+`SPLIT_PCT` present, integer, 0-99, no missing values. For file sources, a
+source column already named `SPLIT_PCT` is a loud collision error — the
+pipeline owns the column and never silently recomputes over an ambiguous one
+(symmetric with the Snowflake injection collision error below).
+
+**Recorded caveat:** Snowflake `HASH()` and the pandas hash assign
+*different* buckets for the same key values. Irrelevant within a project; a
+project migrating CSV → Snowflake reshuffles split membership, so old and
+new datasets are not split-comparable. Inherent to two engines; documented,
+not designed away.
 
 ## Snowflake
 
-Provide two SQL files in `projects/<project_name>/data/queries/`:
+Provide two SQL files in `projects/<project_name>/data/queries/`. Both are
+**SELECTs** — the harness owns all DDL:
 
-- `base_data.sql` — DDL that creates or refreshes the upstream table. Run only
-  when `refresh_source=True` is passed to `automl.data.materialize` (or the
-  base table doesn't exist yet).
-- `training_data.sql` — query that pulls training rows. Must reference
-  `{database}.{schema}.{base_table}`.
+- `base_table.sql` — the single SELECT (or WITH) defining the base data:
+  joins, CTEs, filters, feature SQL. The harness wraps it in
+  `CREATE OR REPLACE TABLE {database}.{schema}.{base_table}` and **injects
+  `SPLIT_PCT` from `split_group_key`** (`MOD(ABS(HASH(<key>)), 100)`).
+  Do not emit `SPLIT_PCT` yourself — a body that already does is a loud
+  collision error (one declaration only, in `config.py`). The generated DDL
+  runs only when the base table is missing (bootstrap) or on
+  `--refresh-source`.
+- `training_data.sql` — the SELECT that pulls training rows from the base
+  table. `SPLIT_PCT` flows through; dropping it from the projection is caught
+  by validation with a "carry SPLIT_PCT through from the base table" message.
 
-Both SQL files use `{database}.{schema}.{base_table}` substitutions.
+Substitutions in both files: `{database}` / `{schema}` (from the
+`SNOWFLAKE_DATABASE` / `SNOWFLAKE_SCHEMA` environment) and `{base_table}`
+(from the recipe). Identifiers are substituted verbatim — no case-mangling.
+
+On every real pull the source first checks the **split invariant**
+empirically against the table (`SPLIT_PCT == MOD(ABS(HASH(key)), 100)` for
+all rows); a mismatch means the stored buckets are stale (the key changed,
+or the table was built out-of-band) and errors naming `--refresh-source` —
+the harness never auto-rebuilds.
 
 Example skeleton for `training_data.sql`:
 
 ```sql
 SELECT
     *
-FROM {database}.{schema}.{base_table};
+FROM {database}.{schema}.{base_table}
 ```
 
 ## Local CSV
@@ -193,11 +224,15 @@ sequence before publishing an immutable dataset:
 
 - Load raw rows through `DATA.source.load(...)`.
 - Standardize source column names.
+- Adopt the source-provided `SPLIT_PCT` under its canonical name (sources
+  that own bucket assignment, i.e. Snowflake), or check for a colliding
+  source column (file sources).
 - Normalize target, key (`unique_key`/`split_group_key`), and metadata
   declarations against the standardized columns.
-- Apply quality filters while preserving target, key, and metadata
-  columns.
-- Add deterministic `SPLIT_PCT` buckets hashed from `split_group_key`.
+- Apply quality filters while preserving target, key, metadata, and
+  `SPLIT_PCT` columns.
+- Add deterministic `SPLIT_PCT` buckets hashed from `split_group_key`
+  (file sources only — Snowflake's arrived frozen from the base table).
 - Validate the ingestion edge: `unique_key` present and duplicate-free,
   `SPLIT_PCT` present, integer, 0-99.
 - Build the `FeatureRegistry` from the filtered dataframe and declared column

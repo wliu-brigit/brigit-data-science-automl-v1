@@ -36,9 +36,10 @@ exit on errors):
     `gs://<bucket>/<prefix>/.validate/`
   - `project.connections.mlflow` — one cheap tracking-server query (auth from
     `MLFLOW_TRACKING_USERNAME`/`PASSWORD` in the environment)
-  - `project.connections.snowflake` — currently a **warning** that live
-    Snowflake checking is pending (`SnowflakeSource` loading is not implemented
-    yet); emitted only for Snowflake-backed projects
+  - `project.connections.snowflake` — live probe, emitted only for
+    Snowflake-backed projects: missing `SNOWFLAKE_*` env vars → error listing
+    exactly which; else `SELECT 1` (driver errors verbatim) and both SQL files
+    must exist on disk
 
 After running, render a short per-service report: one line per area
 (config, env, placeholders, GCS, MLflow, Snowflake) with pass/fail and the

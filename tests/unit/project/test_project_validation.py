@@ -151,7 +151,8 @@ def test_validate_project_live_passes_when_probes_succeed(monkeypatch, tmp_path)
     assert report.issues == []
 
 
-def test_validate_project_live_marks_snowflake_pending(monkeypatch, tmp_path):
+def _snowflake_session(monkeypatch, tmp_path, *, with_sql_files: bool = True):
+    """A live-validation session over a Snowflake-backed project, GCS/MLflow mocked."""
     from automl.data import SnowflakeSource
     from automl.mlflow import client as mlflow_client
     from automl.utils.io import gcs
@@ -162,6 +163,11 @@ def test_validate_project_live_marks_snowflake_pending(monkeypatch, tmp_path):
     monkeypatch.setattr(mlflow_client, "check_connection", lambda tracking_uri: None)
 
     session = _session(tmp_path)
+    if with_sql_files:
+        queries = session.config.project_dir / "data" / "queries"
+        queries.mkdir(parents=True, exist_ok=True)
+        (queries / "base_table.sql").write_text("SELECT 1\n", encoding="utf-8")
+        (queries / "training_data.sql").write_text("SELECT 1\n", encoding="utf-8")
     snowflake_spec = DataSpec(
         source=SnowflakeSource(
             base_table="demo.table",
@@ -171,13 +177,72 @@ def test_validate_project_live_marks_snowflake_pending(monkeypatch, tmp_path):
         )
     )
     object.__setattr__(session.config, "data_spec", snowflake_spec)
+    return session
+
+
+def test_validate_project_live_snowflake_missing_env_errors_listing_names(
+    monkeypatch, tmp_path
+):
+    for name in ("SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("SNOWFLAKE_USER", "u")
+    session = _snowflake_session(monkeypatch, tmp_path)
 
     report = validate_project(session=session, live=True)
 
     issues = {issue.check: issue for issue in report.issues}
-    assert report.passed is True  # warning, not error
-    assert issues["project.connections.snowflake"].level == "warning"
-    assert "pending" in issues["project.connections.snowflake"].message
+    snowflake = issues["project.connections.snowflake"]
+    assert report.passed is False
+    assert snowflake.level == "error"
+    assert "SNOWFLAKE_ACCOUNT" in snowflake.message
+    assert "SNOWFLAKE_PASSWORD" in snowflake.message
+    assert "SNOWFLAKE_USER" not in snowflake.message
+
+
+def test_validate_project_live_snowflake_probe_ok_yields_no_issue(monkeypatch, tmp_path):
+    for name in ("SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"):
+        monkeypatch.setenv(name, "x")
+    monkeypatch.setattr("automl.utils.io.snowflake.check_connection", lambda: None)
+    session = _snowflake_session(monkeypatch, tmp_path)
+
+    report = validate_project(session=session, live=True)
+
+    assert "project.connections.snowflake" not in {issue.check for issue in report.issues}
+
+
+def test_validate_project_live_snowflake_connection_failure_surfaces_driver_error(
+    monkeypatch, tmp_path
+):
+    for name in ("SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"):
+        monkeypatch.setenv(name, "x")
+
+    def boom():
+        raise RuntimeError("250001: account is disabled")
+
+    monkeypatch.setattr("automl.utils.io.snowflake.check_connection", boom)
+    session = _snowflake_session(monkeypatch, tmp_path)
+
+    report = validate_project(session=session, live=True)
+
+    issues = {issue.check: issue for issue in report.issues}
+    snowflake = issues["project.connections.snowflake"]
+    assert snowflake.level == "error"
+    assert "250001: account is disabled" in snowflake.message  # driver error verbatim
+
+
+def test_validate_project_live_snowflake_missing_sql_file_errors(monkeypatch, tmp_path):
+    for name in ("SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"):
+        monkeypatch.setenv(name, "x")
+    monkeypatch.setattr("automl.utils.io.snowflake.check_connection", lambda: None)
+    session = _snowflake_session(monkeypatch, tmp_path, with_sql_files=False)
+
+    report = validate_project(session=session, live=True)
+
+    issues = [issue for issue in report.issues if issue.check == "project.connections.snowflake"]
+    assert {issue.level for issue in issues} == {"error"}
+    messages = "\n".join(issue.message for issue in issues)
+    assert "base_table_sql" in messages
+    assert "training_data_sql" in messages
 
 
 def test_validate_project_wraps_crashed_domain_checks(monkeypatch, tmp_path):

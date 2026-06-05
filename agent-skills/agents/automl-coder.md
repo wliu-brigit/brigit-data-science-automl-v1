@@ -37,7 +37,7 @@ Read only what is needed from:
 
 - `<project_root>/projects/<project_name>/PROJECT_INSTRUCTIONS.md`
 - `<project_root>/projects/<project_name>/config.py`
-- `<project_root>/projects/<project_name>/data/queries/base_data.sql` when present
+- `<project_root>/projects/<project_name>/data/queries/base_table.sql` when present
 - `<project_root>/projects/<project_name>/data/queries/training_data.sql` when present
 - `<project_root>/automl/model/base.py`
 - `<project_root>/automl/data/features.py`

@@ -115,7 +115,7 @@ projects/<project_name>/ has two files you'll edit:
                            column roles), EVAL (EvalSpec with primary metric),
                            and RUN_CONFIG (experiment_id, models,
                            per_trial_seconds).
-                           SQL-backed projects also edit data/queries/base_data.sql
+                           SQL-backed projects also edit data/queries/base_table.sql
                            and data/queries/training_data.sql.
                            References:
                            agent-skills/references/setup/run-config.md  (RUN_CONFIG fields)
@@ -152,8 +152,9 @@ That checks (check IDs in parentheses):
   (`project.connections.gcs`)
 - The MLflow tracking server answers an authenticated query
   (`project.connections.mlflow`)
-- Snowflake-backed projects get a pending-implementation warning; live
-  Snowflake connectivity is not checked yet (`project.connections.snowflake`)
+- Snowflake-backed projects get a live probe: missing `SNOWFLAKE_*` env vars
+  are an error listing exactly which; otherwise `SELECT 1` runs (driver errors
+  verbatim) and both SQL files must exist (`project.connections.snowflake`)
 
 End with a short per-service report (config / env / placeholders / GCS /
 MLflow / Snowflake — pass, fail, or skipped), quoting failure messages

@@ -117,14 +117,14 @@ def test_log_source_trace_uploads_named_files_to_experiment_overview(bound_file_
     trace_file = tmp_path / "executed.sql"
     trace_file.write_text("select 1 as value", encoding="utf-8")
 
-    uris = artifacts.log_source_trace("v1_trace", {"base_data.executed.sql": trace_file})
+    uris = artifacts.log_source_trace("v1_trace", {"base_table.executed.sql": trace_file})
 
-    assert uris["base_data.executed.sql"].endswith(
-        "/datasets/v1_trace/source_trace/base_data.executed.sql"
+    assert uris["base_table.executed.sql"].endswith(
+        "/datasets/v1_trace/source_trace/base_table.executed.sql"
     )
     overview_run = _experiment_overview_run()
     local_path = client.raw().download_artifacts(
         overview_run.info.run_id,
-        "datasets/v1_trace/source_trace/base_data.executed.sql",
+        "datasets/v1_trace/source_trace/base_table.executed.sql",
     )
     assert open(local_path, encoding="utf-8").read() == "select 1 as value"

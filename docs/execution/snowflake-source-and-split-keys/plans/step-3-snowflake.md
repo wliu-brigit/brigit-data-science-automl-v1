@@ -63,7 +63,7 @@ area is being rewritten.
 - Create: `tests/unit/utils/test_snowflake_io.py`
 - Create: `automl/utils/io/snowflake.py`
 
-- [ ] **Step 1: Write the failing tests** (mock the connector by injecting a
+- [x] **Step 1: Write the failing tests** (mock the connector by injecting a
 fake `snowflake.connector` module into `sys.modules` — the seam imports it
 lazily inside functions, mirroring `gcs.py`'s lazy client import):
 
@@ -160,10 +160,10 @@ def test_missing_env_raises_before_any_connection(monkeypatch):
         sf.execute("SELECT 1")
 ```
 
-- [ ] **Step 2:** `uv run pytest tests/unit/utils/test_snowflake_io.py -v` —
+- [x] **Step 2:** `uv run pytest tests/unit/utils/test_snowflake_io.py -v` —
 Expected: FAIL (module missing).
 
-- [ ] **Step 3: Implement `automl/utils/io/snowflake.py`**
+- [x] **Step 3: Implement `automl/utils/io/snowflake.py`**
 
 ```python
 """Snowflake connection seam (sibling of gcs.py).
@@ -271,9 +271,9 @@ __all__ = [
 ]
 ```
 
-- [ ] **Step 4:** `uv run pytest tests/unit/utils/test_snowflake_io.py -v` — PASS.
+- [x] **Step 4:** `uv run pytest tests/unit/utils/test_snowflake_io.py -v` — PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add automl/utils/io/snowflake.py tests/unit/utils/test_snowflake_io.py
@@ -293,7 +293,7 @@ git commit -m "Add the Snowflake IO seam on snowflake-connector-python (design s
   `tests/unit/data/test_sources_breadth.py` in this task)
 - Modify: `automl/data/sources/snowflake.py`
 
-- [ ] **Step 1: Write the failing tests** (pure text in/out — no seam needed
+- [x] **Step 1: Write the failing tests** (pure text in/out — no seam needed
 for this task):
 
 ```python
@@ -394,10 +394,10 @@ def test_artifact_files_return_rendered_sql(project):
     assert "ML_DB.FRAUD" in Path(files["training_data.executed.sql"]).read_text(encoding="utf-8")
 ```
 
-- [ ] **Step 2:** Run — FAIL (`generated_ddl` missing; `base_table_sql`
+- [x] **Step 2:** Run — FAIL (`generated_ddl` missing; `base_table_sql`
 field missing).
 
-- [ ] **Step 3: Implement the assembly half of `automl/data/sources/snowflake.py`**
+- [x] **Step 3: Implement the assembly half of `automl/data/sources/snowflake.py`**
 
 ```python
 """Snowflake data source: harness-owned DDL over a project-owned SELECT."""
@@ -553,7 +553,7 @@ places change (review found the third): the base
 `def artifact_files(self, pipeline=None, *, project_dir=None)` or it
 TypeErrors on the new kwarg.
 
-- [ ] **Step 4:** `uv run pytest tests/unit/data/test_snowflake_source.py -v` — PASS.
+- [x] **Step 4:** `uv run pytest tests/unit/data/test_snowflake_source.py -v` — PASS.
 
 ### Task 3: `load()` — bootstrap, rebuild, invariant, pull, dry-run (TDD)
 
@@ -561,7 +561,7 @@ TypeErrors on the new kwarg.
 - Modify: `tests/unit/data/test_snowflake_source.py`
 - Modify: `automl/data/sources/snowflake.py`
 
-- [ ] **Step 1: Write the failing tests** (monkeypatch the seam functions on
+- [x] **Step 1: Write the failing tests** (monkeypatch the seam functions on
 `automl.data.sources.snowflake.sf` — the source's only outward calls):
 
 ```python
@@ -643,9 +643,9 @@ def test_dry_run_bucket_count_is_clamped_to_at_least_one(project, fake_seam):
     assert "WHERE SPLIT_PCT < 1" in fake_seam["fetched"][-1]
 ```
 
-- [ ] **Step 2:** Run — FAIL (`load` still the stub).
+- [x] **Step 2:** Run — FAIL (`load` still the stub).
 
-- [ ] **Step 3: Implement `load()` and its private steps** (replacing the
+- [x] **Step 3: Implement `load()` and its private steps** (replacing the
 stub; design §4 steps 2a–2d live *inside* this one method):
 
 ```python
@@ -708,7 +708,7 @@ stub; design §4 steps 2a–2d live *inside* this one method):
         )
 ```
 
-- [ ] **Step 4:** `uv run pytest tests/unit/data/test_snowflake_source.py -v` — PASS.
+- [x] **Step 4:** `uv run pytest tests/unit/data/test_snowflake_source.py -v` — PASS.
 
 ### Task 4: pipeline adopts a source-provided SPLIT_PCT
 
@@ -717,7 +717,7 @@ stub; design §4 steps 2a–2d live *inside* this one method):
 - Modify: `automl/data/pipeline.py`
 - Modify: `tests/unit/data/test_sources_pipeline_contract.py`
 
-- [ ] **Step 1:** `DataSource` gains the class attribute (default for file
+- [x] **Step 1:** `DataSource` gains the class attribute (default for file
 sources):
 
 ```python
@@ -726,7 +726,7 @@ class DataSource(ABC):
     provides_split_pct = False   # True when SPLIT_PCT arrives from the source (Snowflake)
 ```
 
-- [ ] **Step 2:** In `DataPipeline.run()`, replace the unconditional
+- [x] **Step 2:** In `DataPipeline.run()`, replace the unconditional
 collision-check + assignment block with the branch (this also fixes the
 old lowercased-`splitid`-feature-column leakage bug — design §8):
 
@@ -777,7 +777,7 @@ provenance — in `_dataset_for`, add to `source_identity`:
         )
 ```
 
-- [ ] **Step 3: Add a pipeline-level test** in
+- [x] **Step 3: Add a pipeline-level test** in
 `test_sources_pipeline_contract.py` — a fake `DataSource` subclass with
 `provides_split_pct = True` whose `load()` returns a frame containing
 `SPLIT_PCT`; assert `build_dataset` keeps the provided values verbatim
@@ -785,9 +785,9 @@ provenance — in `_dataset_for`, add to `source_identity`:
 marks it non-feature, and `source_identity["split"] == "sql"`. Plus the
 missing-column case asserting the "carry it through" error.
 
-- [ ] **Step 4:** `uv run pytest tests/unit/data tests/integration/data_pipeline -v` — PASS.
+- [x] **Step 4:** `uv run pytest tests/unit/data tests/integration/data_pipeline -v` — PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add -A automl tests
@@ -808,7 +808,7 @@ pipeline adopts source-provided SPLIT_PCT instead of recomputing
 - Modify: `automl/project/checks.py`
 - Modify: `tests/unit/project/test_project_validation.py`
 
-- [ ] **Step 1: Replace `snowflake_connection()`** (today: the pending
+- [x] **Step 1: Replace `snowflake_connection()`** (today: the pending
 warning at `checks.py:166-178`) with the live probe. **Signature
 (review-verified):** check functions take `(*, config)` and are invoked via
 `run_check("project.connections.snowflake", snowflake_connection,
@@ -857,14 +857,14 @@ def snowflake_connection(*, config: Any) -> Iterable[Issue]:
 (Follow `placeholder_values` at `checks.py:101-116` for the
 config-attribute resolution pattern.)
 
-- [ ] **Step 2: Replace the pinned test** —
+- [x] **Step 2: Replace the pinned test** —
 `test_validate_project_live_marks_snowflake_pending` (asserts `"pending"`,
 warning level) becomes three tests: missing env → error listing the names;
 env present + connection mocked OK + SQL files present → no snowflake issue;
 connection raising → error containing the driver message verbatim. Use
 `monkeypatch.setattr("automl.utils.io.snowflake.check_connection", ...)`.
 
-- [ ] **Step 3:** `uv run pytest tests/unit/project -v` — PASS.
+- [x] **Step 3:** `uv run pytest tests/unit/project -v` — PASS.
 
 ### Task 6: pending-language docs updated with the shape
 
@@ -880,7 +880,7 @@ places than the pending-language passages):**
 - Modify: `agent-skills/references/loop/leakage.md` (line ~11 `base_data`)
 - Modify: `agent-skills/agents/automl-coder.md` (line ~40 `base_data`)
 
-- [ ] **Step 1:** Replace the "pending source implementation / not checked
+- [x] **Step 1:** Replace the "pending source implementation / not checked
 yet" passages: `project.connections.snowflake` is now a **live probe**
 (missing env vars → error listing which; else `SELECT 1`, driver errors
 verbatim; SQL files must exist) emitted only for Snowflake-backed projects.
@@ -891,7 +891,7 @@ and must carry `SPLIT_PCT` through, substitutions
 `{database}`/`{schema}`/`{base_table}`, dry-run = deterministic bucket
 sample.
 
-- [ ] **Step 2:** Verify no stale phrase or filename survives (two gates —
+- [x] **Step 2:** Verify no stale phrase or filename survives (two gates —
 the second catches contract drift the first can't):
 
 ```bash
@@ -907,7 +907,7 @@ Expected: no output from either.
 - Modify: `automl/project/scaffold.py`
 - Modify: `tests/unit/project/test_metadata_and_scaffold.py`
 
-- [ ] **Step 1:** In `_CONFIG_TEMPLATE`, the source block becomes the §9
+- [x] **Step 1:** In `_CONFIG_TEMPLATE`, the source block becomes the §9
 contract (note the field rename `base_data_sql` → `base_table_sql` and file
 rename `base_data.sql` → `base_table.sql`):
 
@@ -921,7 +921,7 @@ source = SnowflakeSource(
 )
 ```
 
-- [ ] **Step 2:** `_snowflake_templates()` emits the new starters:
+- [x] **Step 2:** `_snowflake_templates()` emits the new starters:
 
 `base_table.sql`:
 
@@ -942,7 +942,7 @@ SELECT *
 FROM {database}.{schema}.{base_table}
 ```
 
-- [ ] **Step 3:** Update `test_metadata_and_scaffold.py` — three distinct
+- [x] **Step 3:** Update `test_metadata_and_scaffold.py` — three distinct
 edits (review-corrected):
   - `CONFIG_PLACEHOLDERS` stays **config-only** — `("<TBD_target_column>",
     "<TBD_base_table>", "<TBD_unique_key>", "TBD_experiment_id")`. Do NOT
@@ -962,7 +962,7 @@ edits (review-corrected):
   `base_table.sql`
 - Modify: both SQL files
 
-- [ ] **Step 1:** `config.py`: `base_data_sql="data/queries/base_data.sql"` →
+- [x] **Step 1:** `config.py`: `base_data_sql="data/queries/base_data.sql"` →
 `base_table_sql="data/queries/base_table.sql"` (keys already present from
 step 1). Replace the two SQL files with the Task 7 starter contents (they
 are still all-placeholder; the old `CREATE OR REPLACE` starter no longer
@@ -976,16 +976,16 @@ changes.
 - Create: `tests/e2e/test_snowflake_source_e2e.py`
 - Check: `tests/contracts/test_environment.py`
 
-- [ ] **Step 1:** Delete `"snowflake-snowpark-python>=1.50.0"` from
+- [x] **Step 1:** Delete `"snowflake-snowpark-python>=1.50.0"` from
 `pyproject.toml`; run `uv sync`; confirm
 `uv run python -c "import snowflake.connector; print('ok')"` still prints
 `ok` (the connector is a direct dependency, line 36).
 
-- [ ] **Step 2:** `grep -rn "snowpark" automl tests pyproject.toml uv.lock | grep -v "^uv.lock"`
+- [x] **Step 2:** `grep -rn "snowpark" automl tests pyproject.toml uv.lock | grep -v "^uv.lock"`
 → no source hits. If `tests/contracts/test_environment.py` pins the
 dependency list, update it in the same change.
 
-- [ ] **Step 3: E2E test** — gated like the rest of
+- [x] **Step 3: E2E test** — gated like the rest of
 `tests/e2e/_gates.py`, additionally requiring the Snowflake env:
 
 ```python
@@ -1029,12 +1029,12 @@ the tail-end pass after step 4** (ledger tail-end activities); in this
 session just verify the gate makes it *skip*, not fail
 (`uv run pytest tests/e2e/test_snowflake_source_e2e.py` → skipped).
 
-- [ ] **Step 4:** Full suite: `uv run pytest tests/unit tests/contracts tests/integration` — PASS.
+- [x] **Step 4:** Full suite: `uv run pytest tests/unit tests/contracts tests/integration` — PASS.
 
-- [ ] **Step 5:** Update `docs/HANDOFF.md` (step 3 landed; next: step 4,
+- [x] **Step 5:** Update `docs/HANDOFF.md` (step 3 landed; next: step 4,
 flexible splits; live fraud bootstrap can now be exercised).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A automl tests projects agent-skills pyproject.toml uv.lock docs/HANDOFF.md
@@ -1049,17 +1049,64 @@ leaves the lockfile (design step 3, part 3)."
 
 ## Self-review checklist
 
-- [ ] The invariant check runs on every real pull and **before** any fetch;
+- [x] The invariant check runs on every real pull and **before** any fetch;
   a mismatch never triggers an automatic rebuild (the error names the flag).
-- [ ] Bootstrap happens only when the table is missing; `--refresh-source`
+- [x] Bootstrap happens only when the table is missing; `--refresh-source`
   is the only path that replaces an existing table (ground rule).
-- [ ] No credential value ever appears in code, logs, errors, or tests.
-- [ ] `base_data_sql` no longer exists anywhere:
+- [x] No credential value ever appears in code, logs, errors, or tests.
+- [x] `base_data_sql` no longer exists anywhere:
   `grep -rn "base_data_sql\|base_data.sql" automl tests projects agent-skills | grep -v docs/archive` → empty.
-- [ ] Composite `split_group_key` produces `HASH(t.A, t.B)` in sorted column
+- [x] Composite `split_group_key` produces `HASH(t.A, t.B)` in sorted column
   order, matching `split_group_key_columns`.
-- [ ] Stub-pinning tests are gone; `test_sources_breadth.py` keeps only the
+- [x] Stub-pinning tests are gone; `test_sources_breadth.py` keeps only the
   file-source surface.
-- [ ] Recorded caveat (design §8) lands in the data-pipeline reference doc:
+- [x] Recorded caveat (design §8) lands in the data-pipeline reference doc:
   Snowflake `HASH()` and pandas assign different buckets — CSV→Snowflake
   migrations reshuffle split membership.
+
+---
+
+## Execution notes (2026-06-04 session)
+
+Reality-vs-plan adjustments, recorded per the session protocol (details in
+the ledger row):
+
+- **Commit re-allocation:** Tasks 7 (scaffold) and 8 (fraud) were executed
+  inside commit 2, not commit 3 — the `base_data_sql` → `base_table_sql`
+  dataclass-field rename breaks every consumer at once, so the rename and all
+  its mechanical fallout landed atomically to keep each commit suite-green.
+  Commit 3 carries behavior/docs/deps only (probe, skills/references,
+  Snowpark, e2e).
+- `projects/payment_routing/` converted too (config field, `git mv`, SQL
+  starters to the SELECT contract preserving its project specifics) — not in
+  the plan's file list, but the field rename forced it and the self-review
+  grep requires it clean.
+- Task 1's fixture needed `parent.connector = fake` (a sys.modules cache hit
+  skips the parent-attribute wiring, so the plan's fixture would
+  AttributeError); a `fetch_one` test was added alongside.
+- Task 4's quoted "replace this block" did not exist verbatim — the collision
+  check and `add_split_pct` were ~20 lines apart in `run()`; the branch was
+  placed around each, and `SPLIT_PCT` joined the quality-filter protected
+  columns (a source-provided column must survive filtering before
+  validation).
+- Collision-check altitude (carried-in item): resolved to the **pipeline
+  edge** (`_check_split_pct_collision` over pre-standardization names);
+  `add_split_pct`'s dead uppercase-vs-lowercased guard and its pinning test
+  were removed — the pipeline is its only caller.
+- E2E test: the pytest-structure contracts require `pytest.mark.qa` and
+  forbid new `AUTOML_E2E_*` env names (retired-migration-flag namespace) —
+  the designation variables are `AUTOML_SNOWFLAKE_E2E_SOURCE_TABLE` /
+  `_TARGET` / `_UNIQUE_KEY`; each live run bootstraps a fresh
+  `DEV_AUTOML_E2E_BASE_<uuid>` base table (never touches pre-existing
+  tables).
+- Extra mechanical sweeps the plan didn't list:
+  `tests/e2e/test_homecredit_data_model_breadth.py` (stale kwarg + missing
+  required `unique_key`, latent since step 1),
+  `tests/unit/mlflow/test_experiment_dataset_artifacts.py` (trace fixture
+  filename), `.env.example` (gains the optional `SNOWFLAKE_*` block the seam
+  errors point at). The scaffold config-template comment uses doubled braces
+  (`{{database}}`) because `_CONFIG_TEMPLATE` renders through `.format`.
+- Heads-up (d) verified with no change needed: the `_attach_active` drift
+  hint matches `source.base_table_sql_sha256` by prefix. Heads-up (e)
+  (`list_dataset_records` swallow-to-`[]` diagnosability) stays blocked by
+  the prod proxy's 500-on-missing — carried to the tail-end notes.

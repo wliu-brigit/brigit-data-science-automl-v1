@@ -8,7 +8,7 @@ The Coder's `Write` and `Edit` tools are scoped to **`experiments/<this_trial>/m
 - parent's `model.py`
 - `projects/<project_name>/PROJECT_INSTRUCTIONS.md`
 - `projects/<project_name>/config.py`
-- `projects/<project_name>/data/queries/base_data.sql` when present
+- `projects/<project_name>/data/queries/base_table.sql` when present
 - `projects/<project_name>/data/queries/training_data.sql` when present
 - `projects/<project_name>/data/pipeline.py` when present
 - `projects/<project_name>/eval/metrics.py` when present

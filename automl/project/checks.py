@@ -164,18 +164,40 @@ def mlflow_connection(*, config: Any) -> Iterable[Issue]:
 
 
 def snowflake_connection(*, config: Any) -> Iterable[Issue]:
-    """Snowflake connectivity is pending: SnowflakeSource.load is not implemented."""
+    """Live Snowflake probe: env vars present, SQL files on disk, SELECT 1 connects."""
     source = getattr(config.data_spec, "source", None)
     if getattr(source, "kind", "") != "snowflake":
         return
-    yield Issue(
-        level="warning",
-        check="project.connections.snowflake",
-        message=(
-            "SnowflakeSource is a pending source implementation; "
-            "live Snowflake connectivity is not checked yet"
-        ),
-    )
+    from automl.utils.io import snowflake as sf
+
+    missing = sf.missing_env()
+    if missing:
+        yield Issue(
+            level="error",
+            check="project.connections.snowflake",
+            message=f"missing Snowflake environment variable(s): {', '.join(missing)}",
+        )
+        return
+    for label, sql_path in (
+        ("base_table_sql", source.base_table_sql),
+        ("training_data_sql", source.training_data_sql),
+    ):
+        path = Path(sql_path)
+        resolved = path if path.is_absolute() else config.project_dir / path
+        if not resolved.exists():
+            yield Issue(
+                level="error",
+                check="project.connections.snowflake",
+                message=f"{label} file not found: {resolved}",
+            )
+    try:
+        sf.check_connection()
+    except Exception as exc:  # noqa: BLE001 - driver errors surface verbatim
+        yield Issue(
+            level="error",
+            check="project.connections.snowflake",
+            message=f"Snowflake connection failed: {exc}",
+        )
 
 
 __all__ = [

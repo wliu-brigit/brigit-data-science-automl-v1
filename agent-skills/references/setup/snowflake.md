@@ -7,9 +7,13 @@ warehouse.
 
 ## Why we need it
 
-Only projects whose `config.py` `DATA.source` uses `SnowflakeSource` talk to Snowflake. The
-pipeline runs the two SQL queries under `projects/<project_name>/data/queries/`
-to materialize train + test data, then writes them to GCS.
+Only projects whose `config.py` `DATA.source` uses `SnowflakeSource` talk to
+Snowflake. On materialize, the source ensures the base table exists
+(bootstrapping it from the project's `base_table.sql` SELECT with `SPLIT_PCT`
+injected from `split_group_key`; rebuilt only on `--refresh-source`), checks
+the split invariant against the actual table, then pulls training rows via
+`training_data.sql` — the derived dataset's bytes land in GCS, its record in
+MLflow. See `data-pipeline.md` for the full contract.
 
 If your project uses `LocalCSVSource` or `GCSParquetSource` instead,
 **skip this doc** — Snowflake credentials are not part of the run path.
@@ -19,17 +23,22 @@ If your project uses `LocalCSVSource` or `GCSParquetSource` instead,
 Ask your data engineering team for the values below, then fill them in `.env`:
 
 ```
-SNOWFLAKE_ACCOUNT       # e.g. ab12345.us-east-1.aws
-SNOWFLAKE_USER          # your username
-SNOWFLAKE_PASSWORD      # your password or auth token
-SNOWFLAKE_WAREHOUSE     # the warehouse your role can use
-SNOWFLAKE_ROLE          # the role you query under
-SNOWFLAKE_DATABASE      # database the tables live in
-SNOWFLAKE_SCHEMA        # schema within that database
+SNOWFLAKE_ACCOUNT       # required — e.g. ab12345.us-east-1.aws
+SNOWFLAKE_USER          # required — your username
+SNOWFLAKE_PASSWORD      # required — your password or auth token
+SNOWFLAKE_WAREHOUSE     # optional — defaults to DATA_SCIENCE_WH
+SNOWFLAKE_ROLE          # optional — defaults to DATA_SCIENCE_ROLE
+SNOWFLAKE_DATABASE      # database the tables live in ({database} substitution)
+SNOWFLAKE_SCHEMA        # schema within that database ({schema} substitution)
 ```
 
 There's no `gcloud auth`-style one-time setup — Snowflake auth is per-request
 using these values.
+
+`automl validate project` probes the connection live for Snowflake-backed
+projects (`project.connections.snowflake`): missing required env vars are an
+error listing exactly which; otherwise it runs `SELECT 1` and surfaces driver
+errors verbatim, and checks both SQL files exist on disk.
 
 ## Common gotchas
 

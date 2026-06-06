@@ -125,7 +125,7 @@ DATA = DataSpec(
         "label_mature_d35",
         "label_mature_d45",
     ],
-    # ~100k dry-run rows: at the 99/1 pull composition (~0.17% positive) a
+    # ~100k dry-run rows: at the 98/2 pull composition (~0.33% positive) a
     # smaller sample has too few frauds to exercise the depth/band metrics.
     dry_run_rows=100_000,
     # pipeline_cls=MyPipeline,       # escape hatch: a project-owned DataPipeline subclass
@@ -179,15 +179,18 @@ EVAL = EvalSpec(
 RUN_CONFIG = RunConfig(
     experiment_id="fraud_anomaly_v1",
     # 80/20: fit is unsupervised, so train-side metrics are label-honest too
-    # (mild in-sample bias aside) and the density-style models (GMM, k-means,
-    # PCA) want the training rows; ~20% still leaves hundreds of positives.
+    # (mild in-sample bias aside) and the density-style models (GMM, k-means)
+    # want the training rows; ~20% still leaves hundreds of positives.
     splits=Splits(train=Where("SPLIT_PCT") < 80, test=Where("SPLIT_PCT") >= 80),
     models=ModelsConfig(
-        manager=ModelRoute("sonnet", "medium"),
-        proposer=ModelRoute("sonnet", "medium"),
-        coder=ModelRoute("sonnet", "medium"),
+        manager=ModelRoute("opus", "high"),
+        proposer=ModelRoute("opus", "high"),
+        coder=ModelRoute("opus", "high"),
     ),
-    per_trial_seconds=600,
+    # One hour: at ~100k dry-run rows the GMM trial already used 418s
+    # (~120s of that is constant pyfunc-logging overhead); 600s left no
+    # headroom for heavier models. No reason to run that tight.
+    per_trial_seconds=3600,
 )
 
 

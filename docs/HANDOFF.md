@@ -1,57 +1,64 @@
 # Handoff — continue here
 
-The running note of where the last working session left off. **Read this first
-when resuming**, then [`README.md`](README.md) for the docs lifecycle. Keep it
-to *current state + next actions* (git history is the changelog, not this).
+Where the last working session left off. **Read this first when resuming**,
+then [`README.md`](README.md) for the docs lifecycle. Keep it to *current
+state + next actions* (git history is the changelog, not this). **Written
+only when wrapping a session for handoff (or when asked)** — never updated
+mid-session as a status log.
 
 **Last updated:** 2026-06-05
 
+## How to pick this up (protocol, per wendao)
+
+Do **not** dive into work directly. On resume: (1) read this file plus the
+project docs below, (2) summarize where things stand, (3) **recommend 2–3
+options for what to do next and ask wendao to pick or redirect**. The next
+move is a judgment call wendao wants to make, not a queue to drain.
+
+Project docs to read (all in `projects/fraud_anomaly_detection/`):
+- `SCENARIOS.md` — the detection stance (scenarios over scores; model =
+  discovery-only), the rubric, and the scenario register with validation
+  numbers. This is the center of gravity now.
+- `LEARNINGS.md` — dated takeaways; the 2026-06-05 round-2 entry explains
+  why the project pivoted from model comparison to scenario building.
+- `TODO.md` — parked feature-engineering menu + the shelved withhold
+  experiment.
+
 ## Where things stand
 
-- **Active effort: the fraud_anomaly_detection pilot**, on branch
-  `feature/fraud-anomaly-detection` (cut from main after the library
-  shakedown fixes merged). The project is fully set up and committed; six
-  dry-run trials ran during setup (Isolation Forest / PCA / GMM — on
-  *different* data snapshots, so their scores are not comparable to each
-  other).
-- **Background you need before touching it:**
-  - Step one of a two-step plan: unsupervised anomaly scoring now (fit never
-    sees labels — hard constraint in PROJECT_INSTRUCTIONS); a supervised
-    classifier later, once reviewer-confirmed labels exist.
-  - The label is a **proxy**: `is_fraud = heuristic_fraud_band ==
-    'EXTREMELY_LIKELY'`, a threshold on a heuristic computed upstream from
-    the same feature table — so AP measures agreement with the heuristic,
-    not ground truth, and high-scoring LOW-band rows (the "discovery queue"
-    in the band report) are candidates, not just false positives. The
-    non-circular check is the early-default (DPD45) capture metric.
-  - Data: Snowflake, wraps the pre-built `fraud_advance_feature_base`
-    (never written by the harness; harness owns `..._automl`). Training pull
-    is a fixed 99/1 composition, ~1.88M rows, `is_fraud` ≈ 0.17%
-    (production is ~0.03% — metric values rank trials, they are not
-    deployment claims). 80/20 user-grouped split on SPLIT_PCT.
-  - Eval: `AveragePrecision` primary + project-owned metrics in
-    `projects/fraud_anomaly_detection/eval/metrics.py` (review-depth
-    precision/recall, band report, early-default capture), tests in the
-    project's `tests/`.
+- **Branch `feature/fraud-anomaly-detection`.** Round 1 state was deleted
+  (archived, not purged — production MLflow). Round 2 ran clean: pinned
+  100k dry-run snapshot `v1_42baf0ba` (98/2 composition, ~0.33% positive),
+  opus/high agents, 3/3 trials finished — IF 0.995 / kNN 0.577 / GMM 0.415
+  test AP.
+- **The IF result was investigated, not celebrated**: the proxy label is a
+  deterministic function of the model's own features (circular), so
+  AP-vs-proxy is saturated and no longer ranks models. The session pivoted
+  to factor decomposition and rule discovery — full story in `LEARNINGS.md`.
+- **The product direction is now scenario-based rules** (`SCENARIOS.md`):
+  S1 ring (validated block-tier), S1b ring-via-account-reuse (89.5%
+  never-paid, promotion gate = monthly backtest + case sample), S2 solo
+  fast monetization (mitigate-tier), S3 telemetry evasion (review-tier),
+  S4 device/IP ring (needs TODO.md features).
+- **Reusable tooling**: `analysis/rule_discovery.py` runs the discovery
+  pipeline (attribution → residual queue → surrogate rules → enrichment)
+  against any logged trial by MLflow run id, read-only.
+- Dry-run only so far — full-scale run deliberately deferred until the
+  pattern is settled (explicit call, 2026-06-05).
 
-## Next actions (fraud, in order)
+## Candidate next moves (for the pick-one conversation, not a to-do list)
 
-1. **Fair three-way comparison**: `uv run automl --project
-   fraud_anomaly_detection --dry-run experiment run --max-budget-usd 1
-   --auto-confirm --refresh-data --max-iter 3`. `--refresh-data` is
-   required (the eval_pct cleanup changed the training-SQL hash → new
-   dataset identity). This puts IF/PCA/GMM on one snapshot with the full
-   metric table for the first honest leaderboard.
-2. **Bump `per_trial_seconds`** (config) before full scale — eval took 146s
-   on 93k rows; 600s will not survive the 1.88M-row dataset.
-3. **First full run** (drop `--dry-run`).
-4. After a winner: **production-projected precision** (reweight LOW ×~526,
-   the known sampling rate) for threshold/capacity setting — industry par is
-   ~10–20% alert precision; calibrate expectations accordingly.
-5. **Fraud-dive session** on the discovery queue (high-score LOW-band rows
-   from the predictions artifact) — generalize findings into explicit
-   rules/features/label categories.
-6. Reviewer labels → replace the proxy → step-2 supervised classifier.
+- **S1b promotion gate**: monthly-stability backtest on the full pull +
+  15–20 sampled cases (the case review also seeds reviewer labels for the
+  step-2 supervised model).
+- **Scenario refinement**: keep tightening triggers/disqualifiers against
+  the never-paid-DPD45 bar (wendao explicitly wants to revisit).
+- **Feature engineering from `TODO.md`** (device/IP first — metadata
+  already in the snapshot) → unlocks S4 and a third independent factor.
+- **Fraud-dive on the discovery queues** (GMM's 60 LOW-band rows, residual
+  queue) for new patterns.
+- Housekeeping options: noise-floor rerun of the IF config; LOW-reweight
+  volume projections for the scenario register.
 
 ## Other pending (not fraud)
 
@@ -59,9 +66,9 @@ to *current state + next actions* (git history is the changelog, not this).
   → archive/`: its last tail-end item (first real fraud materialize)
   completed 2026-06-05. Follow the effort's own plans-README protocol.
 - Library to-dos live in [`to-do/`](to-do/), each named by its ask —
-  notably `leaderboard-dataset-pinning.md` (the loop compared AP across
-  snapshots twice during the pilot) and `loop-observability.md` (the run is
-  silent while it works).
+  notably `leaderboard-dataset-pinning.md` (mitigated this round by
+  materializing before the run; not yet fixed in the library) and
+  `loop-observability.md` (the run is silent while it works).
 - `main` is local-only ahead of `origin/main` (the shakedown merge has not
   been pushed).
 
@@ -85,3 +92,6 @@ to *current state + next actions* (git history is the changelog, not this).
   sibling clone's venv even when you pick "Brigit AutoML (.venv)" — confirm with
   `import sys; print(sys.executable)` in cell 1 (`from automl import experiment`
   failing means the kernel is bound to the wrong clone).
+- A killed `experiment run` leaves the session lock held (~6h self-expiry);
+  release with `trial lock release --session-id ... --lock-id ...` using the
+  ids in `.cache/automl/tmp/session_locks/*.lock/metadata.json`.

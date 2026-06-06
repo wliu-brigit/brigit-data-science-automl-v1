@@ -42,17 +42,28 @@ ground truth. Don't over-tune to small metric differences.
   candidates** (fraud the heuristic may have missed), not just false
   positives — the proxy-label primary metric penalizes them by construction.
 
-## Approaches to try
+## How to explore
 
-- Isolation Forest (baseline first), PCA reconstruction error, GMM negative
-  log-likelihood, k-means distance-to-centroid, HDBSCAN via distillation
-  (fit clusterer on train, distill to an inductive scorer).
+- **Establish a baseline first**: a plain Isolation Forest with simple
+  preprocessing, on the experiment's pinned snapshot. Every later trial is
+  judged against it on the same snapshot.
+- After the baseline, model choice is **open-ended** — propose whatever the
+  evidence suggests (other IF variants, GMM negative log-likelihood, k-means
+  distance-to-centroid, HDBSCAN via distillation, autoencoders, ...). Vary
+  one idea per trial and say in the hypothesis what the trial should teach us.
 - Robust scaling / log1p for the heavy-tailed count and velocity features.
 
 ## Approaches to avoid
 
 - Any supervised or semi-supervised use of the target in fit (see Constraints).
 - Transductive methods without a distillation step.
+- PCA reconstruction error — tried in the first pilot round; not a good fit
+  for this problem, don't re-propose it.
+
+## Learnings log
+
+High-level takeaways (what worked, what didn't, what surprised us) go in
+[`LEARNINGS.md`](LEARNINGS.md) — append as they emerge.
 
 ## Open questions
 

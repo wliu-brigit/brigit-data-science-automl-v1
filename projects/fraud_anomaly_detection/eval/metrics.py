@@ -24,6 +24,14 @@ import pandas as pd
 
 from automl.eval import Metric
 
+from projects.fraud_anomaly_detection.scenarios import (
+    SCENARIOS,
+    SCENARIOS_VERSION,
+    TRIGGER_COLUMNS,
+    assign,
+    residual_mask,
+)
+
 # Review depths: top 0.5% / 1% / 5% of scored rows.
 DEFAULT_DEPTHS = (0.005, 0.01, 0.05)
 
@@ -154,4 +162,115 @@ class EarlyDefaultCapture(Metric):
         }
 
 
-__all__ = ["BandReport", "EarlyDefaultCapture", "PrecisionRecallAtDepth", "DEFAULT_DEPTHS"]
+class NeverPaidAveragePrecision(Metric):
+    """AP of the score against never-paid DPD45 on mature rows.
+
+    The bust-out cut (gross DPD45 *and* not repaid as of snapshot) is the
+    honest outcome ruler: once the scenario register absorbs the heuristic's
+    top band, the proxy is_fraud label has ~no positives left in the residual
+    and AP against it is degenerate. This metric replaces it as the primary.
+    Never-paid still includes innocent credit risk, so treat it as a
+    direction signal — don't over-tune to small deltas.
+    """
+
+    name = "never_paid_average_precision"
+    required_columns = ("label_gross_dpd45", "label_repaid_current_snapshot", "label_mature_d45")
+
+    def compute(self, df: pd.DataFrame, y_pred: Any, target_col: str) -> float:
+        del target_col  # evaluated against the outcome, not the task target
+        from sklearn.metrics import average_precision_score
+
+        mature = np.asarray(df["label_mature_d45"], dtype=float) == 1
+        y_true = (
+            (np.asarray(df["label_gross_dpd45"], dtype=float) == 1)
+            & (np.asarray(df["label_repaid_current_snapshot"], dtype=float) == 0)
+        )[mature]
+        if not y_true.any():
+            return 0.0  # no mature never-paid rows: keep the primary finite
+        return float(average_precision_score(y_true, np.asarray(y_pred, dtype=float)[mature]))
+
+
+class ResidualOnly(Metric):
+    """Delegate computed only on rows no scenario matched.
+
+    Scenario-matched rows are rule-handled (see scenarios.py); wrapping a
+    model-performance metric in ResidualOnly makes it arithmetically as if
+    those rows were never in the test set — no count, no denominator, no
+    ranking. The matched rows surface exclusively through ScenarioIdentified.
+    """
+
+    def __init__(self, inner: Metric) -> None:
+        self.inner = inner
+        self.name = f"residual_{inner.resolved_name()}"
+        inner_required = tuple(getattr(inner, "required_columns", ()))
+        self.required_columns = inner_required + tuple(
+            col for col in TRIGGER_COLUMNS if col not in inner_required
+        )
+
+    def compute(self, df: pd.DataFrame, y_pred: Any, target_col: str) -> Any:
+        mask = residual_mask(df).to_numpy()
+        residual_df = df.loc[mask].reset_index(drop=True)
+        residual_pred = np.asarray(y_pred, dtype=float)[mask]
+        return self.inner.compute(residual_df, residual_pred, target_col)
+
+
+class ScenarioIdentified(Metric):
+    """Per-scenario rule outcomes: the only eval that sees matched rows.
+
+    Reports counts and never-paid-DPD45 validation (gross DPD45 and not
+    repaid as of snapshot, on mature rows — the bust-out cut) per scenario,
+    plus the register version so any trial can be read knowing which
+    register it ran under. Rule outcomes, not model performance: y_pred is
+    deliberately ignored.
+    """
+
+    name = "scenario_identified"
+    required_columns = TRIGGER_COLUMNS + (
+        "label_gross_dpd45",
+        "label_repaid_current_snapshot",
+        "label_mature_d45",
+    )
+
+    def compute(self, df: pd.DataFrame, y_pred: Any, target_col: str) -> dict[str, Any]:
+        del y_pred, target_col  # rule outcomes are model-free by design
+        flags = assign(df)
+        mature = np.asarray(df["label_mature_d45"], dtype=float) == 1
+        never_paid = (
+            (np.asarray(df["label_gross_dpd45"], dtype=float) == 1)
+            & (np.asarray(df["label_repaid_current_snapshot"], dtype=float) == 0)
+        )
+        records: list[dict[str, Any]] = []
+        for scenario in SCENARIOS:
+            matched = flags[f"scenario_{scenario.name}"].to_numpy()
+            matched_mature = matched & mature
+            n_mature = int(matched_mature.sum())
+            n_never_paid = int((matched_mature & never_paid).sum())
+            records.append(
+                {
+                    "name": scenario.name,
+                    "title": scenario.title,
+                    "tier": scenario.tier,
+                    "status": scenario.status,
+                    "n": int(matched.sum()),
+                    "n_mature": n_mature,
+                    "n_never_paid": n_never_paid,
+                    "never_paid_rate": (n_never_paid / n_mature) if n_mature else None,
+                }
+            )
+        return {
+            "scenarios_version": SCENARIOS_VERSION,
+            "n_rows": int(len(df)),
+            "n_residual": int(flags["scenario_any"].eq(False).sum()),
+            "scenarios": records,
+        }
+
+
+__all__ = [
+    "BandReport",
+    "EarlyDefaultCapture",
+    "NeverPaidAveragePrecision",
+    "PrecisionRecallAtDepth",
+    "ResidualOnly",
+    "ScenarioIdentified",
+    "DEFAULT_DEPTHS",
+]

@@ -115,6 +115,37 @@ def test_early_default_capture_with_no_mature_rows(frame):
     assert report == {"n_mature": 0, "n_dpd45": 0, "records": []}
 
 
+def test_never_paid_average_precision_scores_against_outcome():
+    from projects.fraud_anomaly_detection.eval.metrics import NeverPaidAveragePrecision
+
+    df = pd.DataFrame(
+        {
+            "label_gross_dpd45":            [1, 1, 0, 1],
+            "label_repaid_current_snapshot":[0, 1, 0, 0],
+            "label_mature_d45":             [1, 1, 1, 0],
+        }
+    )
+    # mature rows: 0 (never-paid), 1 (late-repaid -> negative), 2 (clean);
+    # row 3 never-paid but immature -> excluded entirely
+    metric = NeverPaidAveragePrecision()
+    assert metric.compute(df, [0.9, 0.5, 0.1, 0.99], "is_fraud") == pytest.approx(1.0)
+    # ranking the never-paid row last drops AP below 1
+    assert metric.compute(df, [0.1, 0.5, 0.9, 0.99], "is_fraud") < 1.0
+
+
+def test_never_paid_average_precision_no_positives_returns_zero():
+    from projects.fraud_anomaly_detection.eval.metrics import NeverPaidAveragePrecision
+
+    df = pd.DataFrame(
+        {
+            "label_gross_dpd45": [0, 0],
+            "label_repaid_current_snapshot": [0, 0],
+            "label_mature_d45": [1, 1],
+        }
+    )
+    assert NeverPaidAveragePrecision().compute(df, [0.9, 0.1], "is_fraud") == 0.0
+
+
 def test_full_eval_spec_integration(frame):
     spec = EvalSpec(
         primary=AveragePrecision(),

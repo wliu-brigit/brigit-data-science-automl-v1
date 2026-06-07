@@ -1,5 +1,11 @@
 # Scenario-based fraud detection — framework & register
 
+> **The codified register is canonical**: definitions + live validation
+> evidence live in [`scenarios/register.yaml`](scenarios/register.yaml)
+> (S1b → `ring_account_reuse`, S1 → `ring_identity_burst`, both refined
+> against data since the numbers below). This document holds the stance,
+> the rubric, the governance protocol, and the *uncodified* candidates.
+
 The detection stance for this project: **named fraud scenarios with a
 behavioral theory, conjunctive triggers, and explicit disqualifiers** — not
 an additive point score. Anomaly models are **discovery-only**: they surface

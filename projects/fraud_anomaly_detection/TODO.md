@@ -12,10 +12,20 @@ identities** — bank account today; the same pattern mined from other
 columns below. We own the upstream SQL and can recreate/extend the base
 table as needed.
 
-- **Device/IP graph** — same `device_id` / `ip_address` across users (the
-  device/IP analog of users-on-bank-account); datacenter/VPN IP detection;
-  signup IP vs disbursement IP distance. *Both columns are already in the
-  snapshot as metadata — derivable without new upstream data.*
+- **Device/IP graph — EVIDENCE-BACKED, next in line (screened 2026-06-06 on
+  `v1_42baf0ba`).** Within-snapshot screening of `device_id` sharing:
+  **≥3 users on one device → 88.3% never-paid gross (n=471), and 69 rows the
+  scenario register can't see at all validating at 81.6% never-paid** — the
+  first block-tier-grade capture on a new axis (`ring_device_sharing`
+  scenario candidate; same no-innocent-version story as the identity burst:
+  households don't share 3 Brigit accounts on one phone). Counter-finding:
+  raw IP sharing alone is worthless (≥3 users → 1.0x, carrier NAT /
+  households); signup-IP sharing only ~3x. Blocked on upstream work only:
+  the screening count is whole-snapshot (not as-of-time, and LOW
+  downsampling makes it a floor) and the YAML register needs a real as-of
+  column — add `users_on_device_id_72h/7d` to the base table exactly like
+  the `users_on_bank_account_*` family, rebuild, re-screen as-of, then
+  register the scenario as a one-bullet trigger.
 - **Speed of monetization** — time from signup → bank link → first advance;
   whether the first action maxes the available amount. Rings move fast;
   real users meander. (Timestamps largely present in metadata.)

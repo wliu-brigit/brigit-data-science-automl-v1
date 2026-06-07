@@ -21,12 +21,15 @@ from __future__ import annotations
 from pathlib import Path
 
 from automl.data import DataSpec, GCSParquetSource, LocalCSVSource, SnowflakeSource
-from automl.eval import AveragePrecision, EvalSpec
+from automl.eval import EvalSpec
 
 from projects.fraud_anomaly_detection.eval.metrics import (
     BandReport,
     EarlyDefaultCapture,
+    NeverPaidAveragePrecision,
     PrecisionRecallAtDepth,
+    ResidualOnly,
+    ScenarioIdentified,
 )
 from automl.project import (
     BinaryClassification,
@@ -140,15 +143,25 @@ DATA = DataSpec(
 # implementing the automl.eval.Metric protocol.
 # Deeper reference: agent-skills/references/setup/evaluation-metric.md
 
-# PR-AUC, not ROC-AUC: at low fraud prevalence ROC-AUC is dominated by easy
-# negatives and reads misleadingly high; average precision tracks the
-# precision/recall tradeoff on the positive class and is what the loop ranks
-# trials by. The secondaries are project-owned (metrics.py): review-depth
-# precision/recall (top 0.5%/1%/5%), the per-band agreement/discovery report,
-# and the non-circular early-default (gross DPD45) capture on mature rows.
+# Scenario stance (scenarios.yaml / SCENARIOS.md): rows a codified scenario
+# matches are rule-handled — every model-performance metric is wrapped in
+# ResidualOnly, so it is computed as if those rows were never in the test
+# set. They surface only through ScenarioIdentified, as rule outcomes.
+#
+# Primary: AP against never-paid DPD45 on mature residual rows. The register
+# absorbs the heuristic's top band (the proxy is_fraud label), so AP-vs-proxy
+# is degenerate on the residual; the real outcome is the only honest ruler
+# left. PR-style AP rather than ROC-AUC for the usual low-prevalence reason.
+# Secondaries (metrics.py): review-depth precision/recall, the per-band
+# report, plain gross-DPD45 capture — all residual-masked.
 EVAL = EvalSpec(
-    primary=AveragePrecision(),
-    metrics=[PrecisionRecallAtDepth(), BandReport(), EarlyDefaultCapture()],
+    primary=ResidualOnly(NeverPaidAveragePrecision()),
+    metrics=[
+        ResidualOnly(PrecisionRecallAtDepth()),
+        ResidualOnly(BandReport()),
+        ResidualOnly(EarlyDefaultCapture()),
+        ScenarioIdentified(),
+    ],
 )
 
 

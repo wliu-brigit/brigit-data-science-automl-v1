@@ -8,14 +8,25 @@ config.py — facts there are not repeated here.
 Rank cash-advance disbursements by fraud risk with an **unsupervised anomaly
 score**. Better = fraud concentrated at the top of the ranking.
 
-This is step one of a two-step plan (anomaly detection now; a targeted
-supervised classifier later). The label is a heuristic proxy
-(`heuristic_fraud_band == 'EXTREMELY_LIKELY'`, computed upstream from this
-table's own features), so eval measures agreement with the heuristic, not
-ground truth. Don't over-tune to small metric differences.
+Detection is scenario-first (`scenarios/register.yaml`): codified rules
+handle what they explain, and **the model's job is discovery on the
+residual** — surfacing patterns no scenario covers yet. The primary metric
+scores the residual ranking against the real outcome (never-paid gross
+DPD45 on mature rows), not the heuristic proxy: the register absorbs the
+heuristic's top band, so agreement with it is no longer informative.
+Never-paid still contains innocent credit risk — treat the primary as a
+direction signal and don't over-tune to small metric differences.
 
 ## Constraints (hard)
 
+- **Every trial applies the scenario gate before fit.** Rows a codified
+  scenario matches (`scenarios/register.yaml`) are rule-handled, not
+  modeled: call `gate_fit` from
+  `projects.fraud_anomaly_detection.scenarios.gate` on the train frame
+  before fitting. The model's job is discovery on the
+  residual; a trial trained on scenario-matched rows is invalid. (Eval
+  mirrors this: all model metrics are residual-masked; matched rows appear
+  only in the `scenario_identified` report.)
 - **The model must never consume the target (or any label-derived column) in
   fit.** Fit is unsupervised: `fit(X)` on train features only — no `y`, no
   supervised objectives, no label-based feature selection, no threshold tuning
@@ -39,8 +50,8 @@ ground truth. Don't over-tune to small metric differences.
 - Fraud is ring-shaped: shared bank accounts across many fresh identities,
   burst velocity. Expect anomalies to cluster, not be i.i.d. outliers.
 - In the band report, LOW-band rows ranked near the top are **discovery
-  candidates** (fraud the heuristic may have missed), not just false
-  positives — the proxy-label primary metric penalizes them by construction.
+  candidates** (fraud the heuristic may have missed) — under the never-paid
+  primary they are where a model can genuinely win, not false positives.
 
 ## How to explore
 

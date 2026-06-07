@@ -1,0 +1,217 @@
+# Scenario register — the codified fraud scenarios. THIS is the file to edit.
+#
+# The detection stance (SCENARIOS.md): named scenarios with a behavioral
+# theory, conjunctive triggers, and explicit disqualifiers — not additive
+# point scores. One definition serves the fit gate, the eval reporting, and
+# the backtests; editing this file never mints a dataset version.
+#
+# Schema (engine.py loads and validates this file):
+#
+#   Required per scenario: name, tier, status, entry_date, theory, trigger.
+#     name    — unique slug; becomes the flag column scenario_<name>.
+#     theory  — the fraud-intent story that justifies every trigger bullet.
+#               If you can't tell one, it's a credit-risk rule, not a scenario.
+#     trigger — a list of comparisons; the row matches when ALL bullets hold.
+#   Optional: title (display name, defaults to name), typology (the published
+#     industry pattern this instantiates — FATF/FinCEN framing; fill in at
+#     grounding time), disqualifiers (a list of comparisons; ANY one holding
+#     releases the row — the credit-risk firewall).
+#
+#   Each "- " bullet under trigger/disqualifiers is one comparison:
+#     - column: <col>          # compare a column ...
+#       op: <op>               # ... with one of: == != < <= > >= isin notin
+#       value: <v>             #     (is_null / not_null take no value)
+#     - hours_between: [<later_ts>, <earlier_ts>]   # or compare elapsed hours
+#       op: <op>               #   between two timestamp columns. Stopgap: when
+#       value: <hours>         #   the TODO.md speed features land in the base
+#                              #   table this becomes a plain column comparison.
+#   Nulls never match. Bullets are declarative data, so a register entry can
+#   be compiled to a SQL WHERE clause mechanically when a rule ships.
+#
+# To add a scenario:
+#   1. Append its entry below — newest last; the register is ordered by entry_date.
+#   2. Bump `version` and pin the predicate in tests/test_scenarios.py.
+#   3. Refresh the validation evidence (the second, machine-owned document
+#      at the bottom of this file — never edit it by hand):
+#        uv run python -m projects.fraud_anomaly_detection.scenarios.validation
+#
+# Status discipline: a scenario enters as status: draft (a finding being
+# piloted) and becomes signed_off only after the promotion gate in
+# SCENARIOS.md (monthly backtest + case sample + explicit sign-off).
+# Nothing here is law until then.
+
+version: "2026-06-06.3"
+
+scenarios:
+  # Lineage: entered as "S1b" in the round-2 analysis (prose: SCENARIOS.md).
+  # Same typology as the identity-side ring signature (many fresh identities
+  # sharing one bank account — the current heuristic's top band), which is a
+  # sibling scenario not yet codified here.
+  - name: ring_account_reuse
+    title: Ring cash-out via account reuse
+    typology: >-
+      Ring bust-out through a mule bank account (first-party fraud;
+      FATF/FinCEN mule-account typology)
+    tier: block
+    status: draft
+    entry_date: "2026-06-06"
+    theory: >-
+      The identity is hours old but the bank account already has advance
+      history — a day-old user cannot have taken those prior advances, so
+      other identities drew through this account before: a ring cashing out
+      through a reused mule account, observed from the account side. No
+      identity-count join needed, so it is real-time friendly.
+    trigger:  # ALL three must hold
+      # the cash-out is immediate: identity → advance within 24h
+      - hours_between: [feature_as_of_ts, identity_created_time]
+        op: "<="
+        value: 24
+      # the advance is sizable
+      - column: loan_amount
+        op: ">"
+        value: 100
+      # the account has RECENT advance history (someone drew through it within
+      # 7 days — stale reuse validated as innocent: lifetime-only matches were
+      # 0/17 never-paid on v1_42baf0ba; 7d ≡ 72h there, ring-cycling speed)
+      - column: prior_advances_on_bank_account_7d
+        op: ">"
+        value: 0
+
+  # Sibling of ring_account_reuse — the identity-side signature of the same
+  # mule-account typology. Variant comparison on v1_42baf0ba (2026-06-06):
+  # the fresh-identity count beat pure advance-velocity triggers (89% vs
+  # 41-47% never-paid), and its unique capture vs the sibling validates at
+  # 79% — it stands on its own, not just as overlap. Pure-velocity cycling
+  # (e.g. advances_7d >= 3 alone) deliberately NOT registered: 23-28%
+  # never-paid on unique capture = mitigate/review material pending case review.
+  - name: ring_identity_burst
+    title: Ring bust-out via identity burst
+    typology: >-
+      Ring bust-out through a mule bank account (first-party fraud;
+      FATF/FinCEN mule-account typology)
+    tier: block
+    status: draft
+    entry_date: "2026-06-06"
+    theory: >-
+      One operator manufactures a batch of fresh identities within days and
+      points them all at the same receiving bank account. Three brand-new
+      identities (all created inside 72h) linked to one account has no
+      innocent version — organic account sharing involves long-standing
+      identities, not a burst of newborns.
+    trigger:
+      # >= 3 identities created in the 72h before this advance, all linked to
+      # this advance's bank account (the column counts only identities CREATED
+      # in-window — the freshness is what kills the innocent story)
+      - column: users_on_bank_account_72h
+        op: ">="
+        value: 3
+---
+# ── validation stats — machine-owned; refresh with ──────────────────────────
+# uv run python -m projects.fraud_anomaly_detection.scenarios.validation
+computed_at: '2026-06-07'
+dataset_id: v1_42baf0ba
+scenarios_version: 2026-06-06.3
+n_rows: 107168
+baseline:
+  n_mature: 71616
+  never_paid_rate: 0.055350759606791776
+  dpd45_rate: 0.06215091599642538
+  bands:
+    LOW:
+      n: 105106
+      share: 0.980759181845327
+      n_mature: 70091
+      n_never_paid: 3525
+      never_paid_rate: 0.050291763564509
+    POSSIBLE:
+      n: 1634
+      share: 0.015247088683189011
+      n_mature: 1150
+      n_never_paid: 116
+      never_paid_rate: 0.10086956521739131
+    LIKELY:
+      n: 98
+      share: 0.0009144520752463422
+      n_mature: 62
+      n_never_paid: 38
+      never_paid_rate: 0.6129032258064516
+    EXTREMELY_LIKELY:
+      n: 330
+      share: 0.003079277396237683
+      n_mature: 313
+      n_never_paid: 285
+      never_paid_rate: 0.9105431309904153
+scenarios:
+  ring_account_reuse:
+    tier: block
+    status: draft
+    entry_date: '2026-06-06'
+    n: 251
+    share: 0.0023421170498656315
+    n_mature: 220
+    n_never_paid: 212
+    never_paid_rate: 0.9636363636363636
+    n_dpd45: 212
+    dpd45_rate: 0.9636363636363636
+    lift_vs_base: 17.409632143840014
+    unique_n: 21
+    unique_never_paid_rate: 0.8571428571428571
+    band_distribution:
+      EXTREMELY_LIKELY: 193
+      LIKELY: 42
+      POSSIBLE: 14
+      LOW: 2
+  ring_identity_burst:
+    tier: block
+    status: draft
+    entry_date: '2026-06-06'
+    n: 400
+    share: 0.0037324574499850703
+    n_mature: 361
+    n_never_paid: 322
+    never_paid_rate: 0.8919667590027701
+    n_dpd45: 322
+    dpd45_rate: 0.8919667590027701
+    lift_vs_base: 16.114806108159026
+    unique_n: 170
+    unique_never_paid_rate: 0.7870967741935484
+    band_distribution:
+      EXTREMELY_LIKELY: 328
+      LIKELY: 58
+      POSSIBLE: 14
+overall:
+  union:
+    n: 421
+    share: 0.003928411466109286
+    n_mature: 375
+    n_never_paid: 334
+    never_paid_rate: 0.8906666666666667
+  discovery:
+    n: 2
+    share: 1.8662287249925352e-05
+    n_mature: 2
+    n_never_paid: 2
+    never_paid_rate: 1.0
+  overlap:
+    n_multi_matched: 230
+    pairs:
+      ring_account_reuse & ring_identity_burst: 230
+  residual:
+    n: 106747
+    share: 0.9960715885338907
+    n_mature: 71241
+    n_never_paid: 3630
+    never_paid_rate: 0.050953804691118876
+    bands:
+      LOW:
+        n_left: 105104
+        coverage: 1.9028409415256978e-05
+      POSSIBLE:
+        n_left: 1607
+        coverage: 0.016523867809057527
+      LIKELY:
+        n_left: 36
+        coverage: 0.6326530612244898
+      EXTREMELY_LIKELY:
+        n_left: 0
+        coverage: 1.0

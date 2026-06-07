@@ -5,6 +5,51 @@ Append as they emerge; date each entry. (Long-term these belong in MLflow at
 the experiment/project level — this file is the ad-hoc home until the
 workflow settles.)
 
+## 2026-06-06/07 — scenario register built; the proxy label retired
+
+**The mechanism (now the project's shape)**
+- Scenarios codified as a declarative YAML register
+  (`scenarios/register.yaml`) compiled and run by a register-agnostic
+  engine: edits never rebuild the dataset, predicates are unit-tested, and
+  the conditions are data — mechanically compilable to SQL at ship time.
+- Matched rows are out of the model's world on both sides: dropped from fit
+  (gate, a hard instruction the opus coder followed first try) and masked
+  out of every model metric (`ResidualOnly`); they surface only as rule
+  outcomes (`scenario_identified`). Verified arithmetically against the
+  logged baseline trial — every band count, positive, and denominator.
+- Scenarios match **independently**; per-scenario gross + unique capture
+  bound the contribution without order-dependence. Sequencing is an action
+  policy (highest tier wins), never a measurement policy.
+
+**The register absorbing the heuristic (the milestone)**
+- `ring_account_reuse` (ex-S1b): the 7d window beat lifetime — the 33
+  lifetime-only matches were **0/17 never-paid** (stale account reuse is
+  innocent); 96.4% never-paid at n=251. 7d ≡ 72h: reuse is ring-cycling
+  speed.
+- `ring_identity_burst` (ex-S1): ≥3 identities *created within 72h* on one
+  bank account; 89.2% never-paid, unique-vs-sibling 78.7%. Pure advance
+  velocity without fresh identities collapsed to 23–28% on unique capture
+  (one user re-advancing is normal product use) — deliberately not
+  registered.
+- Together: E_L band 100% covered, union 89.1% never-paid at 16x base —
+  so the proxy label has no positives left in the residual and the primary
+  moved to **never-paid AP on mature residual rows**.
+- Honest discovery stat (captured LOW-band rows): **2** — both never-paid.
+  Today's register *replaces* the heuristic; it barely out-discovers it yet.
+
+**The next axis (screened, recorded in TODO.md)**
+- Device sharing ≥3 users: 88.3% gross, **69 register-invisible rows at
+  81.6% never-paid** — block-tier-grade on a genuinely new axis; blocked
+  only on as-of `users_on_device_*` base-table features. Counter-finding:
+  raw IP sharing alone is worthless (~1x; carrier NAT/households).
+
+**Process**
+- The iteration loop works as designed: question → variant table against
+  the pinned snapshot → register edit → version bump → evidence refresh →
+  tests. No SQL, no rebuild, no model run needed to refine a rule.
+- The loop's preflight validates the Snowflake connection even for pinned
+  no-refresh runs (VPN required for ~30s of preflight; nothing after).
+
 ## 2026-06-05 — round 2 (pinned snapshot `v1_42baf0ba`, 98/2, opus/high)
 
 **The leaderboard (first honest one — all trials on one snapshot)**

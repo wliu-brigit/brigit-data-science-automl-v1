@@ -9,6 +9,12 @@ stays generic; everything specific to this problem lives here.
 fraud_anomaly_detection/
 ├── README.md                # this file
 ├── config.py                # the recipe: TASK / DATA / EVAL / RUN_CONFIG
+├── scenarios/               # the scenario home (SCENARIOS.md is the prose stance)
+│   ├── register.yaml        #   THE file to edit: definitions; doc 2 = machine-owned stats
+│   ├── engine.py            #   loads/compiles/runs the register (never edit per-scenario)
+│   ├── gate.py              #   fit gate trials apply (drop matched rows before fit)
+│   ├── validation.py        #   refresh the evidence doc: uv run python -m ...scenarios.validation
+│   └── __init__.py          #   bound register API: SCENARIOS / assign / residual_mask
 ├── PROJECT_INSTRUCTIONS.md  # domain guidance the agent loop reads every turn
 ├── data/queries/            # base_table.sql + training_data.sql (Snowflake)
 ├── eval/                    # custom Metric classes (automl.eval protocol)

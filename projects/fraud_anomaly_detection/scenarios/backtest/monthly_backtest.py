@@ -22,13 +22,15 @@ Run:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 # ─────────────────────────────────────────────────────────────────────────
 # PARAMETERS — edit these, then run. The SQL below is assembled from them.
 # ─────────────────────────────────────────────────────────────────────────
 
 OUTPUT_START = "2025-01-01"  # first anchor month (inclusive)
-OUTPUT_END = "2026-06-01"  # exclusive upper bound (~ now)
-HISTORY_BUFFER_DAYS = 35  # lookback before OUTPUT_START for velocity (>= the 30d tiebreaker window)
+OUTPUT_END = "2026-07-01"  # exclusive upper bound (~ now: captures through Jun 2026)
+HISTORY_BUFFER_DAYS = 8  # lookback before OUTPUT_START for velocity (only the 7d window is read; +1 slack)
 
 # Fast end-to-end smoke test: when set, OVERRIDES the window above with a short
 # span so you can validate syntax / output shape / connection in seconds before
@@ -157,20 +159,51 @@ anchor_advances AS (
       AND a.feature_as_of_ts <  p.output_end_ts
 ),
 
-/* 3. One identity row per user. */
+/* 3. Entity scoping — the cost lever. We only ever report on anchor advances
+      and the accounts they touch, so scope the link build to the bank accounts
+      the advance-window users touch. Two passes:
+        a. relevant_account_keys — accounts touched by any advance-window user.
+        b. scoped_plaid           — EVERY plaid row on those accounts (so
+                                     account-sharing siblings are still counted).
+      The dedup to current state happens in bank_account_links (5), over this
+      scoped subset — deliberately NOT over the full ~1B-row CDC view, which a
+      full-view window sort would make slower (see results/OPTIMIZATION_LOG.md
+      iters 3-4). Numbers are identical to the unscoped build; only the scan
+      shrinks. */
+relevant_account_keys AS (
+    SELECT DISTINCT pa.routing_number, pa.account_number
+    FROM {PLAID_ACCOUNTS} pa
+    JOIN (SELECT DISTINCT user_id FROM all_advances) au
+        ON pa.user_id::VARCHAR = au.user_id
+    WHERE pa.routing_number IS NOT NULL
+      AND pa.account_number IS NOT NULL
+),
+scoped_plaid AS (
+    SELECT pa.*
+    FROM {PLAID_ACCOUNTS} pa
+    JOIN relevant_account_keys k
+        ON pa.routing_number = k.routing_number
+       AND pa.account_number = k.account_number
+),
+
+/* 4. One identity row per user — scoped to users on the relevant accounts. */
 identities_one_per_user AS (
     SELECT
         i.user_id::VARCHAR AS user_id,
         i.created_time::TIMESTAMP_NTZ AS identity_created_time
     FROM {IDENTITIES} i
+    JOIN (SELECT DISTINCT user_id::VARCHAR AS user_id FROM scoped_plaid) u
+        ON i.user_id::VARCHAR = u.user_id
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY i.user_id
         ORDER BY i.is_deleted ASC, i.created_time DESC
     ) = 1
 ),
 
-/* 4. User -> bank-account links (canonical key). NOT filtered to anchors:
-      shared-account counts need every user on the account. */
+/* 5. User -> bank-account links (canonical key), deduped to current state over
+      the SCOPED plaid rows (one row per user/routing/account, latest by
+      incrementing_id). Holds every user on the relevant accounts — shared-
+      account counts need them, including users with no advance of their own. */
 bank_account_links AS (
     SELECT
         pa.user_id::VARCHAR AS user_id,
@@ -179,11 +212,9 @@ bank_account_links AS (
         CONCAT(pa.routing_number, '-', pa.account_number) AS bank_account_key,
         pa.created_at::TIMESTAMP_NTZ AS plaid_account_created_at,
         i.identity_created_time
-    FROM {PLAID_ACCOUNTS} pa
+    FROM scoped_plaid pa
     JOIN identities_one_per_user i
         ON pa.user_id::VARCHAR = i.user_id
-    WHERE pa.routing_number IS NOT NULL
-      AND pa.account_number IS NOT NULL
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY pa.user_id, pa.routing_number, pa.account_number
         ORDER BY pa.incrementing_id DESC
@@ -214,7 +245,14 @@ anchor_advance_account_candidates AS (
        )
 ),
 
-/* 6. All historical advances mapped to accounts — for prior-advance velocity. */
+/* The accounts our anchor advances actually touch — the only accounts prior
+   velocity is ever asked about. Scoping the prior set to these turns the
+   inequality (range) join from "all history x all accounts" into a small one. */
+anchor_account_keys AS (
+    SELECT DISTINCT bank_account_key FROM anchor_advance_account_candidates
+),
+
+/* 7. Historical advances on ANCHOR accounts — for prior-advance velocity. */
 all_advance_account_candidates AS (
     SELECT
         a.advance_id,
@@ -231,54 +269,50 @@ all_advance_account_candidates AS (
              AND a.plaid_account_number = ba.account_number)
             OR (a.plaid_routing_number IS NULL AND a.plaid_account_number IS NULL)
        )
+    JOIN anchor_account_keys ak
+        ON ba.bank_account_key = ak.bank_account_key
 ),
 
-/* 7. Shared bank-account identity velocity (per advance x candidate account).
-      72h is the burst window the scenario reads; lifetime is kept only as the
-      dedup tiebreaker that matches the upstream selection order. */
+/* 7. Identity-burst velocity (per advance x candidate account): distinct users
+      whose identity was created in the 72h before the advance. The 72h bound is
+      pushed INTO the join, so the identity self-join only touches a 72h band
+      instead of the account's whole history — no lifetime count is computed. */
 bank_account_user_features AS (
     SELECT
         a.advance_id,
         a.bank_account_key,
-        COUNT(DISTINCT IFF(
-            other.identity_created_time >= DATEADD(hour, -72, a.feature_as_of_ts)
-            AND other.identity_created_time <= a.feature_as_of_ts,
-            other.user_id, NULL
-        )) AS users_on_bank_account_72h,
-        COUNT(DISTINCT other.user_id) AS users_on_bank_account_lifetime_asof
+        COUNT(DISTINCT other.user_id) AS users_on_bank_account_72h
     FROM anchor_advance_account_candidates a
     LEFT JOIN bank_account_links other
         ON a.routing_number = other.routing_number
        AND a.account_number = other.account_number
        AND other.plaid_account_created_at <= a.feature_as_of_ts
        AND other.identity_created_time   <= a.feature_as_of_ts
+       AND other.identity_created_time   >= DATEADD(hour, -72, a.feature_as_of_ts)
     GROUP BY 1, 2
 ),
 
-/* 8. Prior-advance velocity on the same account (per advance x candidate
-      account). 7d is what the scenario reads; 30d is the dedup tiebreaker. */
+/* 8. Prior-advance velocity (per advance x candidate account): distinct prior
+      advances on the account within 7d. The 7d bound is pushed INTO the join,
+      so the range join is a tight 7-day band, not all-history. */
 bank_account_advance_features AS (
     SELECT
         a.advance_id,
         a.bank_account_key,
-        COUNT(DISTINCT IFF(
-            prior.feature_as_of_ts >= DATEADD(day, -7, a.feature_as_of_ts),
-            prior.advance_id, NULL
-        )) AS prior_advances_on_bank_account_7d,
-        COUNT(DISTINCT IFF(
-            prior.feature_as_of_ts >= DATEADD(day, -30, a.feature_as_of_ts),
-            prior.advance_id, NULL
-        )) AS prior_advances_on_bank_account_30d
+        COUNT(DISTINCT prior.advance_id) AS prior_advances_on_bank_account_7d
     FROM anchor_advance_account_candidates a
     LEFT JOIN all_advance_account_candidates prior
         ON a.bank_account_key = prior.bank_account_key
-       AND prior.feature_as_of_ts < a.feature_as_of_ts
+       AND prior.feature_as_of_ts <  a.feature_as_of_ts
+       AND prior.feature_as_of_ts >= DATEADD(day, -7, a.feature_as_of_ts)
     GROUP BY 1, 2
 ),
 
-/* 9. One row per advance: join features, then dedup candidate accounts in the
-      same priority order as the upstream snapshot (minus heuristic_fraud_score,
-      which we don't compute — it is far down the tiebreak). */
+/* 9. One row per advance: join the two windowed features, then dedup candidate
+      accounts on those windowed features (cheap deterministic tiebreak — NOT
+      exact upstream-snapshot parity; the lifetime/30d tiebreakers it used are
+      deliberately not computed). Differs from the snapshot only on the rare
+      advance that maps to multiple candidate accounts. */
 advance_level AS (
     SELECT
         a.advance_id,
@@ -298,9 +332,8 @@ advance_level AS (
     QUALIFY ROW_NUMBER() OVER (
         PARTITION BY a.advance_id
         ORDER BY
-            baf.users_on_bank_account_lifetime_asof DESC NULLS LAST,
             baf.users_on_bank_account_72h DESC NULLS LAST,
-            aaf.prior_advances_on_bank_account_30d DESC NULLS LAST,
+            aaf.prior_advances_on_bank_account_7d DESC NULLS LAST,
             a.plaid_account_created_at DESC NULLS LAST
     ) = 1
 ),
@@ -325,17 +358,41 @@ ORDER BY advance_month, scenario
 """
 
 
+def run() -> "tuple[object, str]":
+    """Run the main query, returning (df, query_id). One connection so we can
+    read cur.sfqid for targeted profiling (profile.profile_operators(qid))."""
+    from automl.utils.io import snowflake
+
+    with snowflake.connect() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(build_sql())
+            df = snowflake.coerce_decimal_columns(cur.fetch_pandas_all())
+            return df, cur.sfqid
+        finally:
+            cur.close()
+
+
+def _save(df) -> "Path":
+    out_dir = Path(__file__).parent / "results"
+    out_dir.mkdir(exist_ok=True)
+    start, end = (TEST_WINDOW if TEST_WINDOW else (OUTPUT_START, OUTPUT_END))
+    tag = "test_" if TEST_WINDOW else ""
+    label = f"{tag}{start}_{end}".replace(" ", "T").replace(":", "").replace("-", "")
+    out_path = out_dir / f"backtest_{label}.csv"
+    df.to_csv(out_path, index=False)
+    return out_path
+
+
 def main() -> int:
-    sql = build_sql()
     if not EXECUTE:
-        print(sql)
+        print(build_sql())
         return 0
 
     import pandas as pd
     from dotenv import load_dotenv
 
     from automl.project.config import find_repo_root
-    from automl.utils.io import snowflake
 
     # Standalone entry point: load the repo-root .env ourselves (the harness
     # normally does this during project-config load; we don't open a session).
@@ -343,8 +400,10 @@ def main() -> int:
 
     pd.set_option("display.max_rows", None)
     pd.set_option("display.width", 200)
-    df = snowflake.fetch_df(sql)
+    df, qid = run()
+    print(f"query_id: {qid}")
     print(df.to_string(index=False))
+    print(f"\nsaved -> {_save(df)}")
     return 0
 
 

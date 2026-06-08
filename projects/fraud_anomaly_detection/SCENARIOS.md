@@ -97,7 +97,8 @@ Blocked on the device/IP graph features in [`TODO.md`](TODO.md).
 
 ## Governance (industry pattern)
 
-1. **Backtest by month** on the full pull — stability, volume, precision.
+1. **Backtest by month** on the full pull (`scenarios/backtest/` —
+   `monthly_backtest.py`; see its README) — stability, volume, precision.
 2. **Threshold setting via ATL/BTL** (above/below-the-line): sample
    just-under-threshold cases to verify the cut, don't eyeball.
 3. **Shadow mode** before action: tag in the warehouse ~90 days, watch

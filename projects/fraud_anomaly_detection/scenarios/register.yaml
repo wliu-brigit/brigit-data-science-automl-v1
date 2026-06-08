@@ -34,6 +34,12 @@
 #   3. Refresh the validation evidence (the second, machine-owned document
 #      at the bottom of this file — never edit it by hand):
 #        uv run python -m projects.fraud_anomaly_detection.scenarios.validation
+#   4. OPTIONAL, once piloting toward promotion: mirror the trigger as SQL in
+#      scenarios/backtest/monthly_backtest.py (the SCENARIOS list; bump its
+#      REGISTER_VERSION) and run the month-over-month backtest — that result is
+#      the promotion-gate stat (SCENARIOS.md). Skip it while a scenario is still
+#      a fresh draft; the backtest uses the same outcome definitions, so a
+#      confirmed scenario drops straight in. See scenarios/backtest/README.md.
 #
 # Status discipline: a scenario enters as status: draft (a finding being
 # piloted) and becomes signed_off only after the promotion gate in

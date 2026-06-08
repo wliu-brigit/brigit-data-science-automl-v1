@@ -121,11 +121,14 @@ def build_sql() -> str:
     #                         ~1. A month with no matured rows reads 0 (no bad
     #                         outcome observable yet) -- read with n_matured.
     #   baseline_never_paid_rate  same resolved rate over ALL advances (contrast)
-    #   scenario_loss_disbursed   $ disbursed to flagged advances that NEVER paid
-    #                         (matured AND DPD45 AND not repaid) -- principal out
-    #                         the door we likely won't recover. (loan_amount; a
-    #                         gross-unpaid-balance field exists but is unvalidated.)
-    #   baseline_loss_disbursed   same over ALL advances that month (contrast)
+    #   scenario_never_paid_principal  PRINCIPAL ($ loan_amount) disbursed to
+    #                         flagged advances that NEVER paid (matured AND DPD45
+    #                         AND not repaid) -- money out the door we likely
+    #                         won't recover. Named "principal" on purpose: it is
+    #                         the disbursed loan_amount, NOT a net-of-payments
+    #                         balance (a gross-unpaid-balance field exists but is
+    #                         not yet validated).
+    #   baseline_never_paid_principal  same over ALL advances that month (contrast)
     names = [name for name, _ in SCENARIOS] + ["scenario_any"]
     blocks = []
     for name in names:
@@ -149,8 +152,8 @@ def build_sql() -> str:
             / NULLIF(COUNT_IF({flag} AND (is_repaid OR (is_matured AND is_dpd45))), 0) AS scenario_never_paid_rate,
         COUNT_IF(is_matured AND is_dpd45 AND NOT is_repaid)
             / NULLIF(COUNT_IF(is_repaid OR (is_matured AND is_dpd45)), 0) AS baseline_never_paid_rate,
-        SUM(IFF({flag} AND is_matured AND is_dpd45 AND NOT is_repaid, loan_amount, 0)) AS scenario_loss_disbursed,
-        SUM(IFF(is_matured AND is_dpd45 AND NOT is_repaid, loan_amount, 0)) AS baseline_loss_disbursed
+        SUM(IFF({flag} AND is_matured AND is_dpd45 AND NOT is_repaid, loan_amount, 0)) AS scenario_never_paid_principal,
+        SUM(IFF(is_matured AND is_dpd45 AND NOT is_repaid, loan_amount, 0)) AS baseline_never_paid_principal
     FROM flagged
     GROUP BY advance_month"""
         )

@@ -93,8 +93,14 @@ score + bands, marketing attribution, the 24h/30d/90d/lifetime windows, all
 | `baseline_dpd45_rate` | dpd45 rate over *all* matured advances that month |
 | `scenario_never_paid_rate` | RESOLVED bad-rate among flagged advances: `never_paid / (repaid + never_paid)` (= `1 − repaid_rate`, kept lower-is-better like `dpd45_rate`); fraud trends toward 1 |
 | `baseline_never_paid_rate` | same resolved rate over all advances that month (the contrast) |
-| `scenario_loss_disbursed` | `$` disbursed to flagged advances that **never paid** (matured + DPD45 + not repaid) — principal we likely won't recover |
-| `baseline_loss_disbursed` | same over all advances that month (the contrast) |
+| `scenario_never_paid_principal` | **principal** (`$` `loan_amount`) disbursed to flagged advances that **never paid** (matured + DPD45 + not repaid) — money out we likely won't recover. Named "principal" because it's the disbursed amount, not a net-of-payments balance |
+| `baseline_never_paid_principal` | same over all advances that month (the contrast) |
+
+The companion heuristic-band view (`heuristic_band_by_month.sql`, run via
+`heuristic_band.py`) is built to line up **column-for-column** with this output
+— a `band` plays the role of a `scenario`, and its `baseline_*` columns are the
+same month-wide figures — so the rule-of-thumb bands and the codified scenarios
+can be compared directly, month over month.
 
 `dpd45_rate` denominator is `n_matured` (matches `validation.py` — rate among
 matured matches), deliberately not `n_scenario`; recent immature months show a

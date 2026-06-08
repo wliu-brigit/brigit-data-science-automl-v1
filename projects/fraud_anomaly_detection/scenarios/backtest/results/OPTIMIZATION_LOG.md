@@ -72,8 +72,11 @@ reuse 96.4% / burst 89.2%. Full-month rates land in the same high band
 (>90%, ~15× baseline) — predicate translation confirmed faithful; small
 differences are full-population-vs-sample + the simplified dedup tiebreak.
 
-**Full Jan 2025 -> now** (`backtest_20250101_20260701.csv`, 680.4s, 18 months
-x 3 scenarios = 54 rows). Denominator `n_advances` ~1.1M-2.1M/month.
+**Full Jan 2025 -> now** (`backtest_20250101_20260701.csv`, reran 723.3s on the
+final column set — `scenario_*`/`never_paid_rate`/`never_paid_principal`; 18
+months x 3 scenarios = 54 rows). Denominator `n_advances` ~1.1M-2.1M/month.
+Loss exposure (`scenario_never_paid_principal`): negligible pre-Dec, ~$118-126K
+in Dec 2025, ~$217-243K at the Jan-2026 peak.
 
 The headline: **the ring pattern switches on at Dec 2025.**
 - **Jan-Nov 2025:** scenarios barely fire (reuse 9-33, burst 2-27 per month)

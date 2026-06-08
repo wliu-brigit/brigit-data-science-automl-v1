@@ -94,8 +94,25 @@ def build_sql() -> str:
 
     # One aggregate block per scenario (+ scenario_any), UNION ALL'd. Every block
     # is identical except the flag it counts, so adding a scenario above adds one
-    # block here automatically. n_advances and baseline_dpd45_rate are computed
-    # inline per block (same denominator/baseline across scenarios within a month).
+    # block here automatically. The whole-month figures (n_advances,
+    # total_loan_disbursed, baseline_*) are computed inline per block — they are
+    # the same denominator/baseline across scenarios within a month.
+    #
+    # Column meanings (one row = one month x one scenario):
+    #   n_advances            advances disbursed that month (the denominator)
+    #   n_scenario            advances this scenario flagged
+    #   scenario_rate         n_scenario / n_advances
+    #   total_loan_disbursed  $ disbursed across ALL advances that month
+    #   scenario_loan_disbursed   $ disbursed across the flagged advances
+    #   n_matured             flagged advances old enough to observe DPD45 (>=45d)
+    #   n_dpd45               flagged + matured + hit gross DPD45
+    #   dpd45_rate            n_dpd45 / n_matured   (the bust-out cut; matured only)
+    #   baseline_dpd45_rate   DPD45 rate over ALL matured advances that month
+    #   scenario_repaid_rate  share of flagged advances REPAID as of the snapshot,
+    #                         over ALL flagged (not just matured) — an immediate
+    #                         "did they pay us back yet" read; fraud trends to ~0.
+    #                         Coarse: recent advances may simply be not-yet-due.
+    #   baseline_repaid_rate  same, over ALL advances that month (the contrast)
     names = [name for name, _ in SCENARIOS] + ["scenario_any"]
     blocks = []
     for name in names:
@@ -105,15 +122,20 @@ def build_sql() -> str:
         advance_month,
         '{name}' AS scenario,
         COUNT(*) AS n_advances,
-        COUNT_IF({flag}) AS n_matched,
-        COUNT_IF({flag}) / NULLIF(COUNT(*), 0) AS match_rate,
-        SUM(IFF({flag}, loan_amount, 0)) AS sum_loan_amount_matched,
-        COUNT_IF({flag} AND is_mature) AS n_mature,
-        COUNT_IF({flag} AND is_mature AND is_dpd45) AS n_dpd45,
-        COUNT_IF({flag} AND is_mature AND is_dpd45)
-            / NULLIF(COUNT_IF({flag} AND is_mature), 0) AS dpd45_rate,
-        COUNT_IF(is_mature AND is_dpd45)
-            / NULLIF(COUNT_IF(is_mature), 0) AS baseline_dpd45_rate
+        COUNT_IF({flag}) AS n_scenario,
+        COUNT_IF({flag}) / NULLIF(COUNT(*), 0) AS scenario_rate,
+        SUM(loan_amount) AS total_loan_disbursed,
+        SUM(IFF({flag}, loan_amount, 0)) AS scenario_loan_disbursed,
+        COUNT_IF({flag} AND is_matured) AS n_matured,
+        COUNT_IF({flag} AND is_matured AND is_dpd45) AS n_dpd45,
+        COUNT_IF({flag} AND is_matured AND is_dpd45)
+            / NULLIF(COUNT_IF({flag} AND is_matured), 0) AS dpd45_rate,
+        COUNT_IF(is_matured AND is_dpd45)
+            / NULLIF(COUNT_IF(is_matured), 0) AS baseline_dpd45_rate,
+        COUNT_IF({flag} AND is_repaid)
+            / NULLIF(COUNT_IF({flag}), 0) AS scenario_repaid_rate,
+        COUNT_IF(is_repaid)
+            / NULLIF(COUNT(*), 0) AS baseline_repaid_rate
     FROM flagged
     GROUP BY advance_month"""
         )
@@ -322,8 +344,9 @@ advance_level AS (
         a.identity_created_time,
         baf.users_on_bank_account_72h,
         aaf.prior_advances_on_bank_account_7d,
-        (a.label_mature_d45 = 1) AS is_mature,
-        (a.label_gross_dpd45 = 1) AS is_dpd45
+        (a.label_mature_d45 = 1) AS is_matured,
+        (a.label_gross_dpd45 = 1) AS is_dpd45,
+        (a.label_repaid_current_snapshot = 1) AS is_repaid
     FROM anchor_advance_account_candidates a
     LEFT JOIN bank_account_user_features baf
         ON a.advance_id = baf.advance_id AND a.bank_account_key = baf.bank_account_key
@@ -343,8 +366,9 @@ flagged AS (
     SELECT
         advance_month,
         loan_amount,
-        is_mature,
+        is_matured,
         is_dpd45,
+        is_repaid,
 {flag_cols},
         ({any_expr}) AS match_scenario_any
     FROM advance_level

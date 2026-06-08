@@ -80,21 +80,27 @@ score + bands, marketing attribution, the 24h/30d/90d/lifetime windows, all
 
 | column | meaning |
 |---|---|
-| `advance_month` | `DATE_TRUNC('month', feature_as_of_ts)` |
+| `advance_month` | `DATE_TRUNC('month', feature_as_of_ts)` — the disbursement month |
 | `scenario` | `ring_account_reuse` / `ring_identity_burst` / `scenario_any` |
-| `n_advances` | denominator — all anchor advances that month |
-| `n_matched` | advances the scenario flagged |
-| `match_rate` | `n_matched / n_advances` (volume-normalized) |
-| `sum_loan_amount_matched` | matched dollar exposure that month |
-| `n_mature` | matched advances with `label_mature_d45 = 1` |
-| `n_dpd45` | matched & mature & `label_gross_dpd45 = 1` |
-| `dpd45_rate` | `n_dpd45 / n_mature` — **the key metric** |
-| `baseline_dpd45_rate` | dpd45 rate over *all* mature advances that month |
+| `n_advances` | denominator — all advances disbursed that month |
+| `n_scenario` | advances this scenario flagged |
+| `scenario_rate` | `n_scenario / n_advances` (volume-normalized) |
+| `total_loan_disbursed` | `$` disbursed across **all** advances that month |
+| `scenario_loan_disbursed` | `$` disbursed across the flagged advances |
+| `n_matured` | flagged advances old enough to observe DPD45 (`label_mature_d45 = 1`) |
+| `n_dpd45` | flagged & matured & `label_gross_dpd45 = 1` |
+| `dpd45_rate` | `n_dpd45 / n_matured` — **the key metric** (matured only) |
+| `baseline_dpd45_rate` | dpd45 rate over *all* matured advances that month |
+| `scenario_repaid_rate` | share of flagged advances REPAID as of the snapshot, over **all** flagged (no maturity gate) — an immediate "did they pay us back" read; fraud trends toward 0 |
+| `baseline_repaid_rate` | same, over all advances that month (the contrast) |
 
-`dpd45_rate` denominator is `n_mature` (matches `validation.py` — rate among
-matured matches), deliberately not `n_matched`; recent immature months show a
-small/zero `n_mature`, which keeps them honestly flagged rather than
-silently diluted.
+`dpd45_rate` denominator is `n_matured` (matches `validation.py` — rate among
+matured matches), deliberately not `n_scenario`; recent immature months show a
+small/zero `n_matured`, which keeps them honestly flagged rather than silently
+diluted. `scenario_repaid_rate` is the complementary *no-maturity* read the
+business asked for: it counts repayment as of the snapshot over all flagged
+advances, so it reports immediately — at the cost of conflating "not yet due"
+with "never paid" for very recent months (read it alongside `n_matured`).
 
 ## Parametrization
 

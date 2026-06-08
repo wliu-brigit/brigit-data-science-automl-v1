@@ -1,42 +1,45 @@
--- Quick-and-dirty heuristic-band comparison, month over month.
+-- Quick heuristic-band comparison, month over month.
 --
 -- Companion to the scenario backtest (monthly_backtest.py). Reads the EXISTING
--- materialized snapshot table — no rebuild — so it is a single scan, no joins,
--- and runs in seconds. The snapshot was built for one output month (Dec 2025),
--- so "by month" here is effectively that month; re-point the FROM at a wider
--- materialization if/when one exists.
+-- materialized snapshot table -- no rebuild, single scan, runs in seconds.
+-- The snapshot spans Dec 2025 -> the build date (~10.7M advances), so "by
+-- month" yields several months.
 --
 -- The heuristic band (LOW / POSSIBLE / LIKELY / EXTREMELY_LIKELY) is the
--- production rule-of-thumb score already computed in the snapshot. We do NOT
--- recompute it in the scenario backtest because it depends on the lifetime /
--- network features the backtest deliberately drops for speed — hence this
--- separate read against the pre-built table.
+-- production rule-of-thumb score already in the snapshot. We do NOT recompute
+-- it in the scenario backtest because it depends on the lifetime / network
+-- features the backtest drops for speed -- hence this separate read.
 --
--- Metrics mirror the scenario output for apples-to-apples comparison:
---   dpd45_rate          n_dpd45 / n_matured           (matured only; the cut)
---   repaid_rate         repaid / (repaid + charged_off)  RESOLVED repayment —
---                       of advances that reached a verdict, the share paid back
---                       (fair to recent months, no maturity gate). Fraud -> ~0.
---   chargeoff_rate      charged_off / all advances    (raw loss rate)
+-- Outcome metrics mirror the scenario output for apples-to-apples comparison.
+-- IMPORTANT (validated on this table): charge_off is essentially never
+-- populated here (399 of 10.7M rows), so "loss" is NOT charge-off. The bad
+-- outcome is delinquency: never_paid = matured AND gross-DPD45 AND not repaid.
+--   dpd45_rate   n_dpd45 / n_matured                         (matured only)
+--   repaid_rate  repaid / (repaid + never_paid)  -- RESOLVED: of advances that
+--                reached a verdict (paid back, or went DPD45 unpaid), the share
+--                paid back. Still-open / not-yet-due advances are excluded, so
+--                it is fair to recent months. Fraud -> low.
 
 SELECT
-    DATE_TRUNC('month', feature_as_of_ts)            AS advance_month,
-    heuristic_fraud_band                             AS band,
+    DATE_TRUNC('month', feature_as_of_ts)                    AS advance_month,
+    heuristic_fraud_band                                     AS band,
 
-    COUNT(*)                                         AS n_advances,
-    SUM(loan_amount)                                 AS total_loan_disbursed,
+    COUNT(*)                                                 AS n_advances,
+    SUM(loan_amount)                                         AS total_loan_disbursed,
 
-    COUNT_IF(label_mature_d45 = 1)                   AS n_matured,
+    COUNT_IF(label_mature_d45 = 1)                           AS n_matured,
     COUNT_IF(label_mature_d45 = 1 AND label_gross_dpd45 = 1) AS n_dpd45,
     COUNT_IF(label_mature_d45 = 1 AND label_gross_dpd45 = 1)
-        / NULLIF(COUNT_IF(label_mature_d45 = 1), 0)  AS dpd45_rate,
+        / NULLIF(COUNT_IF(label_mature_d45 = 1), 0)          AS dpd45_rate,
 
-    -- resolved repayment: repaid / (repaid + charged_off)
+    -- never_paid = matured & DPD45 & not repaid (the bad, resolved-unfavourably)
+    COUNT_IF(label_mature_d45 = 1 AND label_gross_dpd45 = 1
+             AND label_repaid_current_snapshot = 0)          AS n_never_paid,
+    -- resolved repayment: repaid / (repaid + never_paid)
     COUNT_IF(label_repaid_current_snapshot = 1)
-        / NULLIF(COUNT_IF(label_repaid_current_snapshot = 1
-                          OR charge_off_timestamp IS NOT NULL), 0) AS repaid_rate,
-    COUNT_IF(charge_off_timestamp IS NOT NULL)
-        / NULLIF(COUNT(*), 0)                        AS chargeoff_rate
+        / NULLIF(COUNT_IF(label_repaid_current_snapshot = 1)
+                 + COUNT_IF(label_mature_d45 = 1 AND label_gross_dpd45 = 1
+                            AND label_repaid_current_snapshot = 0), 0) AS repaid_rate
 
 FROM brigit_data_science.SANDBOX_WLIU.fraud_advance_feature_base
 GROUP BY 1, 2
@@ -49,12 +52,3 @@ ORDER BY
         WHEN 'LOW'              THEN 4
         ELSE 5
     END;
-
--- One-off: inspect how repayment/loss is encoded, to sanity-check the
--- definition above (run separately if you want to see the raw status split):
---
---   SELECT loan_status,
---          COUNT(*) AS n,
---          COUNT_IF(charge_off_timestamp IS NOT NULL) AS charged_off
---   FROM brigit_data_science.SANDBOX_WLIU.fraud_advance_feature_base
---   GROUP BY 1 ORDER BY 2 DESC;

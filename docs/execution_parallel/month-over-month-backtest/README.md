@@ -91,7 +91,7 @@ score + bands, marketing attribution, the 24h/30d/90d/lifetime windows, all
 | `n_dpd45` | flagged & matured & `label_gross_dpd45 = 1` |
 | `dpd45_rate` | `n_dpd45 / n_matured` — **the key metric** (matured only) |
 | `baseline_dpd45_rate` | dpd45 rate over *all* matured advances that month |
-| `scenario_repaid_rate` | RESOLVED repayment among flagged advances: `repaid / (repaid + charged_off)` — of the advances that reached a verdict, the share paid back; fraud trends toward 0 |
+| `scenario_repaid_rate` | RESOLVED repayment among flagged advances: `repaid / (repaid + never_paid)` — of advances that reached a verdict, the share paid back; fraud trends toward 0 |
 | `baseline_repaid_rate` | same resolved rate over all advances that month (the contrast) |
 
 `dpd45_rate` denominator is `n_matured` (matches `validation.py` — rate among
@@ -99,14 +99,21 @@ matured matches), deliberately not `n_scenario`; recent immature months show a
 small/zero `n_matured`, which keeps them honestly flagged rather than silently
 diluted.
 
-`scenario_repaid_rate` is the *no-maturity* read the business asked for, done
-fairly: an advance is either **repaid** (`loan_status='REPAID'`), **charged
-off** (`charge_off_timestamp IS NOT NULL`), or **still open**. The rate is
-`repaid / (repaid + charged_off)` — still-open advances are excluded until they
-resolve, so it needs no 45-day gate and is not unfair to recent months. A
-companion heuristic-band view over the pre-built snapshot
-(`heuristic_band_by_month.sql`) reports the same metrics by band, since the
-band depends on the lifetime/network features this query drops for speed.
+**Defining the repaid rate (validated on the snapshot, not assumed).** An
+advance is **repaid** (`loan_status='REPAID'`), **never-paid** (matured AND
+gross-DPD45 AND not repaid), or **still open** (in-flight / not yet due).
+`scenario_repaid_rate = repaid / (repaid + never_paid)` — still-open advances
+are excluded until they resolve, so it is fair to recent months. We do **not**
+use charge-off as the loss leg: a cross-tab over
+`SANDBOX_WLIU.fraud_advance_feature_base` showed `charge_off_timestamp` is set
+on only 399 of ~10.7M rows (0.004%), so a charge-off-based rate would read ~100%
+even for fraud. The bad outcome in this data is delinquency (DPD45), which
+inherently needs the ~45-day clock — there is no maturity-free loss signal here,
+so a month with zero matured rows reads `repaid_rate = 1.0` by construction
+(no verdict yet). A companion heuristic-band view
+(`heuristic_band_by_month.sql`, run via `heuristic_band.py`) reports the same
+metrics by `heuristic_fraud_band` over the pre-built snapshot, since the band
+depends on the lifetime/network features this query drops for speed.
 
 ## Parametrization
 

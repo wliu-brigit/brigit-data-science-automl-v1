@@ -3,8 +3,11 @@
 -- comparable: here a `band` plays the role a `scenario` plays there, and the
 -- baseline_* columns are the month-wide figures (identical meaning to the
 -- backtest's baselines). Reads the EXISTING materialized snapshot table -- no
--- rebuild, single scan. The snapshot spans Dec 2025 -> the build date (~10.7M
--- advances), so "by month" yields several months.
+-- rebuild, single scan. The snapshot has no upper date bound on its anchor
+-- window, so it spans Dec 2025 -> its build date: built 2026-05-27, it covers
+-- Dec 2025 - May 2026 (6 months, 10,666,811 rows). It is static (won't advance
+-- until rebuilt). The 107K dry-run snapshot the register validated on is a
+-- sample of this same table.
 --
 -- The heuristic band (LOW / POSSIBLE / LIKELY / EXTREMELY_LIKELY) is the
 -- production rule-of-thumb score already in the snapshot. We do NOT recompute
@@ -37,16 +40,18 @@ WITH by_band AS (
     FROM brigit_data_science.SANDBOX_WLIU.fraud_advance_feature_base
     GROUP BY 1, 2
 )
+-- Output columns are named to MATCH the scenario backtest exactly (the band is
+-- reported in the `scenario` column), so the two CSVs share one schema and stack.
 SELECT
     advance_month,
-    band,
+    band                                                    AS scenario,
     -- month-wide denominator (same for every band in the month)
     SUM(n_band) OVER (PARTITION BY advance_month)            AS n_advances,
-    n_band,
-    n_band / NULLIF(SUM(n_band) OVER (PARTITION BY advance_month), 0) AS band_rate,
+    n_band                                                  AS n_scenario,
+    n_band / NULLIF(SUM(n_band) OVER (PARTITION BY advance_month), 0) AS scenario_rate,
 
     SUM(band_loan_disbursed) OVER (PARTITION BY advance_month) AS total_loan_disbursed,
-    band_loan_disbursed,
+    band_loan_disbursed                                     AS scenario_loan_disbursed,
 
     n_matured,
     n_dpd45,
@@ -54,11 +59,11 @@ SELECT
     SUM(n_dpd45)   OVER (PARTITION BY advance_month)
         / NULLIF(SUM(n_matured) OVER (PARTITION BY advance_month), 0) AS baseline_dpd45_rate,
 
-    n_never_paid / NULLIF(n_resolved, 0)                    AS never_paid_rate,
+    n_never_paid / NULLIF(n_resolved, 0)                    AS scenario_never_paid_rate,
     SUM(n_never_paid) OVER (PARTITION BY advance_month)
         / NULLIF(SUM(n_resolved) OVER (PARTITION BY advance_month), 0) AS baseline_never_paid_rate,
 
-    never_paid_principal,
+    never_paid_principal                                    AS scenario_never_paid_principal,
     SUM(never_paid_principal) OVER (PARTITION BY advance_month) AS baseline_never_paid_principal
 
 FROM by_band

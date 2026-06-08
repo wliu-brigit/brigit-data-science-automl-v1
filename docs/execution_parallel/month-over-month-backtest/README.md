@@ -91,8 +91,10 @@ score + bands, marketing attribution, the 24h/30d/90d/lifetime windows, all
 | `n_dpd45` | flagged & matured & `label_gross_dpd45 = 1` |
 | `dpd45_rate` | `n_dpd45 / n_matured` — **the key metric** (matured only) |
 | `baseline_dpd45_rate` | dpd45 rate over *all* matured advances that month |
-| `scenario_repaid_rate` | RESOLVED repayment among flagged advances: `repaid / (repaid + never_paid)` — of advances that reached a verdict, the share paid back; fraud trends toward 0 |
-| `baseline_repaid_rate` | same resolved rate over all advances that month (the contrast) |
+| `scenario_never_paid_rate` | RESOLVED bad-rate among flagged advances: `never_paid / (repaid + never_paid)` (= `1 − repaid_rate`, kept lower-is-better like `dpd45_rate`); fraud trends toward 1 |
+| `baseline_never_paid_rate` | same resolved rate over all advances that month (the contrast) |
+| `scenario_loss_disbursed` | `$` disbursed to flagged advances that **never paid** (matured + DPD45 + not repaid) — principal we likely won't recover |
+| `baseline_loss_disbursed` | same over all advances that month (the contrast) |
 
 `dpd45_rate` denominator is `n_matured` (matches `validation.py` — rate among
 matured matches), deliberately not `n_scenario`; recent immature months show a

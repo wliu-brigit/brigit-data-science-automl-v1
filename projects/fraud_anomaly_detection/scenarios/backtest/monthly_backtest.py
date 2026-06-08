@@ -108,18 +108,24 @@ def build_sql() -> str:
     #   n_dpd45               flagged + matured + hit gross DPD45
     #   dpd45_rate            n_dpd45 / n_matured   (the bust-out cut; matured only)
     #   baseline_dpd45_rate   DPD45 rate over ALL matured advances that month
-    #   scenario_repaid_rate  RESOLVED repayment among flagged advances:
-    #                         repaid / (repaid + never_paid), where
+    #   scenario_never_paid_rate  RESOLVED bad-rate among flagged advances:
+    #                         never_paid / (repaid + never_paid), where
     #                         never_paid = matured AND DPD45 AND not repaid.
-    #                         (charge-off is NOT used: it is ~never populated in
-    #                         this data -- 399 of 10.7M rows -- so the bad outcome
-    #                         is delinquency, not write-off.) Of the advances that
-    #                         reached a verdict (paid back, or went DPD45 unpaid),
-    #                         the share paid back; still-open advances excluded.
-    #                         Fraud -> ~0. Read with n_matured: a month with no
-    #                         matured rows has no observable bad outcome yet, so
-    #                         the rate reads 1.0 by construction.
-    #   baseline_repaid_rate  same resolved rate over ALL advances (the contrast)
+    #                         (= 1 - repaid_rate; kept in this "lower is better"
+    #                         direction to match dpd45_rate.) Of the advances
+    #                         that reached a verdict (paid back, or went DPD45
+    #                         unpaid), the share that went bad; still-open
+    #                         advances excluded. Charge-off is NOT used as the
+    #                         loss leg: it is ~never populated here (399 of 10.7M
+    #                         rows), so the bad outcome is delinquency. Fraud ->
+    #                         ~1. A month with no matured rows reads 0 (no bad
+    #                         outcome observable yet) -- read with n_matured.
+    #   baseline_never_paid_rate  same resolved rate over ALL advances (contrast)
+    #   scenario_loss_disbursed   $ disbursed to flagged advances that NEVER paid
+    #                         (matured AND DPD45 AND not repaid) -- principal out
+    #                         the door we likely won't recover. (loan_amount; a
+    #                         gross-unpaid-balance field exists but is unvalidated.)
+    #   baseline_loss_disbursed   same over ALL advances that month (contrast)
     names = [name for name, _ in SCENARIOS] + ["scenario_any"]
     blocks = []
     for name in names:
@@ -139,10 +145,12 @@ def build_sql() -> str:
             / NULLIF(COUNT_IF({flag} AND is_matured), 0) AS dpd45_rate,
         COUNT_IF(is_matured AND is_dpd45)
             / NULLIF(COUNT_IF(is_matured), 0) AS baseline_dpd45_rate,
-        COUNT_IF({flag} AND is_repaid)
-            / NULLIF(COUNT_IF({flag} AND (is_repaid OR (is_matured AND is_dpd45))), 0) AS scenario_repaid_rate,
-        COUNT_IF(is_repaid)
-            / NULLIF(COUNT_IF(is_repaid OR (is_matured AND is_dpd45)), 0) AS baseline_repaid_rate
+        COUNT_IF({flag} AND is_matured AND is_dpd45 AND NOT is_repaid)
+            / NULLIF(COUNT_IF({flag} AND (is_repaid OR (is_matured AND is_dpd45))), 0) AS scenario_never_paid_rate,
+        COUNT_IF(is_matured AND is_dpd45 AND NOT is_repaid)
+            / NULLIF(COUNT_IF(is_repaid OR (is_matured AND is_dpd45)), 0) AS baseline_never_paid_rate,
+        SUM(IFF({flag} AND is_matured AND is_dpd45 AND NOT is_repaid, loan_amount, 0)) AS scenario_loss_disbursed,
+        SUM(IFF(is_matured AND is_dpd45 AND NOT is_repaid, loan_amount, 0)) AS baseline_loss_disbursed
     FROM flagged
     GROUP BY advance_month"""
         )

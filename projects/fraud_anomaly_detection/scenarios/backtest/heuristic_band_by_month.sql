@@ -14,11 +14,12 @@
 -- IMPORTANT (validated on this table): charge_off is essentially never
 -- populated here (399 of 10.7M rows), so "loss" is NOT charge-off. The bad
 -- outcome is delinquency: never_paid = matured AND gross-DPD45 AND not repaid.
---   dpd45_rate   n_dpd45 / n_matured                         (matured only)
---   repaid_rate  repaid / (repaid + never_paid)  -- RESOLVED: of advances that
---                reached a verdict (paid back, or went DPD45 unpaid), the share
---                paid back. Still-open / not-yet-due advances are excluded, so
---                it is fair to recent months. Fraud -> low.
+--   dpd45_rate       n_dpd45 / n_matured                     (matured only)
+--   never_paid_rate  never_paid / (repaid + never_paid)  -- RESOLVED bad-rate:
+--                    of advances that reached a verdict, the share that went
+--                    bad. "lower is better", same direction as dpd45_rate;
+--                    still-open advances excluded. Fraud -> ~1.
+--   loss_disbursed   $ disbursed to advances that never paid (loss exposure)
 
 SELECT
     DATE_TRUNC('month', feature_as_of_ts)                    AS advance_month,
@@ -35,11 +36,15 @@ SELECT
     -- never_paid = matured & DPD45 & not repaid (the bad, resolved-unfavourably)
     COUNT_IF(label_mature_d45 = 1 AND label_gross_dpd45 = 1
              AND label_repaid_current_snapshot = 0)          AS n_never_paid,
-    -- resolved repayment: repaid / (repaid + never_paid)
-    COUNT_IF(label_repaid_current_snapshot = 1)
+    -- resolved bad-rate: never_paid / (repaid + never_paid)  -- lower is better
+    COUNT_IF(label_mature_d45 = 1 AND label_gross_dpd45 = 1
+             AND label_repaid_current_snapshot = 0)
         / NULLIF(COUNT_IF(label_repaid_current_snapshot = 1)
                  + COUNT_IF(label_mature_d45 = 1 AND label_gross_dpd45 = 1
-                            AND label_repaid_current_snapshot = 0), 0) AS repaid_rate
+                            AND label_repaid_current_snapshot = 0), 0) AS never_paid_rate,
+    -- loss exposure: principal disbursed to advances that never paid
+    SUM(IFF(label_mature_d45 = 1 AND label_gross_dpd45 = 1
+            AND label_repaid_current_snapshot = 0, loan_amount, 0)) AS loss_disbursed
 
 FROM brigit_data_science.SANDBOX_WLIU.fraud_advance_feature_base
 GROUP BY 1, 2

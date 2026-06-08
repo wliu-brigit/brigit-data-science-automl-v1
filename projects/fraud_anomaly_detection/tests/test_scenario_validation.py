@@ -44,7 +44,8 @@ def test_compute_stats_per_scenario(frame):
     assert rar["share"] == pytest.approx(0.5)
     assert rar["n_mature"] == 2
     assert rar["n_never_paid"] == 1
-    assert rar["never_paid_rate"] == pytest.approx(0.5)
+    assert rar["n_resolved"] == 2  # both matched advances reached a verdict (repaid or DPD45)
+    assert rar["never_paid_rate"] == pytest.approx(0.5)  # 1 never-paid / 2 resolved
     assert rar["n_dpd45"] == 2  # both matched mature rows hit gross DPD45
     assert rar["dpd45_rate"] == pytest.approx(1.0)
     assert rar["band_distribution"] == {"EXTREMELY_LIKELY": 1, "LOW": 1}
@@ -54,8 +55,9 @@ def test_compute_stats_baseline_section(frame):
     stats = compute_stats(frame, SCENARIOS)
     base = stats["baseline"]
     assert base["n_mature"] == 3  # r1 is immature
-    assert base["never_paid_rate"] == pytest.approx(1 / 3)  # m0 only
-    assert base["dpd45_rate"] == pytest.approx(2 / 3)  # m0 + m1
+    # resolved denominator: m0 (never-paid) + m1 (repaid) = 2; r0/r1 unresolved
+    assert base["never_paid_rate"] == pytest.approx(0.5)  # 1 never-paid (m0) / 2 resolved
+    assert base["dpd45_rate"] == pytest.approx(2 / 3)  # m0 + m1 (matured denom, unchanged)
     assert base["bands"]["LOW"]["n"] == 2
     assert base["bands"]["LOW"]["never_paid_rate"] == pytest.approx(0.0)  # m1 repaid, r0 clean
     assert base["bands"]["EXTREMELY_LIKELY"]["never_paid_rate"] == pytest.approx(1.0)
@@ -69,7 +71,8 @@ def test_compute_stats_overall_union_overlap_residual(frame):
     assert overall["overlap"]["n_multi_matched"] == 0  # single scenario: no overlap possible
     residual = overall["residual"]
     assert residual["n"] == 2  # r0 + r1
-    assert residual["never_paid_rate"] == pytest.approx(0.0)  # r0 mature, clean
+    # no resolved rows in residual (r0 is matured-but-current, r1 immature) -> undefined
+    assert residual["never_paid_rate"] is None
     # band coverage: E_L fully captured, LOW half, POSSIBLE untouched
     assert residual["bands"]["EXTREMELY_LIKELY"] == {"n_left": 0, "coverage": 1.0}
     assert residual["bands"]["LOW"] == {"n_left": 1, "coverage": 0.5}
@@ -91,8 +94,8 @@ def test_compute_stats_per_scenario_unique_capture_and_lift(frame):
     # only one scenario registered: unique == gross
     assert rar["unique_n"] == 2
     assert rar["unique_never_paid_rate"] == pytest.approx(0.5)
-    # 0.5 scenario rate over 1/3 base rate
-    assert rar["lift_vs_base"] == pytest.approx(1.5)
+    # 0.5 scenario never-paid rate over 0.5 resolved base rate
+    assert rar["lift_vs_base"] == pytest.approx(1.0)
 
 
 def test_compute_stats_empty_match_yields_none_rates(frame):

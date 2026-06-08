@@ -1,10 +1,31 @@
 # Month-over-month scenario backtest
 
-**Status:** execution (design approved 2026-06-07, implementation pending)
+**Status:** DONE (2026-06-08) — archived. The tooling lives at
+`projects/fraud_anomaly_detection/scenarios/backtest/` (see its `README.md`,
+the durable front door); this file is the original design + history.
 **Owner:** wendao
 **Lineage:** the "Month-over-month backtest" candidate in `docs/HANDOFF.md`;
 the promotion gate the two draft block-tier scenarios need
 (`projects/fraud_anomaly_detection/scenarios/register.yaml`).
+
+## Outcome (2026-06-08)
+
+- Built `scenarios/backtest/monthly_backtest.py` (combined, stripped query),
+  `heuristic_band.py` + `.sql` (band comparison, same schema), `profile.py`
+  (query profiling). Optimized 582s → 293s one-day (see
+  `scenarios/backtest/results/OPTIMIZATION_LOG.md` for the full story).
+- Ran the full Jan 2025 → now sweep (CSV in `results/`): the ring pattern
+  switches on at Dec 2025 (never_paid/dpd45 90–99% vs ~5% baseline; pre-Dec is
+  low-volume noise). Dec-2025 month confirmed predicate fidelity vs the register.
+- Validated outcome definitions on real data: charge-off is ~never populated
+  (399/10.7M) so the loss leg is delinquency; `never_paid_rate` redefined as
+  `never_paid / (repaid + never_paid)` (resolved) and aligned across the
+  backtest, the heuristic view, and `validation.py` (register evidence refreshed).
+- Wired the backtest into the scenario authoring flow (`register.yaml` optional
+  step 4; `SCENARIOS.md` governance step 1).
+
+Open follow-ups (not blockers): add a net-loss column (`gross − recovered`) if
+realized loss is wanted; rebuild the snapshot table to extend past 2026-05-27.
 
 ## The ask
 

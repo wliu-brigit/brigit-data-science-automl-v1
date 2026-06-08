@@ -91,16 +91,22 @@ score + bands, marketing attribution, the 24h/30d/90d/lifetime windows, all
 | `n_dpd45` | flagged & matured & `label_gross_dpd45 = 1` |
 | `dpd45_rate` | `n_dpd45 / n_matured` — **the key metric** (matured only) |
 | `baseline_dpd45_rate` | dpd45 rate over *all* matured advances that month |
-| `scenario_repaid_rate` | share of flagged advances REPAID as of the snapshot, over **all** flagged (no maturity gate) — an immediate "did they pay us back" read; fraud trends toward 0 |
-| `baseline_repaid_rate` | same, over all advances that month (the contrast) |
+| `scenario_repaid_rate` | RESOLVED repayment among flagged advances: `repaid / (repaid + charged_off)` — of the advances that reached a verdict, the share paid back; fraud trends toward 0 |
+| `baseline_repaid_rate` | same resolved rate over all advances that month (the contrast) |
 
 `dpd45_rate` denominator is `n_matured` (matches `validation.py` — rate among
 matured matches), deliberately not `n_scenario`; recent immature months show a
 small/zero `n_matured`, which keeps them honestly flagged rather than silently
-diluted. `scenario_repaid_rate` is the complementary *no-maturity* read the
-business asked for: it counts repayment as of the snapshot over all flagged
-advances, so it reports immediately — at the cost of conflating "not yet due"
-with "never paid" for very recent months (read it alongside `n_matured`).
+diluted.
+
+`scenario_repaid_rate` is the *no-maturity* read the business asked for, done
+fairly: an advance is either **repaid** (`loan_status='REPAID'`), **charged
+off** (`charge_off_timestamp IS NOT NULL`), or **still open**. The rate is
+`repaid / (repaid + charged_off)` — still-open advances are excluded until they
+resolve, so it needs no 45-day gate and is not unfair to recent months. A
+companion heuristic-band view over the pre-built snapshot
+(`heuristic_band_by_month.sql`) reports the same metrics by band, since the
+band depends on the lifetime/network features this query drops for speed.
 
 ## Parametrization
 

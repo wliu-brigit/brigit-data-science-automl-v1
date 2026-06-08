@@ -108,11 +108,13 @@ def build_sql() -> str:
     #   n_dpd45               flagged + matured + hit gross DPD45
     #   dpd45_rate            n_dpd45 / n_matured   (the bust-out cut; matured only)
     #   baseline_dpd45_rate   DPD45 rate over ALL matured advances that month
-    #   scenario_repaid_rate  share of flagged advances REPAID as of the snapshot,
-    #                         over ALL flagged (not just matured) — an immediate
-    #                         "did they pay us back yet" read; fraud trends to ~0.
-    #                         Coarse: recent advances may simply be not-yet-due.
-    #   baseline_repaid_rate  same, over ALL advances that month (the contrast)
+    #   scenario_repaid_rate  RESOLVED repayment: repaid / (repaid + charged_off)
+    #                         over flagged advances — i.e. of the advances that
+    #                         reached a verdict, the share paid back. Excludes
+    #                         still-open (not-yet-due) advances, so it is fair to
+    #                         recent months and needs no 45d maturity gate. Fraud
+    #                         trends to ~0; read alongside n_matured for coverage.
+    #   baseline_repaid_rate  same resolved rate over ALL advances (the contrast)
     names = [name for name, _ in SCENARIOS] + ["scenario_any"]
     blocks = []
     for name in names:
@@ -133,9 +135,9 @@ def build_sql() -> str:
         COUNT_IF(is_matured AND is_dpd45)
             / NULLIF(COUNT_IF(is_matured), 0) AS baseline_dpd45_rate,
         COUNT_IF({flag} AND is_repaid)
-            / NULLIF(COUNT_IF({flag}), 0) AS scenario_repaid_rate,
+            / NULLIF(COUNT_IF({flag} AND (is_repaid OR is_charged_off)), 0) AS scenario_repaid_rate,
         COUNT_IF(is_repaid)
-            / NULLIF(COUNT(*), 0) AS baseline_repaid_rate
+            / NULLIF(COUNT_IF(is_repaid OR is_charged_off), 0) AS baseline_repaid_rate
     FROM flagged
     GROUP BY advance_month"""
         )
@@ -164,6 +166,7 @@ all_advances AS (
         l.loan_amount,
         l.origination_timestamp::TIMESTAMP_NTZ AS feature_as_of_ts,
         IFF(l.loan_status = 'REPAID', 1, 0) AS label_repaid_current_snapshot,
+        IFF(l.charge_off_timestamp IS NOT NULL, 1, 0) AS label_charged_off,
         IFF(l.is_gross_dpd45, 1, 0) AS label_gross_dpd45,
         IFF(l.is_mature_d45, 1, 0) AS label_mature_d45
     FROM {FCT_LOANS} l
@@ -346,7 +349,8 @@ advance_level AS (
         aaf.prior_advances_on_bank_account_7d,
         (a.label_mature_d45 = 1) AS is_matured,
         (a.label_gross_dpd45 = 1) AS is_dpd45,
-        (a.label_repaid_current_snapshot = 1) AS is_repaid
+        (a.label_repaid_current_snapshot = 1) AS is_repaid,
+        (a.label_charged_off = 1) AS is_charged_off
     FROM anchor_advance_account_candidates a
     LEFT JOIN bank_account_user_features baf
         ON a.advance_id = baf.advance_id AND a.bank_account_key = baf.bank_account_key
@@ -369,6 +373,7 @@ flagged AS (
         is_matured,
         is_dpd45,
         is_repaid,
+        is_charged_off,
 {flag_cols},
         ({any_expr}) AS match_scenario_any
     FROM advance_level

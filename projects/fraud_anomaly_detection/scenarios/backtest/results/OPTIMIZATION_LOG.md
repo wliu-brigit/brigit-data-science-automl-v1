@@ -53,3 +53,42 @@ speedups would need a smaller/pre-deduped current-state plaid source, which is
 out of scope here.
 
 | best | 292.6s | drop lifetime/30d, push 72h/7d into joins, scope to touched accounts |
+
+## Deliverable runs (saved CSVs)
+
+Run on the optimized (iteration-2) query.
+
+**1-month — December 2025** (`backtest_test_20251201_20260101.csv`, 325.9s,
+1,745,593 advances):
+
+| scenario | n_matched | sum_loan_matched | dpd45_rate | baseline_dpd45 |
+|---|---|---|---|---|
+| ring_account_reuse | 523 | 129,015 | 91.2% | 6.2% |
+| ring_identity_burst | 675 | 130,215 | 96.1% | 6.2% |
+| scenario_any | 723 | 140,330 | 91.6% | 6.2% |
+
+Confidence check vs the register (validated on the 107K dry-run sample):
+reuse 96.4% / burst 89.2%. Full-month rates land in the same high band
+(>90%, ~15× baseline) — predicate translation confirmed faithful; small
+differences are full-population-vs-sample + the simplified dedup tiebreak.
+
+**Full Jan 2025 -> now** (`backtest_20250101_20260701.csv`, 680.4s, 18 months
+x 3 scenarios = 54 rows). Denominator `n_advances` ~1.1M-2.1M/month.
+
+The headline: **the ring pattern switches on at Dec 2025.**
+- **Jan-Nov 2025:** scenarios barely fire (reuse 9-33, burst 2-27 per month)
+  and dpd45 of the matched rows is low/noisy (often near baseline) — the
+  predicates don't separate fraud in this period.
+- **Dec 2025 -> Apr 2026:** step-change. Matches jump (reuse 523 -> 1139 peak
+  in Jan-2026; burst 675 -> 1547) and dpd45 of matched rows is **90-98%** vs a
+  ~5-6% baseline (~15-18x), sustained through Feb, tapering Mar (~74-81%) and
+  Apr (~60-68%).
+- **May-Jun 2026:** matches present but `n_mature = 0` -> `dpd45_rate = NaN`
+  (advances <45 days old as of the run); Jun is a partial month (~510K). Counts
+  only, no outcome yet.
+
+Reading: the mule-account ring bust-out appears to be a fraud wave that began
+~Dec 2025; before that these triggers are low-volume noise. Worth a closer look
+(the pre-Dec matches at near-baseline dpd45 are likely innocent, not early ring
+activity). Caveat: dedup tiebreak is simplified (no lifetime/30d), so fan-out
+advances may differ slightly from the pinned-snapshot selection.

@@ -9,11 +9,12 @@ current evidence next to the definitions:
 
     uv run python -m projects.fraud_anomaly_detection.scenarios.validation
 
-Per scenario: match count and share, never-paid-DPD45 rate on mature rows
+Per scenario: match count and share, never-paid-DPD45 rate on RESOLVED rows
 (gross DPD45 and not repaid as of snapshot — the bust-out cut, same as the
-eval metrics), plain gross-DPD45 rate on mature rows, and the heuristic-band
-distribution of matched rows (how many the heuristic already flagged vs
-called clean).
+eval metrics; denominator = repaid + never_paid, matching the
+scenarios/backtest definition), plain gross-DPD45 rate on mature rows, and the
+heuristic-band distribution of matched rows (how many the heuristic already
+flagged vs called clean).
 """
 
 from __future__ import annotations
@@ -55,6 +56,12 @@ def compute_stats(df: pd.DataFrame, scenarios: Sequence[Scenario]) -> dict[str, 
     mature = (df["label_mature_d45"].astype(float) == 1).to_numpy()
     dpd45 = (df["label_gross_dpd45"].astype(float) == 1).to_numpy()
     never_paid = dpd45 & (df["label_repaid_current_snapshot"].astype(float) == 0).to_numpy()
+    repaid = (df["label_repaid_current_snapshot"].astype(float) == 1).to_numpy()
+    # "resolved" = the advance reached a verdict — repaid, or matured & DPD45
+    # (went bad); still-open advances excluded. never_paid_rate uses this
+    # denominator to match the month-over-month backtest (scenarios/backtest);
+    # on a mostly-matured snapshot it is ~identical to the matured denominator.
+    resolved = repaid | (mature & dpd45)
     bands_col = df["heuristic_fraud_band"].astype(str).to_numpy()
     matched_by = {s.name: flags[f"scenario_{s.name}"].to_numpy() for s in scenarios}
     any_matched = flags["scenario_any"].to_numpy()
@@ -64,16 +71,19 @@ def compute_stats(df: pd.DataFrame, scenarios: Sequence[Scenario]) -> dict[str, 
         m_mature = mask & mature
         n_mature = int(m_mature.sum())
         n_never_paid = int((m_mature & never_paid).sum())
+        n_resolved = int((mask & resolved).sum())
         return {
             "n": int(mask.sum()),
             "share": _rate(int(mask.sum()), len(df)),
             "n_mature": n_mature,
             "n_never_paid": n_never_paid,
-            "never_paid_rate": _rate(n_never_paid, n_mature),
+            "n_resolved": n_resolved,
+            # resolved denominator (repaid + never_paid), matching the backtest
+            "never_paid_rate": _rate(n_never_paid, n_resolved),
         }
 
     # ── baseline: what everything gets compared against ──
-    base_never_paid_rate = _rate(int(never_paid[mature].sum()), int(mature.sum()))
+    base_never_paid_rate = _rate(int((never_paid & mature).sum()), int(resolved.sum()))
     baseline = {
         "n_mature": int(mature.sum()),
         "never_paid_rate": base_never_paid_rate,

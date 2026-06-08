@@ -114,13 +114,13 @@ scenarios:
 ---
 # ── validation stats — machine-owned; refresh with ──────────────────────────
 # uv run python -m projects.fraud_anomaly_detection.scenarios.validation
-computed_at: '2026-06-07'
+computed_at: '2026-06-08'
 dataset_id: v1_42baf0ba
 scenarios_version: 2026-06-06.3
 n_rows: 107168
 baseline:
   n_mature: 71616
-  never_paid_rate: 0.055350759606791776
+  never_paid_rate: 0.04209766147702895
   dpd45_rate: 0.06215091599642538
   bands:
     LOW:
@@ -128,25 +128,29 @@ baseline:
       share: 0.980759181845327
       n_mature: 70091
       n_never_paid: 3525
-      never_paid_rate: 0.050291763564509
+      n_resolved: 92530
+      never_paid_rate: 0.038095752728844696
     POSSIBLE:
       n: 1634
       share: 0.015247088683189011
       n_mature: 1150
       n_never_paid: 116
-      never_paid_rate: 0.10086956521739131
+      n_resolved: 1232
+      never_paid_rate: 0.09415584415584416
     LIKELY:
       n: 98
       share: 0.0009144520752463422
       n_mature: 62
       n_never_paid: 38
-      never_paid_rate: 0.6129032258064516
+      n_resolved: 80
+      never_paid_rate: 0.475
     EXTREMELY_LIKELY:
       n: 330
       share: 0.003079277396237683
       n_mature: 313
       n_never_paid: 285
-      never_paid_rate: 0.9105431309904153
+      n_resolved: 320
+      never_paid_rate: 0.890625
 scenarios:
   ring_account_reuse:
     tier: block
@@ -156,12 +160,13 @@ scenarios:
     share: 0.0023421170498656315
     n_mature: 220
     n_never_paid: 212
-    never_paid_rate: 0.9636363636363636
+    n_resolved: 230
+    never_paid_rate: 0.9217391304347826
     n_dpd45: 212
     dpd45_rate: 0.9636363636363636
-    lift_vs_base: 17.409632143840014
+    lift_vs_base: 21.89525731584258
     unique_n: 21
-    unique_never_paid_rate: 0.8571428571428571
+    unique_never_paid_rate: 0.75
     band_distribution:
       EXTREMELY_LIKELY: 193
       LIKELY: 42
@@ -175,12 +180,13 @@ scenarios:
     share: 0.0037324574499850703
     n_mature: 361
     n_never_paid: 322
-    never_paid_rate: 0.8919667590027701
+    n_resolved: 376
+    never_paid_rate: 0.8563829787234043
     n_dpd45: 322
     dpd45_rate: 0.8919667590027701
-    lift_vs_base: 16.114806108159026
+    lift_vs_base: 20.34276842647659
     unique_n: 170
-    unique_never_paid_rate: 0.7870967741935484
+    unique_never_paid_rate: 0.7530864197530864
     band_distribution:
       EXTREMELY_LIKELY: 328
       LIKELY: 58
@@ -191,12 +197,14 @@ overall:
     share: 0.003928411466109286
     n_mature: 375
     n_never_paid: 334
-    never_paid_rate: 0.8906666666666667
+    n_resolved: 392
+    never_paid_rate: 0.8520408163265306
   discovery:
     n: 2
     share: 1.8662287249925352e-05
     n_mature: 2
     n_never_paid: 2
+    n_resolved: 2
     never_paid_rate: 1.0
   overlap:
     n_multi_matched: 230
@@ -207,7 +215,8 @@ overall:
     share: 0.9960715885338907
     n_mature: 71241
     n_never_paid: 3630
-    never_paid_rate: 0.050953804691118876
+    n_resolved: 93770
+    never_paid_rate: 0.0387117414951477
     bands:
       LOW:
         n_left: 105104

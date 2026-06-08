@@ -96,6 +96,17 @@ score + bands, marketing attribution, the 24h/30d/90d/lifetime windows, all
 | `scenario_never_paid_principal` | **principal** (`$` `loan_amount`) disbursed to flagged advances that **never paid** (matured + DPD45 + not repaid) — money out we likely won't recover. Named "principal" because it's the disbursed amount, not a net-of-payments balance |
 | `baseline_never_paid_principal` | same over all advances that month (the contrast) |
 
+**Recovery context (validated 2026-06-08, orig ≥ Dec 2025, 466K matured DPD45
+advances).** `gross_dpd45_amount` equals `loan_amount` exactly (ratio 1.000) —
+it is gross principal, no partial-payment adjustment — so `never_paid_principal`
+using `loan_amount` is correct. But `fct_loans` also carries recovery fields
+(`recovered_dpd45_amount`, `gross_dpd45_amount_partial_payment_adj`): **14.9% of
+DPD45 advances see some recovery and ~14.4% of gross dollars are recovered**, so
+`never_paid_principal` (gross) overstates *realized* net loss by ~14% (true
+uncollected ≈ 86% of gross). We keep the gross figure as the headline because it
+is stable (recovery on recent cohorts is still accruing); a net column
+(`gross − recovered_dpd45_amount`) can be added if realized loss is wanted.
+
 The companion heuristic-band view (`heuristic_band_by_month.sql`, run via
 `heuristic_band.py`) is built to line up **column-for-column** with this output
 — a `band` plays the role of a `scenario`, and its `baseline_*` columns are the

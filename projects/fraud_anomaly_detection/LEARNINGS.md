@@ -57,16 +57,26 @@ not a >=90% gate):**
 1. **Concentration -- the 100%/n=15 gem is ONE ring** (3 users, 15 advances over
    6 days). All the >=75% pockets are 1-3 distinct rings = anecdotes, not rules.
    Only `nb_comp>=1` (49%, review-tier) spans many (27 distinct rings).
-2. **Out-of-time decay (the deep finding).** Seed-based rules collapse early->late:
-   nb_comp>=3 100%->56%, nb_d1>=2 100%->50%, nb_comp>=1 77%->40%. Cause is
-   STRUCTURAL: DPD45 seeds activate ~45-60d after their advance, so RECENT
-   advances haven't accumulated matured bad-neighbour seeds -- a right-censoring
-   mirroring the Dec-1 left-censoring. **The proximity signal is strongest
-   exactly where it is useless (old, matured data) and weakest where you'd
-   actually block (fresh advances).** And the as-of seeds that WOULD be available
-   real-time (scenario flags) don't discriminate. So distance-to-known-bad is
-   intrinsically a RETROSPECTIVE review/clawback signal, not a real-time gate
-   (the same proactive/reactive split flagged for ACH returns).
+2. **Out-of-time decay -- CORRECTED 2026-06-09 (`graph_seed_coverage.py`).**
+   Seed-based rules collapse early->late: nb_comp>=3 100%->56%, nb_d1>=2
+   100%->50%, nb_comp>=1 77%->40%. My first explanation ("recent advances are
+   seed-STARVED by ~45-60d DPD45 maturity") was WRONG and backwards: late
+   advances have a longer prior history, so MORE seeds (504 matured before the
+   early median vs 17,555 before the late median, 35x), and fire on MORE rows
+   (53 vs 17). The real cause is **small-n early optimism regressing to the true
+   rate**: early fires on 17 rows across only 4 rings (76%), late on 53 rows
+   across 25 rings (40%). So **the durable, out-of-time-honest precision of
+   bad-neighbour proximity is ~40% (~7x), review-tier** -- the headline 50% /
+   9.9x was a few-ring overestimate. A genuine but SEPARATE deployment caveat
+   remains: the freshest entities' neighbours have not matured, so the feature
+   undercounts for brand-new advances (favours older entities) -- a reason it
+   suits a review/clawback queue, but NOT the cause of the measured decay.
+3. **Coverage is tiny (the volume reality).** On the 537,150 matured eval rows
+   (61.8% of residual+warmup; immature rows correctly excluded so precision is
+   not deflated), EVERY graph signal fires on ~0.01% of transactions:
+   nb_comp>=1 = 0.013% (70 rows), nb_comp>=3 = 0.0035% (19), structural
+   comp>=5&types>=2 = 0.0058% (31). Block-tier or review-tier, the graph touches
+   ~1 in 7,700 advances. This is the hard limit on the whole direction's value.
 
 **The durable, real-time-usable win = STRUCTURAL multi-type ring (no seed -> no
 maturity lag).** `comp>=5 & types>=2` is STABLE out-of-time (61% early / 54%
@@ -78,10 +88,12 @@ structure) that the 1-hop edges and scenarios miss and that does NOT decay.
 **Verdict (consistent with the whole project arc, now via the graph route).** No
 durable >=90% multi-ring pocket exists in the residual -- confirmed a SEVENTH
 independent way. The graph adds (a) a stable ~55-65% structural multi-type-ring
-review rule (deployable, net-new), and (b) a strong but RETROSPECTIVE bad-
-neighbour-count FEATURE (9.6x, as-of-clean, for a review/clawback queue or model
-input -- not a real-time block). Block-tier precision still lives only in the
-sharing-edge scenarios already locked. Recommendations for wendao (NOT acted on):
+review rule (deployable, net-new), and (b) a bad-neighbour-count FEATURE whose
+durable out-of-time precision is ~40% / ~7x (as-of-clean; best for a
+review/clawback queue or model input, not a real-time block). BOTH cover only
+~0.01% of transactions (finding 3) -- real and net-new, but vanishingly low
+volume. Block-tier precision still lives only in the sharing-edge scenarios
+already locked. Recommendations for wendao (NOT acted on):
 register `ring_multitype_structural` (comp>=5 & types>=2) as a review-tier
 scenario; add bad-neighbour-count as a model feature; the planned rebuild (deeper
 history + email/phone/address NODES) is the lever to grow both -- more node types

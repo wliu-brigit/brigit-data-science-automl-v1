@@ -162,6 +162,34 @@ class EarlyDefaultCapture(Metric):
         }
 
 
+class GrossDpd45AveragePrecision(Metric):
+    """AP of the score against the gross-DPD45 outcome on mature rows.
+
+    DPD45 is the standard early-default ruler the team reads everywhere else,
+    so it is the primary the loop optimizes. It is a strict superset of the
+    never-paid cut (DPD45 *and* not repaid): on the pinned snapshot ~89% of
+    DPD45 rows never paid, and the ~11% difference is delinquent-but-cured
+    borrowers — credit stress rather than bust-out, concentrated in the LOW /
+    POSSIBLE bands (the fraud bands have zero cured cases). DPD45 therefore
+    includes innocent credit risk by construction; treat it as a direction
+    signal — don't over-tune to small deltas. Never-paid AP rides along as a
+    secondary for the fraud-leaning view.
+    """
+
+    name = "gross_dpd45_average_precision"
+    required_columns = ("label_gross_dpd45", "label_mature_d45")
+
+    def compute(self, df: pd.DataFrame, y_pred: Any, target_col: str) -> float:
+        del target_col  # evaluated against the outcome, not the task target
+        from sklearn.metrics import average_precision_score
+
+        mature = np.asarray(df["label_mature_d45"], dtype=float) == 1
+        y_true = (np.asarray(df["label_gross_dpd45"], dtype=float) == 1)[mature]
+        if not y_true.any():
+            return 0.0  # no mature DPD45 rows: keep the primary finite
+        return float(average_precision_score(y_true, np.asarray(y_pred, dtype=float)[mature]))
+
+
 class NeverPaidAveragePrecision(Metric):
     """AP of the score against never-paid DPD45 on mature rows.
 
@@ -268,6 +296,7 @@ class ScenarioIdentified(Metric):
 __all__ = [
     "BandReport",
     "EarlyDefaultCapture",
+    "GrossDpd45AveragePrecision",
     "NeverPaidAveragePrecision",
     "PrecisionRecallAtDepth",
     "ResidualOnly",

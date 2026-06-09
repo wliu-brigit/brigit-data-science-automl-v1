@@ -1,124 +1,135 @@
 # Handoff — continue here
 
-Where the last working session left off. **Read this first when resuming**,
-then [`README.md`](README.md) for the docs lifecycle. Keep it to *current
-state + next actions* (git history is the changelog, not this). **Written
-only when wrapping a session for handoff (or when asked)** — never updated
-mid-session as a status log.
+Temporary hand-over note: where the last session left off and what's open, so a
+new session can pick up. **Not a changelog** — keep only what's current and
+relevant; detail lives in the project docs. Rewritten at each wrap, not appended
+to.
 
-**Last updated:** 2026-06-07
+**Last updated:** 2026-06-08 (unsupervised-on-v2 + scenario lock + graph direction
++ finalized next-SQL-rebuild scope)
 
-## How to pick this up (protocol, per wendao)
+## How to pick up (per wendao)
 
-Do **not** dive into work directly. On resume: (1) read this file plus the
-project docs below, (2) summarize where things stand, (3) **recommend 2–3
-options for what to do next and ask wendao to pick or redirect**. The next
-move is a judgment call wendao wants to make, not a queue to drain.
+Don't dive into code. (1) Read this plus the project docs below; (2) summarize
+where things stand; (3) **recommend 2–3 options and let wendao pick.** The next
+move is wendao's call, not a queue to drain.
 
-Project docs to read (all in `projects/fraud_anomaly_detection/`):
-- `scenarios/register.yaml` — **the canonical scenario register**: doc 1 =
-  definitions (the file users edit), doc 2 = machine-owned validation
-  evidence. Refresh evidence with
-  `uv run python -m projects.fraud_anomaly_detection.scenarios.validation`.
-- `SCENARIOS.md` — the prose stance, rubric, governance, and *uncodified*
-  candidates (register is canonical for codified rules).
-- `LEARNINGS.md` — dated takeaways; the 2026-06-06/07 entry explains the
-  scenario-register build and why the proxy label was retired.
-- `TODO.md` — the device/IP find (evidence-backed, next in line) + parked
-  feature menu.
+Project docs (`projects/fraud_anomaly_detection/`): **`LEARNINGS.md`** (start with
+the newest 2026-06-08 entry — "unsupervised on the v2 features"); **`TODO.md`**
+(the ⭐ CONSOLIDATED FEATURE-ADD PLAN, and the expanded **TIER 2 — graph/entity-ring
+detection** which is the next major effort); `SCENARIOS.md`; `scenarios/register.yaml`.
 
-## Where things stand (after the 2026-06-06/07 session)
+## What this session did (2026-06-08)
 
-- **Branch `feature/fraud-anomaly-detection`**, all work committed
-  (`5872721`). 627 tests green (unit + contracts + project).
-- **Scenario-first detection is built and verified end to end.**
-  `scenarios/` package: YAML register compiled by a register-agnostic
-  engine (declarative conditions → pandas masks; SQL-compilable at ship
-  time), fit gate (matched rows never trained on), residual-masked eval
-  (matched rows in no model metric; rule outcomes in
-  `scenario_identified`), evidence-refresh script. Register edits never
-  rebuild the dataset.
-- **Two draft block-tier scenarios** (both mule-account bust-out typology,
-  register v2026-06-06.3, evidence on pinned dry-run snapshot
-  `v1_42baf0ba`):
-  - `ring_account_reuse` (ex-S1b): fresh identity ≤24h + amount>$100 +
-    advance on the account within 7d. **96.4% never-paid, n=251.**
-    (Lifetime→7d tightening: the 33 lifetime-only matches were 0/17
-    never-paid — stale reuse is innocent.)
-  - `ring_identity_burst` (ex-S1): ≥3 identities *created within 72h* on
-    one bank account. **89.2% never-paid, n=400; unique-vs-sibling 78.7%.**
-- **Register absorbs the heuristic**: union 421 rows @ 89.1% never-paid
-  (16× base 5.5%); E_L band **100% covered**, LIKELY 63%, POSSIBLE ~2%.
-  Honest discovery stat (captured LOW rows): **2** (both never-paid) — the
-  register replaces the heuristic but barely out-discovers it yet.
-- **Primary metric swapped** to `residual_never_paid_average_precision`
-  (proxy AP is degenerate on the residual). One gated trial ran clean
-  (opus, `4_isolation_forest_baseline`, dry-run experiment
-  `fraud_anomaly_v1`); the gate + residual eval were verified
-  arithmetically against its logged report.
-- Pure-velocity cycling (advances_7d≥3 alone) deliberately NOT registered:
-  23–28% never-paid on unique capture — mitigate/review material pending
-  case review.
+Goal was wendao's: build a model on the new v2 feature base, see if it finds fraud,
+what patterns emerge, bucket into scenarios. wendao chose **unsupervised** (anomaly
+shape ≈ fraud intent; supervised on DPD45 blends in credit risk).
 
-## Candidate next moves (for the pick-one conversation, not a to-do list)
+- **Feature due diligence first** (`analysis/feature_due_diligence.py`) on the full
+  v2 dataset **`v1_76d3ad45`** (1.02M rows, in the NON-dry-run scope). All 23 new
+  Tier-1 columns are as-of safe; all outcome/label columns are non-feature. **Only
+  change needed: excluded `name_match_official`** (product-type noise) — added to
+  `config.py` exclude_cols AND dropped in the analysis feature space (the stored
+  registry is baked at materialize time, so config only bakes out on next rebuild).
+- **Unsupervised (Isolation Forest + GMM) on the gated residual** (`unsupervised_lens.py`):
+  as a GLOBAL ranker it's still flat (~1.3× AP, exactly round-3) — but it
+  **independently rediscovers the new sharing edges 100–200× enriched at the top**,
+  confirming them as real abnormal-shape signals (deployment vehicle is a rule, not
+  the score). Per-edge precision in `edge_precision_screen.py`.
+- **Locked 2 new draft block scenarios** (register `2026-06-08.2`, evidence refreshed
+  on the full snapshot via `validation --no-dry-run`, tests pinned):
+  `ring_shared_persistent_account` (persistent 72h≥2, 92% never-paid, the #6988
+  virtual-number antidote) and `ring_device_burst` (device 72h≥3, 88%, the real
+  net-new contributor at unique_n=232). **Evaluated `ring_shared_phone` (97%) but
+  DROPPED it** — unique_n=2, fully redundant with the other rings.
+- **Next-layer / narrow / subgroup discovery** (`residual_next_layer.py`,
+  `subgroup_discovery.py` — the "proven algorithm", beam search + held-out
+  validation + significance). **Confirmed three independent ways: NO block-tier
+  conjunction remains in the residual.** Best remaining is a review-tier
+  **neobank × early-tenure × small-amount** cohort (~4–6×, fraud-smelling but ~30%
+  precision = a review/mitigate queue, not a block). The ceiling is a feature-space
+  limit, not a search/tuning limit.
+- **IP verdict** (`ip_screen.py`): raw IP *sharing* is dead (≤1× even at the leaky
+  ceiling — NAT/households). The fraud-shaped IP signals are DERIVED (datacenter/
+  VPN/proxy, geo/area-code mismatch) and need an enrichment pull (Tier-3).
+- **Institution** (`institution_screen.py`): the signal IS Chime (= the neobank
+  flag); no sharper institution, Chase not a concentration. The shell-vs-real
+  discriminator that would lift the neobank cohort is **income/payroll** (Tier-3).
+- **Cleanup:** removed 4 superseded analysis scripts (`conjunction_discovery.py`
+  and the 3 pre-materialization screens `asof_sharing_screen` / `asof_breakdown` /
+  `current_data_screen` — their job is done now that edges are materialized).
 
-- **Round-3 AutoML iteration on the gated residual** — wendao leans here
-  next (no data update needed). The ring is rule-handled and the primary is
-  outcome-based, so anomaly trials now answer "what's left that we can't
-  explain?" — discovery queues (`analysis/rule_discovery.py` works by run
-  id) feed new scenario candidates. Same pinned snapshot, dry-run
-  experiment; `--max-iter` 2–3.
-- **Device/IP graph features** — evidence-backed in TODO.md (device shared
-  ≥3 users: 81.6% never-paid on 69 register-invisible rows) but requires a
-  base-table rebuild; **wendao explicitly deferred data updates
-  (2026-06-07)** — don't start without a fresh go-ahead.
-- **Month-over-month backtest** (full-history Snowflake pull + the same
-  register predicates) — the promotion gate both drafts need; also
-  re-confirms thresholds (7d window, ≥3/72h) per cohort. Read-only on the
-  warehouse but a bigger pull than dry-run.
-- **Disqualifiers + sign-off conversation** — both scenarios have empty
-  disqualifiers (the rubric's credit-risk firewall) and `status: draft`;
-  the case-sample review (15–20/scenario) doubles as reviewer-label seed.
+## What's open — wendao to pick
 
-## Other pending (not fraud)
+- **★ THE NEXT EFFORT — graph / entity-ring detection, ON THE EXISTING DATASET (NO
+  new SQL).** This is the priority and the framing matters: wendao wants a **new way
+  to use the same data**, not another feature pull (there is always another feature —
+  that is a separate, deferred track below). Build a graph over the entity keys
+  ALREADY in `v1_76d3ad45` — `user` · `bank_account_key` · `persistent_account_id` ·
+  `device_id` (· `ip_address`) — and derive connected-component size, # prior BAD
+  users in the component, distance-to-known-fraud, component density/growth, etc.
+  Generalizes the 1-hop edges to multi-hop rings; the most promising direction now
+  that single-edge discovery is exhausted. **email / phone / address / name are NOT
+  in the dataset** (only their counts were emitted; raw keys dropped as PII) — adding
+  them as nodes is the only part that would need a SQL emit, so it is OUT of scope
+  for v1. The next session should **talk through approaches + pros/cons + how-to +
+  data-size feasibility (1.02M advances, ~750k users/accounts/devices) + the as-of
+  correctness problem BEFORE coding** — see TODO.md TIER 2. Prototype read-only in
+  `analysis/` on the pinned snapshot. (Hard part = as-of: build prior-only per
+  advance; a whole-snapshot graph is massively leaky.)
+  - **Direction settled with wendao (2026-06-08):** start at the BASIC rung —
+    **windowed connected-component features** on the existing `v1_76d3ad45`
+    (drop a ~30d warm-up for the Dec-1 left-censoring), prove lift over the 1-hop
+    edges, THEN escalate only if it pays: distance-to-known-fraud → label-prop →
+    (never) GNN. Nodes = `user` · `bank_account_key` · `plaid/persistent_account_id`
+    · `device_id`; edge link-time = `identity_created_time`; advance clock =
+    `feature_as_of_ts`. **IP is NOT a node** (NAT → giant junk component).
+  - **A finalized NEXT-SQL-REBUILD scope is now parked** (TODO.md "★ NEXT SQL
+    REBUILD"): extend history (`output_start_ts`→2025-01-01, `history_start_ts`
+    pushed back from its current 1-month lookback), emit hashed graph-node keys
+    for the **joined-but-dropped** email/phone/address (confirmed sitting in the
+    CTEs, dropped at final SELECT — only counts emitted today), drop
+    `name_match_official`, verify `official_name`/`is_joint`. Prototype the graph
+    on the pinned snapshot FIRST; this rebuild is what the cumulative-graph /
+    distance / production version needs.
+- **Promotion gate (small, anytime):** wire the 2 locked scenarios into
+  `scenarios/backtest/monthly_backtest.py` and run the month-over-month backtest (the
+  sign-off stat) to move them draft → signed_off.
+- **DEFERRED data-pull track (NOT the next focus — wendao explicitly wants to avoid
+  touching SQL for now).** When/if a rebuild happens near sign-off, candidates:
+  drop `name_match_official`; `persistent_account_id` 90d/lifetime windows;
+  **income/payroll** (the shell-vs-real discriminator — would split the ~30% neobank
+  cohort that we can't separate today: shell account w/ no real income vs genuine new
+  user; strong indirect support, unmeasured); **IP-intelligence** (datacenter/VPN/geo).
+  All parked in TODO Tier-3 — do NOT pull these into the graph effort.
+- **Optional:** register the neobank review-tier cohort as a `mitigate`/`review`
+  scenario, or keep it as a model feature only.
 
-- **Archive the Snowflake effort** `execution/snowflake-source-and-split-keys/
-  → archive/` (tail-end item completed 2026-06-05; follow the effort's own
-  plans-README protocol).
-- Library to-dos in [`to-do/`](to-do/) — notably
-  `leaderboard-dataset-pinning.md` and `loop-observability.md`. New
-  candidate worth filing: preflight validates the Snowflake connection even
-  for pinned no-refresh runs (see Gotchas).
-- `main` is local-only ahead of `origin/main` (the shakedown merge has not
-  been pushed).
+## Gotchas
 
-## On hold — waiting, not next fixes
+- **Dataset scope split:** the full v2 build `v1_76d3ad45` (new edges) lives in the
+  **NON-dry-run** scope — use `use_project(..., dry_run=False)`. The dry-run scope
+  still holds the OLD `v1_42baf0ba` (no new edge columns).
+- **The register now requires `v1_76d3ad45`:** new scenarios trigger on the new edge
+  columns, and the engine **raises on a missing column**. So `validation` must run
+  with `--no-dry-run`, and any consumer/gate must use the full dataset.
+- **`config.exclude_cols` edits only take effect on the next materialize** (the loaded
+  registry is read from GCS, baked at materialize time — not re-derived from config).
+- `experiment run` / `data materialize` preflight needs **Snowflake/VPN** (~30s).
+- `--instruction` is **shell-evaluated** by the loop's context-render — keep it plain
+  prose (no `->`, parens).
+- A killed `experiment run` holds the session lock (~6h self-expiry); release via
+  `trial lock release` (ids in `.cache/automl/tmp/session_locks/*.lock/`).
+- `base_table.sql` comments must avoid `;` and `'` until the `_scrub_sql` harness bug
+  is fixed (TODO.md library follow-ups).
 
-- **MLflow server upgrade** — waiting on the platform team:
-  [`to-do/upgrade-mlflow-server.md`](to-do/upgrade-mlflow-server.md).
-- **Agent observability follow-ups** —
-  [`to-do/agent-observability-follow-ups.md`](to-do/agent-observability-follow-ups.md) §0.
-- **Forward work:** [`to-do/agent-orchestration/`](to-do/agent-orchestration/).
-- **Parked:** untangle the MLflow-seam import cycles.
+## Loose ends
 
-## Gotchas (don't relitigate)
-
-- **`experiment run` preflight requires Snowflake reachability (VPN) even
-  for pinned no-refresh runs** — the CLI's `validate project` hardcodes
-  live connection checks. VPN is needed only for the first ~30s; nothing
-  after preflight touches the warehouse. Candidate library to-do, not yet
-  filed.
-- Old round-2 trials show as **unscored** on the leaderboard — they lack
-  the new primary (`residual_never_paid_average_precision`). Expected, not
-  a bug; round-3 trials aren't comparable to round 2 by design.
-- Editing `scenarios/register.yaml` mid-experiment breaks trial
-  comparability — bump `version`, edit between rounds, and rerun the
-  evidence refresh.
-- Repo-local plugins don't flag-free auto-load in Claude Code (v2.1.159). Load via
-  **`--plugin-dir agent-skills`** (the loop does this) or symlink `agent-skills` into
-  `~/.claude/skills/`.
-- **The Jupyter kernel must point at THIS clone's `.venv`** — confirm with
-  `import sys; print(sys.executable)` in cell 1.
-- A killed `experiment run` leaves the session lock held (~6h self-expiry);
-  release with `trial lock release --session-id ... --lock-id ...` using the
-  ids in `.cache/automl/tmp/session_locks/*.lock/metadata.json`.
+- **`v1_76d3ad45` still carries the `name_match_official` noise column** (excluded in
+  config for the next build; dropped in the analysis feature space meanwhile).
+- **Nothing committed this session** — register edit, `config.py` exclusion, the 4
+  test edits, the analysis suite (7 scripts, all untracked), and the LEARNINGS/TODO
+  updates are all in the working tree. `main` is local-only ahead of `origin/main`.
+- Analysis suite kept: `feature_due_diligence`, `unsupervised_lens`,
+  `edge_precision_screen`, `residual_next_layer`, `subgroup_discovery`, `ip_screen`,
+  `institution_screen` (+ prior `ceiling_probe`, `supervised_lens`, `rule_discovery`).

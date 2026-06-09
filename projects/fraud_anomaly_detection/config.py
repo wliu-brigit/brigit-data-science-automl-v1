@@ -26,6 +26,7 @@ from automl.eval import EvalSpec
 from projects.fraud_anomaly_detection.eval.metrics import (
     BandReport,
     EarlyDefaultCapture,
+    GrossDpd45AveragePrecision,
     NeverPaidAveragePrecision,
     PrecisionRecallAtDepth,
     ResidualOnly,
@@ -65,13 +66,16 @@ TASK = BinaryClassification(target="is_fraud")  # positive_label=1 by default
 # Deeper reference: agent-skills/references/setup/data-pipeline.md
 
 source = SnowflakeSource(
-    # Harness-owned table, materialized once over the upstream snapshot
-    # (fraud_advance_feature_base, built out-of-band) with SPLIT_PCT injected.
-    # The upstream table itself is never written to by the harness.
-    base_table="fraud_advance_feature_base_automl",
+    # Harness-owned table. base_table.sql now INLINES the full upstream logic
+    # (the out-of-band fraud_advance_feature_base is retired/archived under
+    # data/queries/archive/), so the harness builds everything here in one step,
+    # wrapping the SELECT in CREATE OR REPLACE TABLE {base_table} and injecting
+    # SPLIT_PCT. New name (_v2) for the Tier-1 feature rebuild so the previous
+    # fraud_advance_feature_base_automl table is left intact, not overwritten.
+    base_table="fraud_advance_feature_base_automl_v2",
     base_table_sql="data/queries/base_table.sql",      # the SELECT defining the base data
     training_data_sql="data/queries/training_data.sql",  # the SELECT pulling training rows
-    unique_key="advance_id",  # one row per advance (upstream final dedup guarantees it)
+    unique_key="advance_id",  # one row per advance (final dedup guarantees it)
     split_group_key="user_id",  # a user must never straddle train/test
 )
 # source = LocalCSVSource(csv_path=PROJECT_DIR / "data" / "my_data.csv", unique_key="ROW_ID")
@@ -106,6 +110,14 @@ DATA = DataSpec(
     # heuristic score/band the is_fraud label is derived from (label leakage —
     # a model reading them reproduces the label for free).
     exclude_cols=[
+        # Noise, not leakage: a 2026-06-08 live-data check showed
+        # base_prod__plaid_accounts.official_name is the account PRODUCT type
+        # ("Checking" / "Varo Checking" / "Individual Account"), NOT the holder
+        # name — so name_match_official is meaningless similarity noise (dropped
+        # from base_table.sql; the materialized v1_76d3ad45 still carries it, so
+        # excluding here bakes it out of the next rebuild). Holder-name match
+        # needs the Plaid identity/owner source (Tier-3 pull).
+        "name_match_official",
         "heuristic_fraud_score",
         "heuristic_fraud_band",
         "label_repaid_current_snapshot",
@@ -148,15 +160,20 @@ DATA = DataSpec(
 # ResidualOnly, so it is computed as if those rows were never in the test
 # set. They surface only through ScenarioIdentified, as rule outcomes.
 #
-# Primary: AP against never-paid DPD45 on mature residual rows. The register
-# absorbs the heuristic's top band (the proxy is_fraud label), so AP-vs-proxy
-# is degenerate on the residual; the real outcome is the only honest ruler
-# left. PR-style AP rather than ROC-AUC for the usual low-prevalence reason.
-# Secondaries (metrics.py): review-depth precision/recall, the per-band
-# report, plain gross-DPD45 capture — all residual-masked.
+# Primary: AP against gross DPD45 on mature residual rows — the standard
+# early-default ruler the team reads everywhere else. The register absorbs the
+# heuristic's top band (the proxy is_fraud label), so AP-vs-proxy is degenerate
+# on the residual; the real outcome is the only honest ruler left. DPD45 is a
+# superset of the never-paid cut (~89% overlap on the pinned snapshot); the
+# difference is delinquent-but-cured borrowers (credit stress, not bust-out).
+# PR-style AP rather than ROC-AUC for the usual low-prevalence reason.
+# Secondaries (metrics.py): never-paid AP (the fraud-leaning view), review-depth
+# precision/recall, the per-band report, plain gross-DPD45 capture — all
+# residual-masked.
 EVAL = EvalSpec(
-    primary=ResidualOnly(NeverPaidAveragePrecision()),
+    primary=ResidualOnly(GrossDpd45AveragePrecision()),
     metrics=[
+        ResidualOnly(NeverPaidAveragePrecision()),
         ResidualOnly(PrecisionRecallAtDepth()),
         ResidualOnly(BandReport()),
         ResidualOnly(EarlyDefaultCapture()),

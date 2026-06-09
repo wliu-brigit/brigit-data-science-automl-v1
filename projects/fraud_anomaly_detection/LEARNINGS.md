@@ -5,6 +5,295 @@ Append as they emerge; date each entry. (Long-term these belong in MLflow at
 the experiment/project level — this file is the ad-hoc home until the
 workflow settles.)
 
+## 2026-06-08 — unsupervised on the v2 features: score still flat, but it rediscovers the new edges; rules win
+
+**Setup.** First analysis on the full v2 build (`v1_76d3ad45`, 1,021,950 rows —
+note: the full build lives in the NON-dry-run scope; the dry-run scope still
+holds the old 107k `v1_42baf0ba`). Feature due diligence first
+(`analysis/feature_due_diligence.py`): all 23 added columns are the Tier-1
+features, all as-of safe; every outcome/label column is non-feature; the only
+contaminant was `name_match_official` (the known product-type noise) — dropped in
+the analysis feature space AND added to `config.exclude_cols` (the stored registry
+is baked at materialize time, so the config edit only bakes out on the next
+rebuild). Active unsupervised feature space = 63 num+bool features.
+
+**Unsupervised stays closed as a global ranker — confirmed on the NEW features.**
+`analysis/unsupervised_lens.py`, gated residual, residual+mature test (136,527
+rows, base never-paid 5.04% / DPD45 5.79%): IF full-space AP 0.075 (1.29x),
+IF ring-family-withheld 0.076 (1.31x), GMM 0.075 (1.29x) — all sitting exactly
+where round-3 landed (IF 0.0751 on the old features). Adding the edges did NOT
+revive the anomaly score as a ranking instrument; the aggregate AP is unmoved
+because the edges are too rare (sub-0.1%) to shift it and the cohort bulk is the
+same fast-cycling-on-fresh-accounts pattern (identity age ~1h vs ~463 days base,
+plaid-account age 0d vs 167d).
+
+**But the anomaly model independently REDISCOVERS the new edges at the top.** The
+top-0.5% anomaly cohort is enriched 100-200x for every sharing edge (device 171x,
+persistent 200x, address 126x, phone 171x, email 155x) and runs ~13-16% never-paid
+(2.6-3.3x base), ~66-90% LOW band (heuristic-missed). The ring-family-WITHHELD run
+(B) surfaces the same edges (device 121-199x, persistent 200x) — so the edges
+carry discovery signal independent of the bank-account ring the heuristic already
+owns. GMM's top-0.5% is the sharpest (17.6% DPD45 precision, 3.0x) and also pulls
+the neobank flag (2.0x). So: anomaly-for-discovery WORKS for the new edges (unlike
+round-3's residual), but the SCORE is not the deployment vehicle — a rule is.
+
+**Per-edge precision (`analysis/edge_precision_screen.py`, residual+mature 685,993
+rows) — the registerable shape-stats. All rows are register-invisible (residual),
+i.e. net-new beyond the two existing rings:**
+- **persistent_account_id — the standout, block-tier, no innocent version.**
+  72h>=2 → 93.0% never-paid (18.3x, n=215); 7d>=2 → 89.4% (n=226); 72h>=3 → 98.4%
+  (n=189). Holds across windows (same real Plaid account + >=2 fresh identities).
+  This is the #6988 (Chase virtual-number) antidote the TODO predicted.
+- **device_id — block-tier at >=3** (>=2 dilutes to innocent stale reuse): 72h>=3
+  → 80.5% (15.8x, n=343); 7d>=3 → 77.1% (n=376); 72h>=2 only 64.0%, 7d>=2 58.0%.
+- **phone — block-tier at >=3 only:** 72h>=3 → 97.0% (19.1x, n=99); 7d>=3 → 82.3%
+  (n=124); >=2 is 47-57% (sentinel screen leaves some dummy-number noise).
+- **address — review-tier:** 7d>=2 → 21.6% (4.3x); needs >=3 + non-joint
+  disqualifier (72h>=3 → 59% but n=22). Families are the innocent version.
+- **email — noise-tier:** 7d>=2 → 15.6% (3.1x). Shared/family emails dominate; drop.
+- **name_match_last — does NOT carry standalone signal at scale:** <80 → 5.7% vs
+  5.09% base = **1.1x** (the earlier "1.25x" was on 107k). At best a weak modifier
+  inside a conjunction, NOT a scenario. Honest down-grade.
+- **is_neobank_high_risk — broad modifier, not a scenario:** 11.7% never-paid
+  (2.3x) but over 102,165 rows (15% of pop). Keep as a model feature, not a rule.
+- **Union device|persistent|phone|email (7d>=2): n=595, 56.0% never-paid (11.0x),
+  333 never-paid caught** — roughly DOUBLES the rings' ~334 never-paid capture on
+  an independent axis. device|persistent only: n=566, 57.8%, 327 caught.
+
+**Takeaway / recommendation.** The path is exactly the project stance: unsupervised
+is discovery-only (and here it earned its keep by independently confirming the
+edges), the product is precise rules. Candidate draft block scenarios:
+`ring_shared_persistent_account` (persistent 72h>=2), `ring_device_burst`
+(device 72h>=3), `ring_shared_phone` (phone 72h>=3); address as a review-tier rule
+with disqualifiers; drop email and standalone name-match; keep neobank as a feature.
+Not auto-registered — pending wendao sign-off + monthly-backtest promotion gate
+(editing the register mid-comparison breaks comparability). Tooling all pinned to
+`v1_76d3ad45`, dry_run=False, read-only: `feature_due_diligence.py`,
+`unsupervised_lens.py` (runs A/B/C), `edge_precision_screen.py`.
+
+**Conjunction discovery (was `analysis/conjunction_discovery.py`, removed in the
+2026-06-08 cleanup — superseded by `subgroup_discovery.py` + `residual_next_layer.py`;
+findings preserved here) — three findings:**
+(1) **email is unrescuable at any threshold** (>=3 collapses to n=1; drop it);
+**address buys precision only by trading away all volume** (72h>=4 → 62.5% n=8;
+>=5 → 100% n=3) — a real-but-tiny edge. (2) **Create->advance speed does NOT
+rescue the weak/>=2 edges** — device 72h>=2 alone 64% vs AND id->adv<=1h 66%;
+persistent 93%→94%; email 15.6%→16%. The edge rows are ALREADY fast/fresh
+(speed and the edge are collinear in this population), so speed is not an
+orthogonal lever ON TOP of a sharing edge — the lever is the count/window
+(device wants >=3, not >=2). Speed is the instrument for the broad fast-churn
+cohort, not a within-edge separator. (3) **Model-assisted (shallow tree, fit on
+train, precision validated on held-out test):** the one clean fraud-shaped
+conjunction it discovers is `days_since_plaid_account_created <= 9.5 AND
+users_on_device_id_7d > 2.5 AND not-neobank` → **73.2% never-paid (14.5x), n=71
+test (78.7% train)** — i.e. device>=3 on a fresh account, consistent with the
+single-edge result. Every other high-volume leaf is the **neobank x small-amount
+x low-velocity x fresh-account credit-ambiguous cohort** (29.6% never-paid 5.9x
+n=1084; 18% 3.6x n=4136) — the same round-3 fast-small-dollar-churn bucket, which
+is review-tier (credit stress overlaps fraud here), NOT a block rule. Caveat:
+some lower leaves split on `prior_min_hours_between_advances_on_account` at
+~247 — that is the NaN-imputed median (12.6% null), an imputation artifact, not
+signal. **Net:** the strong sharing edges are self-sufficient at the right
+count/window (conjunctions don't strengthen them); the only genuinely additive
+"combination" signal is the credit-ambiguous neobank/velocity cohort, which is a
+review queue, not a block. A non-greedy rule-miner (skope-rules / RuleFit) could
+mine combinations the greedy tree's first-split ordering misses — parked option.
+
+**LOCKED three new draft block scenarios (register version 2026-06-08.1; evidence
+refreshed on the full v1_76d3ad45 via `validation --no-dry-run` — the new edges
+only exist in the full scope and the engine raises on a missing column, so the
+register now requires v1_76d3ad45):** `ring_shared_persistent_account` (persistent
+72h>=2, disqualify is_joint), `ring_device_burst` (device 72h>=3), `ring_shared_phone`
+(phone 72h>=3). Gross precision all block-tier (never-paid 92.2% / 88.0% / 97.5%,
+~21-23x). **Unique (marginal) capture differs sharply: device unique_n=232 @ 46%
+(the real net-new contributor); persistent unique_n=26 @ 24% (small volume but the
+#6988 virtual-number antidote — strategic); phone unique_n=2 @ 0% (essentially
+fully redundant — every phone-ring row already matches a device/identity/account
+ring). Phone earns its place as typology documentation, not marginal capture —
+flagged for wendao to keep-or-drop.** Register union now captures 4,597 rows @
+87.1% never-paid; LOW-band discovery (heuristic-missed) 425 @ 84.9% (vs ~2 in
+round-2). Residual never-paid 3.82%.
+
+**Next-layer discovery on the POST-LOCK residual (`analysis/residual_next_layer.py`,
+target DPD45, mature-only, train->test validated):** the strongest remaining bucket
+has NO sharing edge — **neobank x fresh-account x small-amount x low-velocity**:
+`is_neobank AND plaid_acct<=37.5d AND avg_prior_advances/day<=0.089 AND
+total_disbursed<=$29.49` -> DPD45 33.5% (5.8x), never-paid 30.2% (6.0x), n~1013
+test. Notably **fraud-smelling: ~90% of its DPD45 never repaid** (not late-repaid
+credit stress). But with no edge and ~30% precision it is a REVIEW/MITIGATE queue
+(step-up verification / lower first-advance limit on fresh neobank small advances),
+NOT a block gate — ~70% would be false positives if blocked. Same fast-small-dollar
+-churn cohort round-3 found, sharpened by the neobank flag. (Caveat: two leaves
+split on prior_min_hours~247 = NaN-imputed median, an artifact.)
+
+**Window note (answers wendao):** 72h/7d/30d ALREADY exist for every new edge — no
+rerun needed; precision DECAYS with the window (device 30d>=2=32% vs 72h>=3=80%),
+so the locks use the SHORT windows on purpose. Extending the new edges beyond 30d
+(90d/lifetime) is the only window change that needs a SQL addition + overnight
+rebuild.
+
+**Follow-ups (2026-06-08, wendao review):**
+- **`ring_shared_phone` DROPPED** (unique_n=2 @ 0% — fully redundant with the
+  device/identity/account rings). Register now 4 scenarios, version 2026-06-08.2.
+  Kept a note in register.yaml recording the decision.
+- **Going narrow does NOT lift the no-edge cohort past ~30%.** Re-ran the
+  next-layer tree at depth 6 / min_leaf 60, sorted by never-paid: the purest
+  pocket is still `first-advance AND neobank AND total_disbursed<=$29.49` ->
+  29.7% never-paid (5.9x, n=992), and every finer cut hovers 20-33%. **~6x is a
+  real CEILING for the no-sharing-edge cohort — there is no hidden block-tier
+  pocket inside it.** The sharing EDGE is what buys block-tier precision (80-98%);
+  behavioral/amount/velocity features without an edge top out at review-tier.
+  So this cohort is a mitigate/review queue, full stop (confirmed, not a tuning
+  artifact). `analysis/residual_next_layer.py` now takes --max-depth/--min-leaf/
+  --sort for this drill-down.
+- **IP verdict (`analysis/ip_screen.py`): raw IP sharing is DEAD, even at the
+  leaky current-state ceiling** — ip_address users>=2 -> 4.7% (0.9x), >=10 ->
+  4.4% (0.9x); signup_ip ~1.0x. NAT/households fully swamp it (confirms round-1).
+  Do NOT build an as-of users_on_ip edge. Two faint extras: signup_ip==latest_ip
+  -> 8.4% (1.7x, weak modifier), has_ip_address==0 -> 11.8% (2.3x, n=1950,
+  confounded). **The fraud-shaped IP signals are DERIVED, not raw, and need an
+  IP-intelligence enrichment (Tier-3 pull): datacenter/hosting/VPN/proxy flag
+  (real borrowers don't advance from AWS/a VPN) and IP-geo vs KYC-address/phone
+  -area-code mismatch.** Parked in TODO Tier-3.
+- **Institution concentration (`analysis/institution_screen.py`): the institution
+  signal IS Chime.** Chime Bank = 71,284 residual-mature rows @ 11.4% never-paid
+  (2.3x), 100% neobank — i.e. `is_neobank_high_risk` is essentially Chime. No
+  institution exceeds 11.4%, none reaches 15%, and Chase is not a concentration.
+  Institution adds nothing sharper than the neobank flag. The shell-vs-real
+  discriminator that WOULD lift this cohort is **income/payroll presence** (Plaid
+  txn pull, Tier-3) — separating a bust-out shell account from a genuine new
+  Chime user who defaulted.
+- **"Proven algorithm" for permutations: subgroup discovery via beam search**
+  (`analysis/subgroup_discovery.py`, self-contained — pysubgroup not installed).
+  Enumerates selectors, beam-searches conjunctions, ranks by a quality measure;
+  rigor = discover-on-train / validate-on-held-out-test + a binomial significance
+  p-value + candidates-evaluated for Bonferroni. It found a combination the
+  greedy tree MISSED: `is_neobank AND prior_advances<=2 AND
+  signup_ip_matches_latest_ip==1` -> 20.5% never-paid (4.1x), n=786 test,
+  p=1.3e-87 (signup_ip_match alone was only 1.7x; it combines). Largest robust
+  pocket: `plaid_acct<=86d AND neobank AND prior_advances<=2` -> 19.1% (3.8x),
+  n=6505 test, p~0. **But the CEILING is now confirmed three independent ways
+  (greedy tree, fine tree, exhaustive beam search w/ significance): nothing in
+  the post-lock residual exceeds ~28% never-paid, and the only >25% pockets are
+  tiny device==2 sub-threshold remnants. There is NO block-tier conjunction
+  left.** The residual is exhausted for block rules; lifting it needs NEW
+  discriminating features (income/payroll), not a better search algorithm. The
+  best the residual offers is review-tier (~4x, neobank x early-tenure).
+
+## 2026-06-08 — Tier-1 feature rebuild; team monitoring SQL is forensic, ours is predictive
+
+**Cross-checked our pipeline against the team's fraud apparatus** (Incidents
+#6848 & #6988 dashboard, the 3 Tabapay clawback queries, the combo-detail pull,
+and `scoring_model_20260429.sql`). The central distinction: **the team's sharing
+counts are current-state / hindsight** (`base_prod__plaid_accounts_current_state`,
+unbounded `COUNT(DISTINCT user_id)`) — correct for *clawback/recovery* but leaky
+as a *predictive* feature; **ours stays as-of**. Their ~$1M→$2M is a hindsight
+loss figure, not a prediction target, and their scored impact spans Likely +
+Extremely-Likely, not just EXTREMELY_LIKELY. **#6988 (Chase virtual account
+numbers) defeats account-number-keyed sharing on BOTH sides** (each virtual number
+is a distinct `account_number`, so the count never accumulates) — parked, we don't
+have the virtual-card data.
+
+**Built the Tier-1 feature set** (full plan: TODO.md ⭐ CONSOLIDATED FEATURE-ADD
+PLAN). Inlined the upstream into `base_table.sql` (out-of-band DDL retired →
+`data/queries/archive/`), added as-of features: scarce-resource sharing edges
+(device / persistent-id / address / phone / email, mirroring
+`users_on_bank_account_*`), Jaro-Winkler name-match, `is_neobank_high_risk_institution`,
+`is_joint`, prior-only advance velocity (`prior_min_hours_between_advances`), and
+the team's detection flags (3-in-72h / 5-ever / **10-ever**). New table
+`fraud_advance_feature_base_automl_v2`, dataset **`v1_76d3ad45`** (1,021,950 rows ×
+113 cols; old `_automl` table left intact; experiment still `fraud_anomaly_v1`).
+`heuristic_fraud_score`/`band` kept **byte-identical** (proxy-label comparability).
+
+**Due diligence before the single materialize** (no repeated builds): live fan-out
+scan showed **no many-to-many blowup** (email ~unique, phone max 427, address 81,
+persistent 576) EXCEPT device — `user_client_metadata` is SCD (176M rows,
+~11/user-device) → deduped `device_links`. EXPLAIN compiled end-to-end; adversarial
+review clean on as-of/grain/dedup.
+
+**Validation:** splits healthy (positives in train AND test); all sharing edges
+populated; name-match carries signal (**last-name mismatch ~1.25× never-paid lift**,
+independent of the rings).
+
+**Lesson (cost us a noise column):** `official_name` is the account **product
+type** (Checking / Varo Checking / Individual Account), **not** the holder name —
+`name_match_official` was noise and was dropped. *Scan column CONTENTS, not just
+existence, before trusting a derived feature.* Real holder-name match needs the
+Plaid identity/owner source (Tier-3 pull). `v1_76d3ad45` still carries the dropped
+noise column; remove on the next rebuild.
+
+## 2026-06-07/08 — unsupervised sweep closed; supervised lens finds a heuristic-missed cluster
+
+**Primary metric moved to gross-DPD45 AP** (from never-paid). On the pinned
+snapshot the two are 89% the same: never-paid ⊂ DPD45, and the 11% difference
+(delinquent-but-cured) sits in LOW/POSSIBLE — the fraud bands have zero cured
+cases. Picked DPD45 as the team's standard ruler; never-paid kept as a
+secondary. The choice only moves ~490 rows and is invisible inside the fraud
+bands.
+
+**The unsupervised anomaly sweep is closed and negative on the residual.**
+Three geometries on the scenario-gated residual, scored on residual gross-DPD45
+AP (base 0.057): Isolation Forest (axis-aligned) **0.075**, GMM (density)
+**0.069**, MLP autoencoder (reconstruction) **0.055** — the autoencoder joins
+round-1's linear PCA as a reconstruction approach that underperforms. All three
+sit at ~base rate and merely re-rank the heuristic's own POSSIBLE/LIKELY
+velocity band (mean percentile 93–99); the LOW discovery-target band stays at
+the median (~49). **In the gated residual, "anomalous" and "DPD45/fraud" are
+not the same direction** — the anomaly-for-discovery premise held for the
+(now rule-handled) ring but breaks for what's left.
+
+**A supervised model is the instrument that works.** A HistGBM ceiling probe on
+the same gated residual reaches **0.16 AP / 5.9× lift at top-1%** — ~2× any
+unsupervised view — leaning on a velocity × amount × account-newness
+interaction. The residual signal is label-aware interaction structure in the
+bulk of the distribution, not extremeness, so only supervised selection
+recovers it.
+
+**Supervised-lens discovery (the payoff).** The GBM's top-1% residual rows are
+**90% LOW band (heuristic-missed) at 29% never-paid (~6× base)**. Profile: high
+advance velocity (~6× base `avg_prior_advances_per_day`), *small* amounts
+(~half base `total_disbursed`/`loan_amount`), very new bank account (days vs
+months `days_since_plaid_account_created`) — a small-dollar fast-cycling-on-
+fresh-accounts pattern, distinct from the registered amount>$100 ring
+scenarios. Moderate and intent-ambiguous (fast small-amount churn is also
+credit stress), so review/POSSIBLE-tier, not the 89–96% block rings; needs case
+review to separate mule-cycling from credit-churn. Reusable tooling, both run
+from the pinned snapshot by id: `analysis/ceiling_probe.py` (supervised ceiling
++ feature attribution) and `analysis/supervised_lens.py` (top-risk cohort
+characterisation).
+
+**The next axis, honestly — device / persistent-id, as-of (CORRECTS the leaky
+screen).** The 2026-06-06/07 entry and `TODO.md` quote device sharing at
+"≥3 users → 81.6% never-paid on 69 register-invisible rows." That was a
+*whole-snapshot* count — leakage-inflated (the first advance on a shared device
+"saw" future users). Re-run **as-of, prior-only, windowed** (the
+`users_on_bank_account_*` convention), the honest numbers on the residual-mature
+population (base 5.1%) are:
+- `device_id` ≥2 distinct users within **7d**: 34 rows @ **79%** (15.6×); 72h is
+  tighter (23 @ 87%). Precision *decays* with the window (lifetime → 28%
+  marginal), so there is innocent stale device reuse → short window.
+- `persistent_account_id` ≥2 within 7d: 7 rows @ **100%** (20×). Precision holds
+  at 100% at *every* window (no innocent stale reuse — same real Plaid account,
+  two identities), but lifetime adds only 1 row over 7d, so 7d for compute.
+- De-duped net-new union ≈ **35 rows @ 80% (+28 never-paid), ≈ +9%** on top of
+  the registered rings' ~375 / 334. Block-tier precision, modest volume.
+
+So unsupervised is closed; the path is **supervised features + precise rules on
+new edges**. Next build = device + persistent-id as-of features + two scenarios
+(full detail in `TODO.md`); Track B = neobank feature, ACH codes, deposit
+history, name-match — parked. New convention: every scenario's `theory` records
+its shape/abnormality stat, no-innocent-version argument, and window rationale.
+Screening tooling (the pre-materialization screens `current_data_screen.py`,
+`asof_sharing_screen.py`, `asof_breakdown.py` — REMOVED in the 2026-06-08 cleanup
+once the edges were materialized; now done properly on the live columns by
+`analysis/edge_precision_screen.py`).
+
+**Process.** Two round-4 launches no-op'd silently (exit 0, no trial) because
+the loop's context-render step shell-evaluates `--instruction`; metacharacters
+(`->`, `()`) in the text broke it. Fix: keep instruction text
+metacharacter-free. Candidate library to-do — render-context should not
+re-evaluate `--arguments` through a shell.
+
 ## 2026-06-06/07 — scenario register built; the proxy label retired
 
 **The mechanism (now the project's shape)**

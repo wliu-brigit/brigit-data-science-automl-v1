@@ -3,6 +3,40 @@
 Parked items to revisit. Not status, not learnings (see `LEARNINGS.md` for
 those) — things we've decided are worth doing and don't want to lose.
 
+## ▶ v3 IS LIVE — START HERE (2026-06-09)
+
+The rebuild is DONE. New dataset **`v2_2ac98b52`** (table
+`fraud_advance_feature_base_automl_v3`, 2,412,045 rows × 115 cols, span
+2025-01-01 → 2026-06-08; `dry_run=False`). Adds the 3 hashed graph-node keys
+(`email_key`/`phone_key`/`address_key`, SHA-256, ~1.38M distinct each; email
+still near-noise, max 6 users) + deeper history; drops `name_match_official` /
+`official_name`. Full facts + the closed-out graph verdict are in
+`docs/HANDOFF.md` — read that first.
+
+**Training/eval pooling (settled):** keep full Jan-2025→now in the base table
+(as-of history for the graph/edges), but pool `training_data.sql` rows to
+`feature_as_of_ts >= 2025-08-01` AND mature (`label_mature_d45 = 1`) — ~7-month
+graph warm-up (no left-censoring) + full 45-day labels (no undefined-label
+dilution). `training_data.sql` feeds BOTH train and test; SPLIT_PCT divides them.
+
+**Focused next steps (wendao picks):**
+1. Re-baseline on v3 with the Aug-2025/mature pool — confirm locked scenarios
+   fire (`validation --no-dry-run`), re-measure precision/volume on deeper
+   history, establish the new residual.
+2. **★ Graph with the NEW node types** — re-point `analysis/graph_discovery_sweep.py`
+   at `v2_2ac98b52`, add `phone_key`/`address_key` node types (types could reach
+   5). Multi-type density is what worked; this is the direct test of whether v3
+   lifts the v1 ceilings (review-tier, ~0.01% coverage).
+3. **Bad-neighbour-count as a model feature** — better-populated now (Aug start
+   matures more seeds). Review-tier as a rule; test as a feature.
+4. If graph still caps out → pivot to Tier-3 data for the neobank fast-churn
+   cohort the graph can't touch (income/payroll, IP-intel, ACH returns; below).
+
+**What we know works (carry forward):** block-tier (≥90%) = the locked
+sharing-edge scenarios only; residual block-tier is exhausted (7 ways); the
+durable residual signal is review-tier (~5–7×); graph multi-hop is review-tier +
+low-coverage, best as a feature/queue (full verdict in LEARNINGS 2026-06-09).
+
 ## ⭐ CONSOLIDATED FEATURE-ADD PLAN (2026-06-08)
 
 The single authoritative list of what we add to the feature base, synthesized
@@ -85,7 +119,17 @@ just existence, before trusting a derived feature.
 | 14 | **Team detection flags (as-of):** `flag_3_users_72h`, `flag_5_users_ever`, `flag_10plus_users_ever` | 3-72h & 5-ever flags already in upstream; add 10+ | as-of | **The team's core ~$2M logic** (5+ ever, 3+ in 72h, 10+ for clawback) — replicated as-of to align with their definition. |
 | 15 | `ring_label`/`ring_rank` (account ring grouping by $) | derive | n/a | Reporting/case-review, NOT a model feature. |
 
-### TIER 2 — graph / entity-ring detection (THE NEXT MAJOR EFFORT, wendao 2026-06-08)
+### TIER 2 — graph / entity-ring detection — EXPLORED on v1, review-tier verdict (2026-06-09)
+
+**Verdict (full detail: LEARNINGS 2026-06-09):** multi-hop entity rings DO find
+net-new fraud, but **review-tier (~40–65%) at ~0.01% coverage**, not block-tier.
+What works = degree-capped advance-co-occurrence edges + a small dense
+**multi-resource-type** component; best durable rule `comp≥5 & types≥2` (~55–65%
+stable out-of-time); best use = a model feature / review queue, not a real-time
+block. No durable ≥90% multi-ring pocket in the residual. **Open question for v3:
+do the new email/phone/address NODES + deeper history lift this?** (▶ START HERE
+step 2.) Tooling: `analysis/graph_discovery_sweep.py` + `graph_validate_winner.py`
++ `graph_seed_coverage.py`. Original framing kept below.
 
 The Tier-1 edges are each a **1-hop** view (how many users share THIS row's bank
 account / device / persistent-id / phone / ...). The next axis is the **graph**:
@@ -131,14 +175,19 @@ it touches. Then derive per-advance features from the user's position in the gra
 the Feature-engineering section below is the same idea, kept for its IP/bank/
 address framing.)
 
-### ★ NEXT SQL REBUILD — finalized change list (parked 2026-06-08, for the graph effort)
+### ✅ NEXT SQL REBUILD — DONE 2026-06-09 (= dataset `v2_2ac98b52`)
 
-The batch of changes to run **together** when we rebuild the base table for the
-graph effort. All confirmed against `data/queries/base_table.sql` this session.
-Prototype the graph on the pinned `v1_76d3ad45` FIRST (windowed connected
-components, drop a warm-up window — see TIER 2); this rebuild is what an honest
-cumulative graph / distance-to-fraud / production build needs. Batch everything
-here rather than paying the 3.3TB scan twice.
+**Executed.** All items below shipped in `fraud_advance_feature_base_automl_v3`:
+history extended to 2025-01-01; `email_key`/`phone_key`/`address_key` emitted as
+SHA-256 hashes (sentinel-screened); `name_match_official` + `official_name`
+dropped. See the **▶ v3 IS LIVE** section at the top for the dataset facts and
+next steps. Original change list retained below for provenance.
+
+The batch of changes run **together** to rebuild the base table for the graph
+effort. All confirmed against `data/queries/base_table.sql`. (The graph was
+prototyped on the old `v1_76d3ad45` FIRST — verdict: review-tier + low-coverage,
+see LEARNINGS 2026-06-09; v3 is the lever to test whether more node types lift
+it.)
 
 1. **Extend the history depth (the left-censoring fix — the headline reason).**
    The two params at `base_table.sql:18-22`:

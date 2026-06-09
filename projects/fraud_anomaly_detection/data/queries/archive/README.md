@@ -1,35 +1,21 @@
-# Archived query SQL — the old two-step base-table approach
+# Archived base-table query SQL — version history
 
-Superseded 2026-06-08 by the inlined `data/queries/base_table.sql`.
+Frozen snapshots of every retired base-table definition, one folder per
+version. The **active** SQL always lives at `data/queries/base_table.sql`
+(config.py `base_table_sql` points there); when it is rebuilt, the prior version
+is snapshotted here before editing. These files are reference only — do not edit.
 
-## What the old approach was
+The version number tracks the **table name** suffix
+(`fraud_advance_feature_base_automl` → `_automl_v2` → `_automl_v3`), NOT the
+dataset id. Dataset ids read `v1_<hash>` because the `v1` is the recipe-schema
+version (fixed) and the hash changes with the SQL — a known naming quirk.
 
-The feature base was built in **two steps**:
+| Version | Folder | Approach | Table | Dataset |
+|---|---|---|---|---|
+| v1 | `v1_two_step_upstream/` | Two-step: out-of-band upstream DDL + thin harness SELECT | `fraud_advance_feature_base_automl` | — |
+| v2 | `v2_inlined_tier1/` | Inlined upstream + Tier-1 feature set | `fraud_advance_feature_base_automl_v2` | `v1_76d3ad45` |
+| v3 | *(active — `data/queries/base_table.sql`)* | v2 + extended history (Jan-2025 anchors) + graph-node keys | `fraud_advance_feature_base_automl_v3` | *(materializes to a new `v1_<hash>`)* |
 
-1. `upstream_fraud_advance_feature_base.sql` — a `CREATE OR REPLACE TABLE`
-   DDL, run **out-of-band** (manually, in `SANDBOX_WLIU`), that read the raw
-   dbt/production tables and materialized `fraud_advance_feature_base`.
-2. `base_table.legacy.sql` — the thin harness SELECT
-   (`SELECT * FROM …fraud_advance_feature_base`) that the harness wrapped in
-   `CREATE OR REPLACE TABLE {base_table}` and into which it injected `SPLIT_PCT`.
-
-## Why we changed it
-
-- We folded the full upstream logic **into** `base_table.sql`, so the harness
-  builds everything in one materialize step (no out-of-band dependency on a
-  hand-maintained `fraud_advance_feature_base`).
-- The same rebuild added the Tier-1 feature set (see the project `TODO.md`
-  "CONSOLIDATED FEATURE-ADD PLAN"): as-of sharing edges (device, persistent-id,
-  address, phone, email), Jaro-Winkler name-match, `official_name` holder match,
-  `is_joint`, `IS_NEOBANK_HIGH_RISK_INSTITUTION`, prior-only advance velocity,
-  identity→advance speed, and the team's bank-sharing detection flags (3-in-72h,
-  5-ever, 10-ever) — all as-of.
-
-## Consequence (verify at preflight)
-
-The inlined `base_table.sql` now reads the raw tables directly
-(`fct_loans`, `base_prod__*`, `user_client_metadata`, …) instead of the
-pre-built `fraud_advance_feature_base`. The harness's Snowflake role must have
-read grants on those, or the materialize step fails.
-
-These files are frozen for reference — do not edit them.
+Each version folder carries its own README with the full detail. See the
+project `TODO.md` "CONSOLIDATED FEATURE-ADD PLAN" and "★ NEXT SQL REBUILD" for
+rationale.

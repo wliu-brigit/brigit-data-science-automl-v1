@@ -14,25 +14,11 @@
 -- the is_fraud proxy label and trial comparability stable). New Tier-1 features
 -- are added in clearly-marked `-- NEW (Tier 1, 2026-06-08)` sections. See the
 -- project TODO.md "CONSOLIDATED FEATURE-ADD PLAN" for rationale.
---
--- v3 (2026-06-09) -- the "NEXT SQL REBUILD" batch (see TODO.md), three changes.
--- (1) History depth extended -- anchors from 2025-01-01, history from 2024-01-01.
--- (2) Graph-node keys emitted for the joined-but-dropped entities (email, phone,
--- address) as SHA-256 hashes of their normalized + sentinel-screened values, so
--- multi-hop ring detection can use them with no raw PII emitted. (3) official_name
--- pruned (dead carry). Materializes to a new table
--- fraud_advance_feature_base_automl_v3. Changes are marked `-- NEW (v3, ...)`.
 
 WITH params AS (
     SELECT
-        -- v3 (2026-06-09): history extended for the graph effort. Output anchors
-        -- now span all of 2025 (was a single Dec-2025 month) and history reaches
-        -- back a full year before that, so the as-of windows and any cumulative
-        -- graph have real prior depth before the first emitted advance. NOTE: the
-        -- scan and the as-of self-joins scale with rows -- v3 is materially larger
-        -- than v2 (~12x the anchor months), so EXPLAIN before materializing.
-        '2024-01-01'::TIMESTAMP_NTZ AS history_start_ts,
-        '2025-01-01'::TIMESTAMP_NTZ AS output_start_ts
+        '2025-11-01'::TIMESTAMP_NTZ AS history_start_ts,
+        '2025-12-01'::TIMESTAMP_NTZ AS output_start_ts
 ),
 
 /* ---------------------------------------------------------------------
@@ -143,12 +129,12 @@ bank_account_links AS (
         pa.institution_id,
         m.name AS institution_name,
 
-        -- NEW (Tier 1, 2026-06-08): joint-account flag, a false-positive
-        -- suppressor on the sharing rules. Validated on live data 2026-06-08
-        -- (valid, rare ~0.03 percent). official_name was PRUNED in v3 -- it is the
-        -- account product type (Checking / Varo Checking), NOT the holder name, so
-        -- its only consumer (name_match_official) was dropped and it became a dead
-        -- carry. Holder-name match needs the Plaid identity source (Tier-3 pull).
+        -- NEW (Tier 1, 2026-06-08): Plaid account-holder name + joint flag.
+        -- official_name -> holder-name-vs-identity-name match (synthetic/stolen
+        -- account tell). is_joint -> false-positive suppressor on sharing rules.
+        -- VERIFY: confirm base_prod__plaid_accounts carries these columns the
+        -- teams queries read them from base_prod__plaid_accounts_current_state.
+        pa.official_name,
         pa.is_joint,
 
         i.identity_created_time,
@@ -193,7 +179,8 @@ anchor_advance_account_candidates AS (
         ba.institution_id,
         ba.institution_name,
 
-        -- NEW (Tier 1, 2026-06-08): is_joint disqualifier (official_name pruned in v3)
+        -- NEW (Tier 1, 2026-06-08)
+        ba.official_name,
         ba.is_joint,
 
         ba.identity_created_time,
@@ -867,21 +854,6 @@ feature_snapshot_pre_enrichment AS (
         -- (Checking / Varo Checking / Individual Account / ...), NOT the holder name.
         -- Holder-name match needs the Plaid identity/owner source (Tier-3 pull).
 
-        -- NEW (v3, 2026-06-09): stable graph-node keys for multi-hop ring
-        -- detection. These entity values were already joined (for the users_on_*
-        -- sharing counts) but dropped from the v2 output. Emitted as a SHA-256
-        -- hash of the NORMALIZED + sentinel-screened value (lowercased/trimmed
-        -- email, digits-only phone, street-plus-zip address) -- so no raw PII
-        -- leaves the table while equal values still collide to the same node key.
-        -- A screened (dummy) value is NULL and so never forms a graph edge. NOTE:
-        -- exact-match only -- a fuzzy/edit-distance key (so one-character diffs are
-        -- near rather than unrelated) would need the normalized value emitted too,
-        -- which is deferred. Identifiers, not features -- registered in
-        -- config.metadata_cols (same treatment as bank_account_key / device_id).
-        SHA2(ai.email_norm, 256)  AS email_key,
-        SHA2(ai.phone_norm, 256)  AS phone_key,
-        SHA2(ai.address_key, 256) AS address_key,
-
         /* Prior advance velocity */
         aaf.prior_advances_on_bank_account_lifetime,
         aaf.prior_advances_on_bank_account_24h,
@@ -1044,11 +1016,6 @@ feature_snapshot_pre_enrichment AS (
     LEFT JOIN phone_user_features puf   ON a.advance_id = puf.advance_id
     LEFT JOIN address_user_features auf ON a.advance_id = auf.advance_id
     LEFT JOIN device_user_features duf  ON a.advance_id = duf.advance_id
-
-    -- NEW (v3, 2026-06-09): the anchor advance normalized identity attributes
-    -- (one row per advance) -- source of the emitted email_key/phone_key/
-    -- address_key graph-node keys above. advance_id-grain, so no fan-out.
-    LEFT JOIN anchor_identity ai ON a.advance_id = ai.advance_id
 
     LEFT JOIN network_features nf
         ON a.advance_id = nf.advance_id

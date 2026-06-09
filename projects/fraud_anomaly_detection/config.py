@@ -70,9 +70,10 @@ source = SnowflakeSource(
     # (the out-of-band fraud_advance_feature_base is retired/archived under
     # data/queries/archive/), so the harness builds everything here in one step,
     # wrapping the SELECT in CREATE OR REPLACE TABLE {base_table} and injecting
-    # SPLIT_PCT. New name (_v2) for the Tier-1 feature rebuild so the previous
-    # fraud_advance_feature_base_automl table is left intact, not overwritten.
-    base_table="fraud_advance_feature_base_automl_v2",
+    # SPLIT_PCT. New name (_v3) for the history-extension + graph-node-key rebuild
+    # (anchors from 2025-01-01, emit email/phone/address keys) so the previous
+    # _automl_v2 table (dataset v1_76d3ad45) is left intact, not overwritten.
+    base_table="fraud_advance_feature_base_automl_v3",
     base_table_sql="data/queries/base_table.sql",      # the SELECT defining the base data
     training_data_sql="data/queries/training_data.sql",  # the SELECT pulling training rows
     unique_key="advance_id",  # one row per advance (final dedup guarantees it)
@@ -91,6 +92,14 @@ DATA = DataSpec(
         "bank_account_key",
         "plaid_account_id",
         "persistent_account_id",
+        # v3 graph-node keys for multi-hop ring detection: identifiers (never
+        # features) like the keys above. Emitted as SHA-256 hashes of the
+        # normalized + sentinel-screened entity values, so no raw PII is at rest
+        # while equal values still collide to the same node key. (A future fuzzy/
+        # edit-distance key would need the normalized value too — deferred.)
+        "email_key",
+        "phone_key",
+        "address_key",
         "institution_id",
         "network_label",
         "socure_id",

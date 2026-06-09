@@ -5,7 +5,7 @@ new session can pick up. **Not a changelog** — keep only what's current and
 relevant; detail lives in the project docs. Rewritten at each wrap, not appended
 to.
 
-**Last updated:** 2026-06-09 (graph effort closed out + v3 dataset live → start here)
+**Last updated:** 2026-06-09 (neobank_ncm replication project built + QA-proven end-to-end → start here)
 
 ## How to pick up (per wendao)
 
@@ -13,133 +13,92 @@ Don't dive into code. (1) Read this plus the project docs below; (2) summarize
 where things stand; (3) **recommend 2–3 options and let wendao pick.** The next
 move is wendao's call, not a queue to drain.
 
-Project docs (`projects/fraud_anomaly_detection/`): **`TODO.md`** (start with the
-top **▶ v3 IS LIVE — START HERE** section); **`LEARNINGS.md`** (newest first —
-the 2026-06-09 graph entry, then the 2026-06-08 v2/edge entries); `SCENARIOS.md`;
-`scenarios/register.yaml`.
+## What this effort is
 
-## The big picture (what we know, distilled)
+Branch `neobank_NCM_V3_replicate`, project `projects/neobank_ncm/`. Goal:
+**faithfully replicate** the legacy Neobank NCM underwriting model v3 inside
+this harness — same data, same techniques, same metrics — then let the AutoML
+loop explore beyond it. Legacy home (read-only):
+`brigit/data-science/models/underwriting/neobank/new_user/v3.0/` — its
+`CLAUDE.md` is the legacy build plan; `notebooks/neobank_ncm_model_v3_final.ipynb`
+is the canonical reference. Mimic legacy first; "what a new project would do
+differently" is explicitly out of scope.
 
-The project's settled shape: **anomaly scores are discovery-only; precise
-conjunctive scenarios are the product** (SCENARIOS.md). After many rounds:
+The whole project folder is **uncommitted** (user wants to commit at a finish
+point). Everything below is in the working tree.
 
-- **Block-tier (≥90%) precision lives ONLY in the sharing-edge scenarios already
-  locked** (`ring_device_burst`, `ring_shared_persistent_account`,
-  `ring_account_reuse`, `ring_identity_burst`). These are the product core.
-- **The residual (heuristic- and scenario-missed) is exhausted for block-tier**
-  — confirmed SEVEN independent ways (greedy/fine tree, beam search, unsupervised
-  component, seed-proximity ×2, structural). What remains there is **review-tier
-  (~5–7×)**: the neobank × fresh-account × small-amount fast-churn cohort.
-- **Graph / multi-hop entity rings (the 2026-06-08/09 effort, on the OLD v1 data)
-  — explored and closed with a clear verdict:** multi-hop *does* find genuinely
-  net-new fraud, but it is **review-tier and vanishingly low-coverage (~0.01% of
-  transactions)**, not the ≥90%-with-volume we hoped for. Specifics worth
-  carrying into v3:
-  - **What works:** advance-co-occurrence edges (user↔device/bank/persistent),
-    degree-capped (~20) to kill shared-infra junk nodes; the discriminator is a
-    **small, dense, MULTI-resource-type component** (not big single-type ones).
-  - **Best durable rule:** structural `comp≥5 & types≥2` — stable ~55–65%
-    out-of-time across ~7 rings, net-new — but ~0.006% coverage.
-  - **Best feature:** count of OTHER DPD45-bad users sharing your resources
-    (self-excluded; own prior default is credit-history, not ring). Durable
-    out-of-time precision ~40% / ~7×, review-tier; best as a model feature or a
-    review/clawback queue, NOT a real-time block.
-  - **Don't repeat these mistakes:** day-bucketing drops intra-day bursts (use
-    timestamp-ordered same-day linking); raw IP is a giant-junk-component
-    generator (never a node); small-n early pockets look like 100% but are 1–3
-    rings and regress to the true rate — always check distinct-ring count +
-    out-of-time before believing a precision number.
-  - Reusable tooling (pinned to old v1, re-point at v3): `analysis/
-    graph_discovery_sweep.py` (engine + rule battery), `graph_validate_winner.py`
-    (concentration + out-of-time), `graph_seed_coverage.py` (coverage/seed
-    diagnostic).
+## Where things stand (all verified, not just written)
 
-## v3 dataset is LIVE (use this now)
+- **Recipe** (`config.py`): target `went_dpd45`; SnowflakeSource wrapping the
+  three legacy sandbox snapshots (spine ⋈ risk_features ⋈
+  synthetic_scores_final, read-only in `sandbox_hyong`; our copy materializes
+  as `neobank_ncm_v3_replicate_base` under `SNOWFLAKE_SCHEMA=sandbox_wliu`).
+  Splits: `train` (Jan–Oct 2025, known+unknown), `train_known` (eval-only
+  view), `test` (Nov–Dec 2025 known-only, the loop's leaderboard),
+  `oot` (Jan–Feb 2026 known-only, touched once post-AutoML). experiment_id
+  `neobank_ncm_v3_replicate`.
+- **Candidate set audited against legacy**: the locked 163 features all
+  resolve; the experiment notebook's "Pass 0" exclusions are enforced via
+  `exclude_cols`; all 11 derived features (incl. 3 that died in their
+  selection) are materialized in `data/queries/base_table.sql`.
+- **WoE** (`model/preprocessing.py`): legacy fit_woe/apply_woe ported
+  (log(dist_good/dist_bad), 0.5 smoothing, min_obs 30, OTHER=CHIME), fit on
+  labeled rows only; `PrefitBankInstitutionWOEEncoder` mounts the
+  known-only-fit mapping into the model's ColumnTransformer (required by the
+  harness contract). Legacy fitted mapping bundled at
+  `model/bankinstitutionwoe.json` for VPN-day diffing.
+- **Baseline trial** (`model/baseline.py`, the project MODEL_CLASS): full
+  legacy Phase-4 recipe driven by `data/legacy/experiment_decisions.json` —
+  reject-inference dual records (fuzzy augmentation) at 80/20,
+  random_state=42, locked params/constraints/n_estimators.
+- **Tests**: 14 passing (`uv run pytest projects/neobank_ncm/tests/`) —
+  WoE semantics, synthetic-fixture offline e2e (pipeline → splits → runner
+  pre-fit contract WITH session → fit → known-only AUC).
+- **QA run through the real stack** (local MLflow + GCS, CSV stand-in for
+  Snowflake): `scripts/qa_local_run.py` → materialize + run_trial FINISHED;
+  `scripts/evaluate_oot.py` works for any named split. Namespace
+  `qa/neobank-csv-dryrun-20260609` (sweepable). Fixture numbers:
+  train_known .799 / test .746 / oot .719.
 
-Built 2026-06-09 (the planned rebuild, executed). **Use `use_project(...,
-dry_run=False)`** and dataset id **`v2_2ac98b52`** (the `v2_` prefix is the
-lineage counter; `schema_version` is still 1 — the known naming quirk).
+## Learnings that will bite a new session
 
-- Table `fraud_advance_feature_base_automl_v3`, **2,412,045 rows × 115 cols**.
-- **Date span 2025-01-01 → 2026-06-08** (1.54M rows in 2025, 0.87M in 2026) —
-  the deeper history that fixes the old Dec-1 left-censoring.
-- **New graph-node keys (the headline add):** `email_key` (100% filled),
-  `phone_key` (100%), `address_key` (97.9%; rest sentinel-screened → NULL) — all
-  SHA-256 hex, ~1.38M distinct each. These are hashed surrogates, not raw PII.
-- Sharing edges populated with deeper history: bank 4,897 rows ≥2 users, device
-  5,466, persistent 478, phone 2,291, address 2,649, email 593 (**email max=6 —
-  still near-unique/noise, consistent with prior findings; treat email as a weak
-  node at best**).
-- `name_match_official` and `official_name` both pruned (the noise columns). 115
-  cols = v2's 112 + the 3 new keys.
-- Split health (the recurring gotcha) green: train 1.93M / 2,573 pos (0.133%),
-  test 482k / 664 pos (0.138%); 3,237 `is_fraud` total at natural prevalence.
+- Required transformers must appear as a **named entry inside
+  `model.preprocessor` (ColumnTransformer)**; ColumnTransformer refits
+  entries on the training frame, hence the prefit-WoE pattern (fit on known
+  rows must not see synthetic dual-record labels).
+- Fitted models must set `feature_cols` == the registry's `model=True` set
+  exactly (`automl/runner/contract.py`).
+- The runner's automatic train-split eval **silently skips** on this project
+  (train carries NULL targets by design) — that's why `train_known` exists,
+  evaluated on demand via `scripts/evaluate_oot.py --split train_known`.
+  Systemic fix parked at `docs/to-do/runner-best-effort-visibility.md`.
+- `exclude_cols` strips feature/model flags but keeps the column in the frame.
+- Synthetic labels train; they never enter a metric. Every reported metric is
+  known-only — that's the legacy's own locked decision.
 
-## Training/eval pooling decision (wendao, 2026-06-09 — apply on v3)
+## Open items (options for wendao, roughly in order)
 
-Keep the full Jan-2025→now span in the BASE table (it's the as-of history that
-feeds the graph/edges), but **pool the training/eval rows from `training_data.sql`
-to: `feature_as_of_ts >= 2025-08-01` AND mature (`label_mature_d45 = 1`).**
+1. **Exact-sampling deviation**: legacy downsampled unknowns 600K→200K via
+   Snowflake `ORDER BY HASH(entity_id)` before the ratio draw; baseline
+   currently samples the ratio target from all unknowns (counts match, exact
+   rows differ). Proposed fix (not yet approved): add a hash-rank column in
+   base_table.sql + replay the draw in baseline. Small change, kills the only
+   known training deviation.
+2. **Commit the checkpoint** (project folder + docs entry are untracked).
+3. **Kick off the actual AutoML loop** — never attempted yet; only the manual
+   baseline trial has run. Could dry-run the agent loop against the CSV
+   fixture under a qa/ namespace before VPN day.
+4. **VPN day (last step, user will say when)**: materialize real snapshot →
+   DESCRIBE checks (96 plaid/netflow columns exist; derived-name collisions;
+   row counts vs legacy: 282,642 known train / 70,662 sampled unknowns) →
+   baseline trial → test AUC vs legacy 0.7016 → `evaluate_oot.py` → vs legacy
+   OOT AUC (`data/legacy/preprocessor_meta.json → performance`) → diff fitted
+   WoE vs bundled mapping.
+5. Parked small: rename `evaluate_oot.py` → `evaluate_split.py` (it already
+   takes `--split`).
 
-- **Why Aug-2025 onward:** gives the entity graph + as-of windows a ~7-month
-  warm-up before the first scored row, so rings aren't left-censored (the v1
-  Dec-1 problem).
-- **Why mature-only:** every train/test row then has its full 45-day DPD45 label
-  resolved (no undefined labels diluting precision — the exact issue raised in
-  review). In practice this also trims the most-recent ~45 days (not yet mature).
-- Note the naming: `training_data.sql` pulls the rows for BOTH train and
-  test/validation splits (confusing name; SPLIT_PCT then divides them). The
-  filter belongs there.
+## Constraints to respect
 
-## What's open — wendao to pick (focused next steps on v3)
-
-1. **Re-baseline on v3** with the Aug-2025 / mature-only pool: confirm the locked
-   scenarios fire (the register requires the edge columns and raises on a missing
-   one), re-measure their precision/volume on the deeper history, and establish
-   the new residual. Foundation for everything else.
-2. **★ Graph with the NEW node types + deeper history (the highest-value test).**
-   Re-point `graph_discovery_sweep.py` at `v2_2ac98b52` and add `phone_key` /
-   `address_key` as node types (email is noise — skip or weak). The multi-type
-   density discriminator is *what worked*; more node types (types could reach 5)
-   + deeper history is the direct lever on the v1 ceilings — does coverage and/or
-   precision move off review-tier/0.01%? This decides whether the graph is worth
-   more than a feature.
-3. **Bad-neighbour-count as a model feature.** With Aug-2025 training start, far
-   more seeds have matured before the first scored row, so the feature is better
-   populated than on v1. Test it in the supervised lens / as a feature (it's
-   review-tier as a standalone rule).
-4. **If the graph still caps at review-tier/low-coverage on v3** → the lever for
-   the OTHER residual cohort (neobank fast-churn, which the graph can't touch) is
-   Tier-3 data: **income/payroll** (shell-vs-real discriminator), IP-intelligence
-   (datacenter/VPN/geo), ACH return codes. Parked in TODO Tier-3; this is the
-   pivot if graph-on-v3 disappoints.
-
-## Gotchas (still live)
-
-- **Use `dry_run=False` and `v2_2ac98b52`.** The register requires the edge/key
-  columns and raises on a missing column → run `validation` with `--no-dry-run`.
-- **`config.exclude_cols` edits only take effect on the next materialize** (the
-  registry is baked at materialize time).
-- `experiment run` / `data materialize` preflight needs **Snowflake/VPN** (~30s).
-- `--instruction` is **shell-evaluated** by the loop's context-render — keep it
-  plain prose (no `->`, parens).
-- A killed `experiment run` holds the session lock (~6h self-expiry); release via
-  `trial lock release` (ids in `.cache/automl/tmp/session_locks/*.lock/`).
-- `base_table.sql` comments must avoid `;` and `'` until the `_scrub_sql` harness
-  bug is fixed (TODO library follow-ups).
-
-## State / loose ends
-
-- **v3 SQL + materialization committed** (`2db51bd`, the parallel session). Graph
-  analysis suite + findings committed (`5ea6d3d`, `f93a786`). This wrap-up commit
-  prunes the 4 superseded intermediate graph scripts (findings preserved in
-  LEARNINGS; recoverable from git) and updates the docs.
-- **Register NOT edited** — no graph scenario registered (mid-comparison register
-  edits break comparability; the graph verdict is review-tier so any new rule is
-  a review-tier candidate, wendao's call). Recommended candidate if pursued:
-  `ring_multitype_structural` (`comp≥5 & types≥2`) as a review-tier scenario.
-- Retained analysis tooling: graph suite (`graph_discovery_sweep`,
-  `graph_validate_winner`, `graph_seed_coverage`) + the prior screens
-  (`feature_due_diligence`, `unsupervised_lens`, `edge_precision_screen`,
-  `residual_next_layer`, `subgroup_discovery`, `ip_screen`, `institution_screen`,
-  `ceiling_probe`, `supervised_lens`).
+- **No VPN/Snowflake until the user calls it** — keep everything runnable
+  offline (CSV fixture path) or against local MLflow/GCS (.env works).
+- Legacy folder is read-only. QA/dev MLflow runs go under `qa/...` namespaces.

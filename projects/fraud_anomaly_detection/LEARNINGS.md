@@ -5,6 +5,90 @@ Append as they emerge; date each entry. (Long-term these belong in MLflow at
 the experiment/project level — this file is the ad-hoc home until the
 workflow settles.)
 
+## 2026-06-09 — graph / entity-ring detection on v1_76d3ad45: real multi-hop signal, but block-tier is anecdotal + maturity-censored; durable win is review-tier
+
+**The effort.** First real graph build (TODO TIER 2), all on the pinned
+`v1_76d3ad45`, NO new SQL. Nodes = `user` + resources `device_id` /
+`bank_account_key` / `persistent_account_id` (NOT `ip_address`: NAT/households
+make it a giant-junk-component generator). Edge = advance co-occurrence
+(user touched resource at `feature_as_of_ts`). Connected components generalise
+the 1-hop `users_on_*` edges to multi-hop rings. Six read-only scripts:
+`graph_component_screen` (windowed CC), `graph_edge_study` (edge-event gap),
+`graph_giant_component` (junk-node cap), `graph_seed_proximity` (distance-to-
+known-bad), `graph_discovery_sweep` (consolidated battery), `graph_validate_winner`
+(concentration + out-of-time). All strictly as-of / prior-only, degree-capped.
+
+**As-of construction (the trap, handled).** Strictly-prior cumulative graph via
+incremental union-find in time order (cheap, O(N alpha)). KEY BUG caught and
+fixed mid-effort: day-bucketing dropped same-day advances, and fraud rings burst
+intra-day -> 72h comp>=3 came out as ZERO (impossible if generalising the device
+ring). Fix = process each day's advances in timestamp order, linking same-day-
+EARLIER ones (still strictly prior, no leak). Self-test asserts this.
+
+**Edge sparsity hypothesis was WRONG (data corrected it).** Advance-co-occurrence
+is NOT sparse: devices the SQL flags as >=3 identities/7d carry a MEDIAN of 19
+advancers. The real problem is the OPPOSITE -- giant junk components (max 3,789
+users) from shared-infra device/bank values (top device = 386 users). A degree
+cap of 10-50 (drop ~35-70 promiscuous nodes) gives IDENTICAL net-new results
+(genuine rings don't route through junk); cap=5 over-cuts. Persistent-id is
+cleanest (max 49 users).
+
+**Discriminator = small DENSE MULTI-TYPE component, not big components.** Big
+single-type = junk; a user webbed across device AND account AND persistent-id is
+the ring. `comp>=3 & types>=3` -> 64% never-paid (12.6x) vs `comp>=3` (any type)
+21%.
+
+**Seed-proximity (distance-to-known-bad) -- the sharpest lever, with two
+corrections the data forced:**
+- **Seed on bad OUTCOMES (DPD45-matured, activated at `expected_dpd45_date`), not
+  scenario flags.** Scenario-proximity is DEAD (~7%, base rate) -- the scenarios
+  already took the precise core, so their residual neighbours are the innocent
+  excluded tail.
+- **Exclude self.** Own prior bad advance is repeat-defaulter / CREDIT history
+  (304 rows @ 31.6%, 6.2x -- confounds the north star). The true RING signal is
+  proximity to OTHER bad users, and removing self made it SHARPER: dist-1 to
+  another bad user = 50% (9.9x), and # other-bad-in-component is the precision
+  dial: >=1 -> 49%, >=2 -> 70%, >=3 -> 79%.
+- **Sharpest pocket:** `nb_comp>=2 & types>=3` -> **100% never-paid, n=15,
+  p=3.8e-20, fully net-new** (no single 1-hop edge fires).
+
+**BUT validation killed the block-tier claim two ways (why this is review-tier,
+not a >=90% gate):**
+1. **Concentration -- the 100%/n=15 gem is ONE ring** (3 users, 15 advances over
+   6 days). All the >=75% pockets are 1-3 distinct rings = anecdotes, not rules.
+   Only `nb_comp>=1` (49%, review-tier) spans many (27 distinct rings).
+2. **Out-of-time decay (the deep finding).** Seed-based rules collapse early->late:
+   nb_comp>=3 100%->56%, nb_d1>=2 100%->50%, nb_comp>=1 77%->40%. Cause is
+   STRUCTURAL: DPD45 seeds activate ~45-60d after their advance, so RECENT
+   advances haven't accumulated matured bad-neighbour seeds -- a right-censoring
+   mirroring the Dec-1 left-censoring. **The proximity signal is strongest
+   exactly where it is useless (old, matured data) and weakest where you'd
+   actually block (fresh advances).** And the as-of seeds that WOULD be available
+   real-time (scenario flags) don't discriminate. So distance-to-known-bad is
+   intrinsically a RETROSPECTIVE review/clawback signal, not a real-time gate
+   (the same proactive/reactive split flagged for ACH returns).
+
+**The durable, real-time-usable win = STRUCTURAL multi-type ring (no seed -> no
+maturity lag).** `comp>=5 & types>=2` is STABLE out-of-time (61% early / 54%
+late) across **7 distinct rings**, ~12x lift, net-new (n=31). `comp>=3 & types>=3`
+holds 61%/71%. This is the genuine net-new graph contribution: a ~55-65%
+review/block-adjacent rule on a NEW axis (multi-hop multi-resource ring
+structure) that the 1-hop edges and scenarios miss and that does NOT decay.
+
+**Verdict (consistent with the whole project arc, now via the graph route).** No
+durable >=90% multi-ring pocket exists in the residual -- confirmed a SEVENTH
+independent way. The graph adds (a) a stable ~55-65% structural multi-type-ring
+review rule (deployable, net-new), and (b) a strong but RETROSPECTIVE bad-
+neighbour-count FEATURE (9.6x, as-of-clean, for a review/clawback queue or model
+input -- not a real-time block). Block-tier precision still lives only in the
+sharing-edge scenarios already locked. Recommendations for wendao (NOT acted on):
+register `ring_multitype_structural` (comp>=5 & types>=2) as a review-tier
+scenario; add bad-neighbour-count as a model feature; the planned rebuild (deeper
+history + email/phone/address NODES) is the lever to grow both -- more node types
+directly feeds the multi-type discriminator, and deeper history matures more
+seeds. Register/rebuild left to wendao (editing the register mid-comparison
+breaks comparability; rebuild is user-gated).
+
 ## 2026-06-08 — unsupervised on the v2 features: score still flat, but it rediscovers the new edges; rules win
 
 **Setup.** First analysis on the full v2 build (`v1_76d3ad45`, 1,021,950 rows —

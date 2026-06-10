@@ -84,31 +84,31 @@ def main() -> None:  # noqa: C901
             print(f"VERDICT: SKIPPED — extension unavailable: {exc}")
             return
 
-        # ── Build vertex / edge tables ─────────────────────────────────────────
-        layer_list = ", ".join(f"'{layer}'" for layer in DEFAULT_LAYERS)
-        con.execute("""
-            CREATE OR REPLACE TABLE pg_users AS
-            SELECT u.user_id AS id, coalesce(max(a.is_fraud), 0) AS is_fraud
-            FROM users u LEFT JOIN advances a USING (user_id) GROUP BY 1;
-        """)
-        con.execute(f"""
-            CREATE OR REPLACE TABLE pg_entities AS
-            SELECT DISTINCT entity_type || ':' || entity_value AS id
-            FROM edges WHERE entity_type IN ({layer_list});
-        """)
-        con.execute(f"""
-            CREATE OR REPLACE TABLE pg_edges AS
-            SELECT DISTINCT user_id AS src, entity_type || ':' || entity_value AS dst
-            FROM edges WHERE entity_type IN ({layer_list});
-        """)
-
-        # ── Property graph — drop first to survive re-runs ─────────────────────
+        # ── Build vertex / edge tables + property graph ────────────────────────
         try:
-            con.execute("DROP PROPERTY GRAPH IF EXISTS fraud_pg")
-        except Exception:  # noqa: BLE001 — older builds may not support DROP PG
-            pass
+            layer_list = ", ".join(f"'{layer}'" for layer in DEFAULT_LAYERS)
+            con.execute("""
+                CREATE OR REPLACE TABLE pg_users AS
+                SELECT u.user_id AS id, coalesce(max(a.is_fraud), 0) AS is_fraud
+                FROM users u LEFT JOIN advances a USING (user_id) GROUP BY 1;
+            """)
+            con.execute(f"""
+                CREATE OR REPLACE TABLE pg_entities AS
+                SELECT DISTINCT entity_type || ':' || entity_value AS id
+                FROM edges WHERE entity_type IN ({layer_list});
+            """)
+            con.execute(f"""
+                CREATE OR REPLACE TABLE pg_edges AS
+                SELECT DISTINCT user_id AS src, entity_type || ':' || entity_value AS dst
+                FROM edges WHERE entity_type IN ({layer_list});
+            """)
 
-        try:
+            # ── Property graph — drop first to survive re-runs ─────────────────
+            try:
+                con.execute("DROP PROPERTY GRAPH IF EXISTS fraud_pg")
+            except Exception:  # noqa: BLE001 — older builds may not support DROP PG
+                pass
+
             con.execute("""
                 CREATE PROPERTY GRAPH fraud_pg
                 VERTEX TABLES (
@@ -122,7 +122,7 @@ def main() -> None:  # noqa: C901
                 );
             """)
         except Exception as exc:  # noqa: BLE001
-            print(f"VERDICT: SKIPPED — CREATE PROPERTY GRAPH failed: {exc}")
+            print(f"VERDICT: SKIPPED — property-graph setup failed: {exc}")
             return
 
         # ── PGQ hop query — try up to 3 syntax variants ────────────────────────
@@ -151,6 +151,7 @@ def main() -> None:  # noqa: C901
               f"  [syntax: {_ATTEMPTS[-1]}]")
 
         # ── igraph baseline ────────────────────────────────────────────────────
+        con.close()  # load_graph opens read_only on the same file; DuckDB forbids mixed configs
         t0 = time.perf_counter()
         g = load_graph(STORE, scenarios=False, node_attrs=("is_fraud",))
         ig_users = set(near_flagged(g, flag="is_fraud", max_hops=3)["user_id"])

@@ -76,7 +76,7 @@ def main() -> None:
     multi = cc[(cc.n_users >= 3) & (cc.n_types >= 2)]
     print(f"  components (cap=20): {len(cc):,}; with >=3 users & >=2 types: {len(multi):,}")
     print(f"  fraud users inside multi-type comps: {int(multi.n_flagged.sum()):,}"
-          f" / {int(multi.n_users.sum()):,} members")
+          f" / {int(multi.n_users.sum()):,} total users")
     if len(multi):
         print(multi.sort_values("n_users", ascending=False).head(10)
               [["n_users", "n_types", "entity_types", "n_flagged"]].to_string(index=False))

@@ -8,6 +8,11 @@ to.
 **Last updated:** 2026-06-09 (persisted graph stack built + proven on the local
 sample; old network scripts pruned → start here)
 
+**Status: APPROVED on the sample (wendao, 2026-06-09)** — capability validated
+end-to-end on `data/sample/graph_sample.parquet` (20k advances, fraud-enriched;
+all rates are workflow evidence only). **Next milestone: the same stack on the
+full v3 data** — follow the runbook below.
+
 ## How to pick up (per wendao)
 
 Don't dive into code. (1) Read this plus the project docs below; (2) summarize
@@ -75,13 +80,62 @@ rest).
 - Loading a registered dataset needs MLflow + GCS only; Snowflake/VPN is only
   for materializing new datasets.
 
+## Runbook — first run on the full v3 data (step → validate → proceed)
+
+**Step 0 — prereqs.** Drop a `.env` at the repo root (prod MLflow + GCS
+values; Snowflake fields NOT needed — registered-dataset loads read MLflow +
+GCS only). `uv sync --group fraud`. Verify: running
+`uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_store_build`
+gets PAST preflight (it reports exactly what's missing otherwise).
+
+**Step 1 — build the v3 store** (same command; defaults to dataset
+`v2_2ac98b52` → `data/graph/fraud_graph_v3.duckdb`). Expect: minutes (GCS
+download + one SQL pass); store file ~1.5–3GB. **Validate against the v3
+build facts (2026-06-09 materialization)** before trusting anything:
+- `meta`: `n_advances` = **2,412,045**; `advances` has **115** columns;
+  span 2025-01-01 → 2026-06-08.
+- All 7 entity types present in `edges`; email stays near-noise
+  (`SELECT max(n_users) FROM entities WHERE entity_type='email'` → **6**).
+- Sharing-edge sanity (entities with ≥2 users, vs the warehouse build):
+  bank ≈ **4,897**, device ≈ **5,466**, persistent ≈ **478**, phone ≈
+  **2,291**, address ≈ **2,649**, email ≈ **593**
+  (`SELECT entity_type, count(*) FROM entities WHERE n_users >= 2 GROUP BY 1`).
+- File reopens read-only from a fresh process.
+
+**Step 2 — battery** (`graph_question_battery.py --store
+data/graph/fraud_graph_v3.duckdb`). Expect: igraph load ~1 min / 2–3GB RAM
+(if heavier: collapse parallel edges at load / scipy global pass / rustworkx
+— spec's named fallbacks). Validate:
+- Pooled base rates land near natural prevalence (~0.13% fraud at advance
+  grain; pool defaults = mature-only + Aug-2025+, the settled decision).
+- The four locked scenarios fire (the runner preflights `TRIGGER_COLUMNS`).
+- Hubs: big hubs should show high scen_coverage (v1 consistency); LOW-coverage
+  velocity hubs are the new-farm leads.
+- **The decision readout (TODO #2):** multi-type census + residual cut with
+  concentration and early/late stability — compare against the v1 ceilings
+  (LEARNINGS 2026-06-09: structural rule ~55–65% @ ~0.006% coverage;
+  bad-neighbour ~40%/7× @ ~0.013%). The question: do the new phone/address
+  node types + deeper history move coverage and/or precision?
+
+**Step 3 — queues** (`graph_discovery_queues.py --store ...`). Validate queue
+SIZES are reviewable before sharing (tune `min_users`/`min_types`/`--days`;
+pair queue only in conjunction — pairs alone ≈ households). Spot-check top
+members by hand (`ring(g, user_id)` for the ego view).
+
+**Step 4 — any rule candidate from the queues** gets measured leak-free
+(`graph.asof.leakfree_features` — strictly-prior, maturity-activated seeds)
+BEFORE any precision number is quoted; then the register's normal path
+(draft → monthly backtest → sign-off), wendao's call.
+
+**Step 5 — if the graph still caps at review-tier/~0.01%** → Tier-3 pivot
+(TODO), and bad-neighbour features into the supervised lens (TODO #3) remain
+the fallback value path.
+
 ## What's open — wendao to pick
 
-1. **★ v3 store + battery + queues (TODO #2, the value test).** Needs a
-   `.env` (prod MLflow + GCS). Then:
-   `graph_store_build.py` → `graph_question_battery.py --store .../fraud_graph_v3.duckdb`
-   → `graph_discovery_queues.py --store ...`. Decides whether deeper history +
-   phone/address node types move the graph off review-tier/~0.01% coverage.
+1. **★ Run the v3 runbook above (TODO #2, the value test).** Needs only the
+   `.env`. Decides whether deeper history + phone/address node types move the
+   graph off review-tier/~0.01% coverage.
 2. **Queue tuning for the review team** — thresholds (`min_users`, `min_types`,
    `--days`, caps) against what review can absorb; conjunctions for the pair
    queue (pair + freshness/velocity — pairs alone ≈ households).

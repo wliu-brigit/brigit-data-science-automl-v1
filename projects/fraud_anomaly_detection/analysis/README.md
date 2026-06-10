@@ -24,6 +24,11 @@ seeds) before anyone quotes a precision number.
 
 ## Rerunnable lenses (dataset-general; re-run on each new base)
 
+Kept deliberately (wendao, 2026-06-09): these still identify scenario/residual
+signal and will run again on v3. Revisit after the v3 pass — any lens that
+proves dead there follows the same prune path (findings → LEARNINGS, delete,
+git keeps the code).
+
 | script | job |
 |---|---|
 | `feature_due_diligence.py` | leakage/QA gate before discovery runs on a new feature base |

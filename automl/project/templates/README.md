@@ -22,6 +22,25 @@ same on both sides: `from projects.{project_name}.eval.metrics import ...`
 next to `from automl.eval import ...`. Keep project tests in `tests/` here —
 never in the repo-level `tests/` tree, which belongs to the core library.
 
+## Project-specific dependencies
+
+Shared tooling (pytest, pandas, the core ML stack) lives in the repo's
+default `dev` dependency group — never re-declare it. When this project needs
+a package the core doesn't ship, declare it in a dependency group named after
+the project (the same `[dependency-groups]` mechanism as `dev`; everything
+resolves in the one shared lockfile, so versions stay consistent repo-wide
+while installs stay opt-in):
+
+```bash
+uv add --group {project_name} <package>   # declare (creates the group on first use)
+uv sync --group {project_name}            # opt in, once per checkout
+uv run --group {project_name} ...         # or per command, no sync needed
+```
+
+In this project's tests, guard imports of group-only packages with
+`pytest.importorskip("<package>")` — a bare `pytest` run then skips them
+cleanly for sessions that never synced the group.
+
 ## Writing PROJECT_INSTRUCTIONS.md
 
 The proposer and coder read this file fresh **every turn** — it is how you

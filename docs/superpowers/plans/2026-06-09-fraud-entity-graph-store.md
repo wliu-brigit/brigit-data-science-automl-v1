@@ -72,11 +72,40 @@ analysis-time view.
 """
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Document the group in the project README**
+
+In `projects/fraud_anomaly_detection/README.md`, insert this section right
+before `## Writing PROJECT_INSTRUCTIONS.md` (mirrors the scaffold template's
+generic section, made concrete for this project):
+
+```markdown
+## Project-specific dependencies
+
+Shared tooling lives in the repo's default `dev` dependency group. Packages
+only this project needs live in the `fraud` dependency group (the same
+`[dependency-groups]` mechanism as `dev`, one shared lockfile — consistent
+versions repo-wide, opt-in install):
 
 ```bash
-git add pyproject.toml .gitignore projects/fraud_anomaly_detection/graph/__init__.py
-git commit -m "fraud: graph package skeleton + duckdb/igraph deps
+uv sync --group fraud                 # opt in, once per checkout
+uv add --group fraud <package>        # add a new project dependency
+uv run --group fraud python -m ...    # or per command, no sync needed
+```
+
+Current contents: `duckdb` + `igraph` — the persisted entity-graph store
+(`graph/`). Tests importing group-only packages guard with
+`pytest.importorskip`, so a bare `pytest` stays green without the group.
+```
+
+(Note: the inner ```bash fence ends before the section's final paragraph —
+copy the structure exactly as shown.)
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add pyproject.toml .gitignore projects/fraud_anomaly_detection/graph/__init__.py \
+        projects/fraud_anomaly_detection/README.md
+git commit -m "fraud: graph package skeleton + project-scoped 'fraud' dep group (duckdb, igraph)
 
 Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```

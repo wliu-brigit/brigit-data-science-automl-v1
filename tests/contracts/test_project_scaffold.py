@@ -35,6 +35,8 @@ def test_scaffolded_readme_carries_the_conventions(tmp_path):
     readme = (tmp_path / "projects" / "shape_check" / "README.md").read_text(encoding="utf-8")
     # The sections every project relies on; renames here are doc-breaking.
     assert "## Layout — mirror the library's domains" in readme
+    assert "## Project-specific dependencies" in readme
+    assert "uv add --group shape_check" in readme  # group named after the project
     assert "## Writing PROJECT_INSTRUCTIONS.md" in readme
     assert "## Snowflake: when your base table already exists" in readme
     assert "{project_name}" not in readme  # substitution applied

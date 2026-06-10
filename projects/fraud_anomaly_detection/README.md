@@ -16,10 +16,15 @@ fraud_anomaly_detection/
 │   ├── validation.py        #   refresh the evidence doc: uv run python -m ...scenarios.validation
 │   └── __init__.py          #   bound register API: SCENARIOS / assign / residual_mask
 ├── PROJECT_INSTRUCTIONS.md  # domain guidance the agent loop reads every turn
-├── data/queries/            # base_table.sql + training_data.sql (Snowflake)
+├── data/
+│   ├── queries/             # base_table.sql + training_data.sql (Snowflake)
+│   ├── sample/              # local sample parquet (gitignored)
+│   └── graph/               # built graph stores, *.duckdb (gitignored, rebuildable)
 ├── eval/                    # custom Metric classes (automl.eval protocol)
 ├── model/                   # custom transformers / pipeline overrides
-├── graph/                   # persisted entity-graph store (build / load / queries)
+├── graph/                   # persisted entity-graph store library
+│                            #   build / load / queries / asof (leak-free) / discover (queues)
+├── analysis/                # read-only investigation runners — see analysis/README.md
 └── tests/                   # project-owned tests; a bare `pytest` runs them
 ```
 

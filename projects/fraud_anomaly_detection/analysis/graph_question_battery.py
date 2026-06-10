@@ -58,15 +58,16 @@ def user_truth(base: pd.DataFrame, pool_start: str | None, mature_only: bool) ->
     if pool_start:
         pooled = pooled[pd.to_datetime(pooled["feature_as_of_ts"]) >= pd.Timestamp(pool_start)]
     flags = assign(pooled)
-    return (
-        pd.DataFrame({
-            "user_id": pooled["user_id"].astype(str),
-            "is_fraud": pooled["is_fraud"].astype(int),
-            "dpd45": pooled["label_gross_dpd45"].astype(int),
-            "scen": flags["scenario_any"].astype(bool),
-        })
-        .groupby("user_id")
-        .max()
+    per_advance = pd.DataFrame({
+        "user_id": pooled["user_id"].astype(str),
+        "is_fraud": pooled["is_fraud"].astype(int),
+        "dpd45": pooled["label_gross_dpd45"].astype(int),
+        "scen": flags["scenario_any"].astype(bool),
+        "first_ts": pd.to_datetime(pooled["feature_as_of_ts"]),
+    })
+    return per_advance.groupby("user_id").agg(
+        is_fraud=("is_fraud", "max"), dpd45=("dpd45", "max"),
+        scen=("scen", "max"), first_ts=("first_ts", "min"),
     )
 
 
@@ -131,6 +132,9 @@ def main() -> None:
     g = load_graph(args.store, base=base, degree_cap=RING_CAP,
                    node_attrs=("is_fraud",), scenarios=False)
     cc = components(g, flag="is_fraud")
+    user_comp = {u: cid for cid, row in zip(cc.comp_id, cc.user_ids)
+                 for u in row.split(",")}
+    split_ts = truth.first_ts.median()  # early/late decay check (v1 lesson #2)
     for label, sel in [
         (">=3 users & >=2 types", (cc.n_users >= 3) & (cc.n_types >= 2)),
         (">=5 users & >=2 types (the v1 durable rule)", (cc.n_users >= 5) & (cc.n_types >= 2)),
@@ -139,10 +143,17 @@ def main() -> None:
         members = set(u for row in comp_set.user_ids for u in row.split(","))
         sub = truth.loc[truth.index.isin(members)]
         print(f"\n  {label}: {len(comp_set):,} components, {len(members):,} member users")
-        _all = sub
-        print(_rates(_all, "    members (pooled)"))
+        print(_rates(sub, "    members (pooled)"))
+        print(_rates(sub[sub.first_ts <= split_ts], "      early half"))
+        print(_rates(sub[sub.first_ts > split_ts], "      late half"))
         residual = sub[~sub.scen]
         print(_rates(residual, "    RESIDUAL (no scenario fired)"))
+        if len(residual):
+            n_comps = len({user_comp[u] for u in residual.index})
+            print(f"      spans {n_comps} distinct components"
+                  " (v1 lesson #1: 1-3 rings = anecdote, not a rule)")
+            print(_rates(residual[residual.first_ts <= split_ts], "      early half"))
+            print(_rates(residual[residual.first_ts > split_ts], "      late half"))
     del g
 
     banner(f"5) PROXIMITY (<= {args.max_hops} user-hops, union graph, uncapped)")
@@ -155,7 +166,12 @@ def main() -> None:
                 f"{h}:{n}" for h, n in out.hops.value_counts().sort_index().items()))
             near = truth.loc[truth.index.isin(set(out.user_id))]
             print(_rates(near, "    proximate users (pooled)"))
-            print(_rates(near[~near.scen], "    proximate & NOT scenario-flagged"))
+            unflagged = near[~near.scen]
+            print(_rates(unflagged, "    proximate & NOT scenario-flagged"))
+            if len(unflagged):
+                split_ts = truth.first_ts.median()
+                print(_rates(unflagged[unflagged.first_ts <= split_ts], "      early half"))
+                print(_rates(unflagged[unflagged.first_ts > split_ts], "      late half"))
 
     print("\nDone. Sample-store caveat: fraud-enriched + graph-thinned —"
           " treat rates as workflow output, findings only on the full build.")

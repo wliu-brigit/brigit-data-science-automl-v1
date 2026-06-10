@@ -17,6 +17,8 @@ def _row(advance_id, user_id, ts, device=None, bank=None, persistent=None,
         "loan_amount": loan_amount, "is_fraud": is_fraud,
         "label_gross_dpd45": is_fraud, "label_mature_d45": 1,
         "is_neobank_high_risk_institution": 0,
+        # bad outcome becomes KNOWN 10 days after the advance (toy maturity)
+        "expected_dpd45_date": ts + pd.Timedelta(days=10) if is_fraud else pd.NaT,
     }
 
 

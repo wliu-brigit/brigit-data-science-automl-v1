@@ -81,6 +81,13 @@ edges    advance_id, user_id, entity_type, entity_value, ts
          -- ts = feature_as_of_ts at full precision (NEVER day-bucketed:
          --      fraud rings burst intra-day — the prior effort's worst bug)
 
+advances advance_id, user_id, ts + ALL base-table columns
+         -- full base-table snapshot at build time. Makes the file
+         -- SELF-CONTAINED (wendao requirement): node metadata, labels, and
+         -- the scenario overlay all run off the store alone — no live base
+         -- table needed at analysis time. Labels are a build-time snapshot;
+         -- maturing labels refresh on rebuild (see Refresh model).
+
 users    user_id, n_advances, first_seen_ts, last_seen_ts
 entities entity_type, entity_value, n_users, n_advances, first_seen_ts, last_seen_ts
          -- convenience materializations, derivable from edges; entities is
@@ -96,9 +103,29 @@ Node identity convention: users are `user:<user_id>`; entities are
 `<entity_type>:<entity_value>`. Constructed in the analysis layer — the store
 keeps the columns raw.
 
-What the store does NOT contain: labels, scenario flags, features, weights,
-caps. User metadata (labels, `is_neobank`, …) joins from the base table at
-load time.
+What the store does NOT contain: anything *derived by judgment* — scenario
+flags, weights, caps, layer choices. Metadata and labels ARE in the file (the
+`advances` snapshot), but flags are always computed from it at load time
+against the current register.
+
+### Refresh model: rebuild, not incremental
+
+New data is incorporated by **full rebuild only** — never incremental append.
+Incremental graph maintenance silently drifts (aggregate counts, late rows,
+half-failed appends), and append would leave matured labels stale on old rows;
+a rebuild refreshes both for free and matches the repo's rebuild-don't-migrate
+posture. The build is one SQL pass (minutes at full v3 scale; offline
+workflow). Revisit trigger: build time reaching hours.
+
+### Production path: Snowflake runs the same contract
+
+The persistence contract is the **table schemas, not DuckDB**. The majority of
+data lives in Snowflake; in production the same derivation SQL runs there and
+`edges`/`users`/`entities`(/`advances`) become Snowflake tables. Analyses then
+either query Snowflake directly or materialize those tables into the local
+`.duckdb` for laptop-speed work — same file shape, same analysis code, only
+the source differs. Snowflake has no graph traversal (recursive CTEs only), so
+the igraph layer remains the analysis engine in both worlds.
 
 ## Build module
 
@@ -122,7 +149,9 @@ attrs `entity_type`/`ts`, parallel edges kept):
 ```python
 load_graph(
     store=GRAPH_DB_PATH,  # the .duckdb file
-    base=SAMPLE_PATH,     # base table (path or DataFrame) for node attrs + scenarios
+    base=None,            # node-attr/scenario source; default = the store's
+                          # own `advances` snapshot (file is self-contained);
+                          # pass a path/DataFrame to override
     layers=("device", "bank", "persistent", "phone", "address"),  # default; email/ip opt-in
     degree_cap=None,      # drop entity nodes with > cap distinct users
                           # (None = lossless; pass ~20 for ring traversal)
@@ -189,10 +218,15 @@ module, prints a structured report), in order:
 | | sample (now) | v3 full (~2.4M advances) |
 |---|---|---|
 | edges table | ~100k rows | ~12–14M rows — trivial for DuckDB |
+| advances snapshot | 20k × 110 | 2.4M × 115 ≈ 1–2GB compressed in-file — fine |
 | igraph build | <1s | ~1 min load, ~2–3GB RAM — fine on a laptop |
 | global components | igraph | igraph, or scipy.sparse.csgraph (already a dep) if faster needed |
 | per-ring analysis | igraph | unchanged (rings are small after capping) |
 | store build | local parquet → DuckDB | same SQL shape against Snowflake; store file artifact-able to GCS/MLflow |
+
+If full-scale igraph memory runs heavier than estimated: collapse parallel
+edges into weighted edges at load (large cut), push global passes to scipy,
+or swap rustworkx — all behind the same store, no schema change.
 
 ## Error handling & edge cases
 
@@ -228,6 +262,21 @@ synthetic DataFrames — no live services):
 
 `uv add duckdb python-igraph` (both free/OSS). DuckPGQ installed at runtime
 from the community extension repo (probe only).
+
+## Risks & mitigations (called out for wendao, 2026-06-09)
+
+1. **Product-value expectation (the big one).** Infrastructure doesn't change
+   the data: the v1 verdict was review-tier signal at ~0.01% coverage. The
+   value test remains graph-on-v3-with-new-node-types (project TODO #2). This
+   session proves capability only.
+2. **Sample thinning.** 20k rows sampled from 2.4M fragments rings and shrinks
+   hub degrees — structural demo results don't transfer to full scale either
+   (extends the metrics non-goal to structure).
+3. **igraph memory at full v3** — fallbacks above; low risk, mechanical.
+4. **DuckPGQ flake** — scoped probe; failure costs a LEARNINGS note.
+5. **Label-snapshot staleness** — the `advances` snapshot freezes label state
+   at build time while labels mature ~45 days; mitigated by rebuild-refresh +
+   build stamp in `meta`. Non-issue on the all-mature sample.
 
 ## Non-goals (this session)
 

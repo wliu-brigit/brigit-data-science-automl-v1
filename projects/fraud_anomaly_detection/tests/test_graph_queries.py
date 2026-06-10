@@ -75,3 +75,35 @@ def test_hub_report_orders_and_annotates(toy_store):
     assert top["fraud_user_rate"] == 0.0
     d1 = out[out["entity_value"] == "d1"].iloc[0]
     assert d1["fraud_user_rate"] == 0.5  # u1 fraud, u2 not
+
+
+def test_project_users_counts_multi_entity_weights(tmp_path):
+    import pandas as pd
+
+    from projects.fraud_anomaly_detection.graph.build import build_store
+
+    rows = []
+    for adv, dev, phone in [("x1", "dX", "pX"), ("x2", "dX", "pX")]:
+        rows.append({
+            "advance_id": adv, "user_id": "ua" if adv == "x1" else "ub",
+            "feature_as_of_ts": pd.Timestamp("2026-01-01 10:00"),
+            "device_id": dev, "bank_account_key": None,
+            "persistent_account_id": None, "phone_key": phone,
+            "address_key": None, "email_key": None, "ip_address": None,
+            "loan_amount": 50.0, "is_fraud": 0, "label_gross_dpd45": 0,
+            "label_mature_d45": 1, "is_neobank_high_risk_institution": 0,
+        })
+    store = tmp_path / "mini.duckdb"
+    build_store(pd.DataFrame(rows), store, source_label="mini")
+    out = project_users(store, degree_cap=None)
+    [(a, b, n_shared, n_types)] = list(
+        zip(out["user_a"], out["user_b"], out["n_shared"], out["n_types"]))
+    assert {a, b} == {"ua", "ub"}
+    assert (n_shared, n_types) == (2, 2)  # share device dX AND phone pX
+
+
+def test_project_users_rejects_bad_layers(toy_store):
+    with pytest.raises(ValueError, match="at least one"):
+        project_users(toy_store, layers=())
+    with pytest.raises(ValueError, match="unknown layer"):
+        hub_report(toy_store, layers=("device", "passport"))

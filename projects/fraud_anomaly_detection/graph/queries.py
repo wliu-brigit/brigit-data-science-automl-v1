@@ -23,12 +23,24 @@ def _flagged_indices(g: ig.Graph, flag: str) -> list[int]:
     return [v.index for v in g.vs if v["kind"] == "user" and bool(v[flag])]
 
 
+def _check_layers(layers: tuple[str, ...]) -> None:
+    """Raise ValueError for empty or unknown layers (mirrors load.load_graph)."""
+    if not layers:
+        raise ValueError("layers must name at least one entity type")
+    unknown = set(layers) - set(ENTITY_COLS)
+    if unknown:
+        raise ValueError(f"unknown layer(s) {sorted(unknown)}; expected {sorted(ENTITY_COLS)}")
+
+
 def near_flagged(g: ig.Graph, flag: str = "is_fraud", max_hops: int = 3) -> pd.DataFrame:
     """Users within max_hops USER-hops of any flagged user (flagged excluded).
 
     Single multi-source BFS via a virtual vertex attached to every flagged
     user: distance(virtual -> target) = 1 + bipartite-steps, and one
     user-hop = 2 bipartite steps, so hops = (d - 1) // 2.
+
+    Nearest-flagged seeds are resolved with a single batched
+    get_shortest_paths call (one BFS regardless of match count).
     """
     seeds = _flagged_indices(g, flag)
     if not seeds:
@@ -39,15 +51,26 @@ def near_flagged(g: ig.Graph, flag: str = "is_fraud", max_hops: int = 3) -> pd.D
     gv.add_edges([(virtual.index, s) for s in seeds])
     dist = gv.distances(source=[virtual.index])[0]
 
-    rows = []
+    # First pass: collect qualifying (vertex, hops) pairs without path lookups.
+    qualifying = []
     for v in g.vs:
         if v["kind"] != "user" or v.index in seed_set:
             continue
         d = dist[v.index]
         hops = (int(d) - 1) // 2 if d != float("inf") else None
         if hops is not None and 1 <= hops <= max_hops:
-            path = gv.get_shortest_paths(virtual.index, to=v.index)[0]
-            rows.append((v["raw_id"], hops, gv.vs[path[1]]["raw_id"]))
+            qualifying.append((v, hops))
+
+    if not qualifying:
+        return pd.DataFrame(columns=["user_id", "hops", "nearest_flagged"])
+
+    # Single batched BFS: one get_shortest_paths call for all qualifying targets.
+    paths = gv.get_shortest_paths(virtual.index, to=[v.index for v, _ in qualifying])
+
+    rows = [
+        (v["raw_id"], hops, gv.vs[path[1]]["raw_id"])
+        for (v, hops), path in zip(qualifying, paths)
+    ]
     return pd.DataFrame(rows, columns=["user_id", "hops", "nearest_flagged"])
 
 
@@ -90,30 +113,42 @@ def project_users(
 ) -> pd.DataFrame:
     """Weighted user<->user projection: n_shared entities + n_types distinct types.
 
+    The degree cap is applied to the DISTINCT-user count WITHIN the
+    (layers, as_of) view — consistent with load_graph — not to the
+    all-time global count in the `entities` summary table.
+
     ALWAYS think before lifting the cap: one 136-user device alone emits
     9,180 pairs. Default cap matches the v1 ring-traversal finding (~20).
     """
-    unknown = set(layers) - set(ENTITY_COLS)
-    if unknown:
-        raise ValueError(f"unknown layer(s) {sorted(unknown)}; expected {sorted(ENTITY_COLS)}")
+    _check_layers(layers)
     params: list = list(layers)
     time_cond = ""
     if as_of is not None:
         time_cond = " AND ts <= ?"
         params.append(as_of)
-    cap_cond = ""
-    if degree_cap is not None:
-        cap_cond = (
-            " AND (entity_type, entity_value) IN ("
-            "SELECT entity_type, entity_value FROM entities WHERE n_users <= ?)"
-        )
-        params.append(degree_cap)
 
-    sql = f"""
+    if degree_cap is not None:
+        # Cap computed within the filtered view (mirrors load.py's window approach).
+        # Positional order: layers placeholders, then as_of if present, then cap.
+        params.append(degree_cap)
+        pairs_cte = f"""
+        WITH pairs AS (
+            SELECT user_id, entity_type, entity_value FROM (
+                SELECT DISTINCT user_id, entity_type, entity_value,
+                       count(DISTINCT user_id) OVER (PARTITION BY entity_type, entity_value) AS du
+                FROM edges
+                WHERE entity_type IN ({", ".join("?" * len(layers))}){time_cond}
+            ) WHERE du <= ?
+        )"""
+    else:
+        pairs_cte = f"""
         WITH pairs AS (
             SELECT DISTINCT user_id, entity_type, entity_value FROM edges
-            WHERE entity_type IN ({", ".join("?" * len(layers))}){time_cond}{cap_cond}
-        )
+            WHERE entity_type IN ({", ".join("?" * len(layers))}){time_cond}
+        )"""
+
+    sql = f"""
+        {pairs_cte}
         SELECT a.user_id AS user_a, b.user_id AS user_b,
                count(*) AS n_shared,
                count(DISTINCT a.entity_type) AS n_types
@@ -136,6 +171,7 @@ def hub_report(
     The time axis separates fraud farms (many users in days, high attached
     fraud rate) from shared infrastructure (many users over years, base rate).
     """
+    _check_layers(layers)
     params: list = list(layers)
     sql = f"""
         WITH user_label AS (

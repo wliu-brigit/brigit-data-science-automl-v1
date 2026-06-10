@@ -53,6 +53,14 @@ is naive but correct:
 only on the `neobank_ncm_v3_replicate` branch and is **deliberately not ported**.
 This design replaces the need for it.
 
+**No existing disk cache to reuse.** What looks like caching today is *not* a
+local-bytes cache: `eval/evaluate.py: _load_cached_result` reuses an
+already-logged eval result *from MLflow* (idempotency), and
+`mlflow/client.py` keeps an in-memory `run_id → experiment_id` memo. MLflow's own
+`download_artifacts` lands files in its managed temp location, not ours. The
+content-addressed disk cache here is **net-new** — don't go hunting for an LRU
+helper to extend.
+
 ## 2. Diagnosis (why it fails)
 
 Two independent dimensions multiply:
@@ -195,6 +203,10 @@ preferred shape.
   `identity()` / `recipe_identity()` — it must never change the dataset hash.
 - Note the `probe_snowflake` override is still useful for the CLI/tests to force
   the probe on/off regardless of config.
+- **Follow-through:** once the flag moves, update the projects that set it today
+  (`projects/neobank_ncm/config.py` uses `SnowflakeSource(skip_live_check=True)`)
+  to the new `RUN_CONFIG` field, and remove the source flag. This is part of the
+  `neobank_ncm_v3_replicate` rebase when this effort lands on `main`.
 
 ## 8. Open questions for the next session
 

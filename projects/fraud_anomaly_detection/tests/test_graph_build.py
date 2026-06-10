@@ -60,3 +60,18 @@ def test_rebuild_is_idempotent(toy_df, tmp_path):
     second = build_store(toy_df, path, source_label="toy")
     assert first == second
     assert _q(path, "SELECT count(*) FROM edges") == [(11,)]
+
+
+def test_edge_timestamps_keep_time_of_day(toy_store):
+    # The prior effort's worst bug was day-bucketing: rings burst intra-day.
+    [(ts,)] = _q(toy_store,
+        "SELECT ts FROM edges WHERE advance_id = 'a11'")
+    assert (ts.hour, ts.minute) == (11, 0)
+
+
+def test_parquet_source_builds_identically(toy_df, tmp_path):
+    pq = tmp_path / "toy.parquet"
+    toy_df.to_parquet(pq)
+    from_df = build_store(toy_df, tmp_path / "a.duckdb", source_label="toy")
+    from_pq = build_store(pq, tmp_path / "b.duckdb", source_label="toy")
+    assert from_df == from_pq

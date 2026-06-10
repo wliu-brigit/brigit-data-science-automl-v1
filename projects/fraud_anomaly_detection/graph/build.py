@@ -40,8 +40,13 @@ def _sentinel_list() -> str:
     return ", ".join(f"'{s}'" for s in SENTINELS)
 
 
+def _normalized(col: str) -> str:
+    """The screen and its complement count MUST use the same expression."""
+    return f"lower(trim(CAST({col} AS VARCHAR)))"
+
+
 def _edge_select(etype: str, col: str) -> str:
-    value = f"lower(trim(CAST({col} AS VARCHAR)))"
+    value = _normalized(col)
     return f"""
         SELECT DISTINCT {ADVANCE_ID} AS advance_id, {USER_ID} AS user_id,
                '{etype}' AS entity_type,
@@ -104,15 +109,19 @@ def build_store(
             summary[f"edges_{etype}"] = con.execute(
                 "SELECT count(*) FROM edges WHERE entity_type = ?", [etype]
             ).fetchone()[0]
-            value = f"lower(trim(CAST({col} AS VARCHAR)))"
             summary[f"screened_{etype}"] = con.execute(
                 f"SELECT count(*) FROM advances WHERE {col} IS NOT NULL "
-                f"AND {value} IN ({_sentinel_list()})"
+                f"AND {_normalized(col)} IN ({_sentinel_list()})"
             ).fetchone()[0]
 
         con.execute("CREATE TABLE meta (key VARCHAR, value VARCHAR)")
         con.execute("INSERT INTO meta VALUES ('built_at', CAST(current_timestamp AS VARCHAR))")
-        con.execute("INSERT INTO meta VALUES ('source', ?)", [source_label or str(source)])
+        if not source_label:
+            source_label = (
+                f"<in-memory DataFrame, {len(source)} rows>"
+                if isinstance(source, pd.DataFrame) else str(source)
+            )
+        con.execute("INSERT INTO meta VALUES ('source', ?)", [source_label])
         for key, val in summary.items():
             con.execute("INSERT INTO meta VALUES (?, ?)", [key, str(val)])
         return summary

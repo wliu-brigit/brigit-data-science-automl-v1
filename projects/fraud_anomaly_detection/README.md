@@ -19,6 +19,7 @@ fraud_anomaly_detection/
 ├── data/queries/            # base_table.sql + training_data.sql (Snowflake)
 ├── eval/                    # custom Metric classes (automl.eval protocol)
 ├── model/                   # custom transformers / pipeline overrides
+├── graph/                   # persisted entity-graph store (build / load / queries)
 └── tests/                   # project-owned tests; a bare `pytest` runs them
 ```
 

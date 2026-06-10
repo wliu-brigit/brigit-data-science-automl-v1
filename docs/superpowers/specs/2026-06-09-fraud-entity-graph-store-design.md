@@ -27,7 +27,7 @@ production data — this session is about capability, not metrics.
 2. **Store = DuckDB file.** Free, no server, zero maintenance, SQL-inspectable
    with a tool already known. The build step is a pure SQL transformation —
    portable to Snowflake if/when this graduates beyond local analysis.
-3. **Engine = igraph** (`python-igraph`). Battle-tested (C core, ~20 years,
+3. **Engine = igraph** (`igraph`). Battle-tested (C core, ~20 years,
    active), pip/uv-installable, handles the full-scale graph (~14M edges at
    v3 size) in a few GB of RAM. NetworkX rejected for full-scale memory/speed;
    rustworkx is the named fallback if igraph ever disappoints (the store
@@ -260,7 +260,7 @@ synthetic DataFrames — no live services):
 
 ## Dependencies
 
-`uv add duckdb python-igraph` (both free/OSS). DuckPGQ installed at runtime
+`uv add --group fraud duckdb igraph` (both free/OSS). DuckPGQ installed at runtime
 from the community extension repo (probe only).
 
 ## Risks & mitigations (called out for wendao, 2026-06-09)

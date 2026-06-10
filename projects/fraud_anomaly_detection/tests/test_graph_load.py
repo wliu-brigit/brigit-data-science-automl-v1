@@ -100,3 +100,24 @@ def test_scenario_overlay_matches_engine(toy_store, tmp_path):
 def test_missing_node_attr_raises(toy_store):
     with pytest.raises(ValueError, match="node_attrs not found"):
         load_graph(toy_store, node_attrs=("no_such_column",), scenarios=False)
+
+
+def test_degree_cap_is_per_view_not_global(toy_store):
+    # dH has 5 users globally but only 3 within this window; cap=3 keeps it.
+    g = load_graph(
+        toy_store, layers=("device",), degree_cap=3,
+        window=(pd.Timestamp("2026-01-05"), pd.Timestamp("2026-01-07 23:00")),
+        scenarios=False,
+    )
+    assert "dH" in {v["raw_id"] for v in g.vs if v["kind"] != "user"}
+
+
+def test_custom_base_missing_users_get_falsy_flags(toy_store):
+    import duckdb as _duckdb
+
+    with _duckdb.connect(str(toy_store), read_only=True) as con:
+        base = con.execute(
+            "SELECT * FROM advances WHERE user_id <> 'u9'").df()
+    g = load_graph(toy_store, base=base, node_attrs=("is_fraud",), scenarios=False)
+    u9 = g.vs.find(name="user:u9")
+    assert not bool(u9["is_fraud"])  # absent from base -> falsy, never NaN-truthy

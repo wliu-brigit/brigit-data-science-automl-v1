@@ -50,6 +50,8 @@ def load_graph(
     `register_path`) against `base` NOW and attaches user-level
     scenario_<name> / scenario_any flags — never persisted, always current.
     """
+    if not layers:
+        raise ValueError("layers must name at least one entity type")
     unknown = set(layers) - set(ENTITY_COLS)
     if unknown:
         raise ValueError(f"unknown layer(s) {sorted(unknown)}; expected {sorted(ENTITY_COLS)}")
@@ -85,6 +87,8 @@ def load_graph(
 
     users = _read_store(store, "SELECT user_id FROM users ORDER BY 1")
     if base is None:
+        # At full scale, callers loading multiple views should read the snapshot
+        # once and pass base= explicitly to avoid re-reading per call.
         base = _read_store(store, "SELECT * FROM advances")
 
     user_names = ("user:" + users[USER_ID].astype(str)).tolist()
@@ -119,8 +123,11 @@ def load_graph(
     if missing:
         raise ValueError(f"node_attrs not found in base: {sorted(missing)}")
     per_user = pd.concat([base[[USER_ID]], base[list(node_attrs)], flags], axis=1)
+    per_user[USER_ID] = per_user[USER_ID].astype(str)
     agg = per_user.groupby(USER_ID).max()  # labels/flags: any advance counts
+    labels = [n.split(":", 1)[1] for n in user_names]
     for col in agg.columns:
-        values = agg[col].reindex([n.split(":", 1)[1] for n in user_names])
+        fill = False if agg[col].dtype == bool else 0
+        values = agg[col].reindex(labels).fillna(fill)
         g.vs.select(range(len(user_names)))[col] = values.tolist()
     return g

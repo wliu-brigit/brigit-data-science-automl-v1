@@ -37,11 +37,13 @@ persists, reopens cold, rebuilds idempotently.
 
 **DuckPGQ probe verdict: SKIPPED — extension unavailable on this platform.**
 No osx_arm64 build published for DuckDB v1.5.3 (HTTP 404 from the community
-extension repo). The probe script (`analysis/graph_pgq_probe.py`) is ready
-to produce an AGREES/DISAGREES verdict vs the igraph baseline; retry when
-duckpgq publishes for the platform/version, or on a linux/amd64 host. The
+extension repo). The probe script was PRUNED after the verdict (wendao call —
+no dead code; recoverable from git at `53604cf`); re-create it if duckpgq
+ever publishes for the platform/version, or run on a linux/amd64 host. The
 platform lag is itself a maturity datapoint: igraph stays the only
-traversal engine, as the design assumed.
+traversal engine, as the design assumed — every requirement-list question
+is answered by igraph + plain SQL; the probe was only ever a possible
+second syntax for the same queries.
 
 **Next (unchanged from the v3 plan):** re-point the build at `v2_2ac98b52`
 (full v3) — the store schema and views carry over as-is; the value question

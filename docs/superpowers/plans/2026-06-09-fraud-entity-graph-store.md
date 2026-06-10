@@ -10,6 +10,15 @@
 
 **Context for a zero-context engineer:**
 - Repo runs everything through `uv` (`uv run pytest ...`, `uv add ...`). Never pip.
+- **Project-scoped dependencies (wendao decision, 2026-06-09):** packages needed
+  only by this project live in a PEP 735 dependency group named `fraud`
+  (`[dependency-groups]` in pyproject.toml — same mechanism as the existing
+  `dev` group). Shared/base deps stay in `dev`. Anyone working this project
+  runs `uv sync --group fraud` once (or uses `uv run --group fraud ...`
+  per-command, as this plan's commands do). Everything still resolves in the
+  one shared lock, so versions stay consistent across projects. Graph test
+  files guard with `pytest.importorskip` so a bare `pytest` run stays green
+  for sessions that never synced the group (skips, not failures).
 - Project tests live in `projects/fraud_anomaly_detection/tests/` and are picked up by bare pytest (see `[tool.pytest.ini_options]`).
 - The sample base table is `projects/fraud_anomaly_detection/data/sample/graph_sample.parquet` (20k advances × 110 cols; fraud-enriched; `*.parquet` is gitignored).
 - Entity-key columns in the base table: `device_id`, `bank_account_key`, `persistent_account_id`, `phone_key`, `address_key`, `email_key`, `ip_address`. Advance id col: `advance_id`; user col: `user_id`; event time col: `feature_as_of_ts`.
@@ -25,14 +34,16 @@
 - Modify: `.gitignore`
 - Create: `projects/fraud_anomaly_detection/graph/__init__.py`
 
-- [ ] **Step 1: Add dependencies**
+- [ ] **Step 1: Add dependencies to the project-scoped group**
 
-Run: `uv add --dev duckdb igraph`
-Expected: both resolve and install (igraph is the C-core graph library, PyPI name `igraph`).
+Run: `uv add --group fraud duckdb igraph`
+Expected: a new `fraud = ["duckdb>=...", "igraph>=..."]` entry appears under
+`[dependency-groups]` in pyproject.toml (alongside `dev`), and both packages
+install (igraph is the C-core graph library, PyPI name `igraph`).
 
-- [ ] **Step 2: Verify imports**
+- [ ] **Step 2: Verify imports via the group**
 
-Run: `uv run python -c "import duckdb, igraph; print(duckdb.__version__, igraph.__version__)"`
+Run: `uv run --group fraud python -c "import duckdb, igraph; print(duckdb.__version__, igraph.__version__)"`
 Expected: two version strings, no error.
 
 - [ ] **Step 3: Gitignore the store files**
@@ -172,11 +183,12 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```python
 """Store builder: lossless edges, sentinel screening, self-contained snapshot."""
 
-import duckdb
 import pandas as pd
 import pytest
 
-from projects.fraud_anomaly_detection.graph.build import build_store
+duckdb = pytest.importorskip("duckdb")  # project deps: uv sync --group fraud
+
+from projects.fraud_anomaly_detection.graph.build import build_store  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -236,7 +248,7 @@ def test_rebuild_is_idempotent(toy_df, tmp_path):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run pytest projects/fraud_anomaly_detection/tests/test_graph_build.py -q`
+Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_build.py -q`
 Expected: collection error — `No module named 'projects.fraud_anomaly_detection.graph.build'`
 
 - [ ] **Step 3: Implement `graph/build.py`**
@@ -366,7 +378,7 @@ def build_store(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `uv run pytest projects/fraud_anomaly_detection/tests/test_graph_build.py -q`
+Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_build.py -q`
 Expected: 7 passed.
 
 - [ ] **Step 5: Commit**
@@ -399,7 +411,10 @@ import textwrap
 import pandas as pd
 import pytest
 
-from projects.fraud_anomaly_detection.graph.load import load_graph
+pytest.importorskip("duckdb")  # project deps: uv sync --group fraud
+pytest.importorskip("igraph")
+
+from projects.fraud_anomaly_detection.graph.load import load_graph  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -490,7 +505,7 @@ def test_scenario_overlay_matches_engine(toy_store, tmp_path):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run pytest projects/fraud_anomaly_detection/tests/test_graph_load.py -q`
+Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_load.py -q`
 Expected: collection error — `No module named '...graph.load'`
 
 - [ ] **Step 3: Implement `graph/load.py`**
@@ -618,14 +633,14 @@ def load_graph(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `uv run pytest projects/fraud_anomaly_detection/tests/test_graph_load.py -q`
+Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_load.py -q`
 Expected: 9 passed. (If `QUALIFY` placement errors: move the cap into a
 subquery — `SELECT * FROM (SELECT ..., count(DISTINCT user_id) OVER (...) AS du
 FROM edges WHERE ...) WHERE du <= ?` — same semantics.)
 
 - [ ] **Step 5: Run build tests too (shared fixture untouched?)**
 
-Run: `uv run pytest projects/fraud_anomaly_detection/tests/test_graph_build.py projects/fraud_anomaly_detection/tests/test_graph_load.py -q`
+Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_build.py projects/fraud_anomaly_detection/tests/test_graph_load.py -q`
 Expected: all pass.
 
 - [ ] **Step 6: Commit**
@@ -653,12 +668,13 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 ```python
 """Query helpers: proximity, components, rings, projection, hub report."""
 
-import math
-
 import pytest
 
-from projects.fraud_anomaly_detection.graph.load import load_graph
-from projects.fraud_anomaly_detection.graph.queries import (
+pytest.importorskip("duckdb")  # project deps: uv sync --group fraud
+pytest.importorskip("igraph")
+
+from projects.fraud_anomaly_detection.graph.load import load_graph  # noqa: E402
+from projects.fraud_anomaly_detection.graph.queries import (  # noqa: E402
     components,
     hub_report,
     near_flagged,
@@ -731,7 +747,7 @@ def test_hub_report_orders_and_annotates(toy_store):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `uv run pytest projects/fraud_anomaly_detection/tests/test_graph_queries.py -q`
+Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_queries.py -q`
 Expected: collection error — `No module named '...graph.queries'`
 
 - [ ] **Step 3: Implement `graph/queries.py`**
@@ -906,7 +922,7 @@ def hub_report(
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `uv run pytest projects/fraud_anomaly_detection/tests/test_graph_queries.py -q`
+Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_queries.py -q`
 Expected: 7 passed. (If the `(a, b) IN (SELECT (a, b) ...)` row-constructor
 form errors on this DuckDB version, rewrite cap_cond as a join against
 `entities` filtered on `n_users <= ?` — same semantics.)
@@ -943,7 +959,7 @@ hubs / ring deep-dive. Read-only toward the sample; writes only the store
 file. Sample is fraud-enriched and graph-thinned: NUMBERS HERE ARE
 CAPABILITY EVIDENCE, NOT TRANSFERABLE METRICS.
 
-    uv run python -m projects.fraud_anomaly_detection.analysis.graph_store_demo
+    uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_store_demo
 """
 
 from __future__ import annotations
@@ -1041,7 +1057,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: Run the demo**
 
-Run: `uv run python -m projects.fraud_anomaly_detection.analysis.graph_store_demo`
+Run: `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_store_demo`
 Expected: all 7 banners print with non-trivial numbers; store file exists at
 `projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb`; second run
 succeeds identically (rebuild idempotent). If step 3 aborts on missing
@@ -1050,7 +1066,7 @@ with those columns — do not silently drop scenarios).
 
 - [ ] **Step 3: Verify the store reopens cold**
 
-Run: `uv run python -c "
+Run: `uv run --group fraud python -c "
 import duckdb
 con = duckdb.connect('projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb', read_only=True)
 print(con.execute('SELECT key, value FROM meta').fetchall())"`
@@ -1086,7 +1102,7 @@ fraud user" on our store, and does it agree with queries.near_flagged?
 Builds single-key vertex/edge tables (DuckPGQ wants simple keys), creates a
 property graph, runs the hop query, compares user sets and wall time.
 
-    uv run python -m projects.fraud_anomaly_detection.analysis.graph_pgq_probe
+    uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_pgq_probe
 """
 
 from __future__ import annotations
@@ -1178,7 +1194,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: Run the probe**
 
-Run: `uv run python -m projects.fraud_anomaly_detection.analysis.graph_pgq_probe`
+Run: `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_pgq_probe`
 Expected: either `VERDICT: AGREES/DISAGREES ...` with timings, or
 `VERDICT: SKIPPED — ...` (offline / extension failure). Record the verdict
 line — Task 8 writes it into LEARNINGS. A DISAGREES or SKIPPED verdict is a
@@ -1203,7 +1219,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Run the full project test suite**
 
-Run: `uv run pytest projects/fraud_anomaly_detection/tests/ -q`
+Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/ -q`
 Expected: all pass (scenario tests AND the three new graph test files).
 
 - [ ] **Step 2: Lint**
@@ -1213,7 +1229,7 @@ Expected: clean (fix anything it flags).
 
 - [ ] **Step 3: Re-run the demo end-to-end once more**
 
-Run: `uv run python -m projects.fraud_anomaly_detection.analysis.graph_store_demo`
+Run: `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_store_demo`
 Expected: completes; capture the printed numbers for the LEARNINGS entry.
 
 - [ ] **Step 4: Write the LEARNINGS entry**
@@ -1270,9 +1286,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ## Verification checklist (whole plan)
 
-- [ ] `uv run pytest projects/fraud_anomaly_detection/tests/ -q` — all green
-- [ ] `uv run python -m projects.fraud_anomaly_detection.analysis.graph_store_demo` — 7 banners, store file present
-- [ ] `uv run python -m projects.fraud_anomaly_detection.analysis.graph_pgq_probe` — a VERDICT line
+- [ ] `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/ -q` — all green
+- [ ] `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_store_demo` — 7 banners, store file present
+- [ ] `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_pgq_probe` — a VERDICT line
 - [ ] `git status` — clean (no stray `.duckdb` tracked; `data/graph/` ignored)
 - [ ] Spec cross-check: lossless store (no cap in build.py), self-contained (advances snapshot queried by load), scenario overlay dynamic (register read at load time), hub report uncapped, projection capped by default
 ```

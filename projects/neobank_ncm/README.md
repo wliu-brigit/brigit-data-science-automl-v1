@@ -10,10 +10,15 @@ neobank_ncm/
 ├── README.md                # this file
 ├── config.py                # the recipe: TASK / DATA / EVAL / RUN_CONFIG
 ├── PROJECT_INSTRUCTIONS.md  # domain guidance the agent loop reads every turn
+├── analysis/                # post-training downstream analyses, offline-tested
+│                            #   (data / scoring / policy / impact)
 ├── data/                    # custom DataPipeline (when the default needs replacing)
 │   └── queries/             # base_table.sql + training_data.sql (Snowflake)
+│       └── analysis/        # downstream pulls: frozen snapshots + the live LTV
 ├── eval/                    # custom Metric classes (automl.eval protocol)
 ├── model/                   # custom transformers / preprocessing
+├── notebooks/               # financial_impact_analysis (thin; imports analysis/)
+├── scripts/                 # qa_local_run, evaluate_split, evaluate_new_links_daily
 └── tests/                   # project-owned tests; a bare `pytest` runs them
 ```
 

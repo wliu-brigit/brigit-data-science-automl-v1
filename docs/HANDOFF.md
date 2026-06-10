@@ -82,6 +82,17 @@ rest).
 
 ## Runbook — first run on the full v3 data (step → validate → proceed)
 
+Session-scope notes (wendao, 2026-06-09): **snapshot analysis only — no as-of
+work this pass** (asof.leakfree_features stays the later gate for rule
+candidates, step 4; don't run it as part of the v3 validation). And **record
+wall-clock + peak memory at every step** — this is the first run at real
+scale (~120× the sample; ~14M edges expected). Where the time goes: store
+build = GCS download + one SQL pass; battery = scenario assign on 2.4M rows +
+two graph loads; queues = two more loads + the projection SQL. If any step
+blows past ~15 min or memory past a few GB, stop and apply the spec's
+fallbacks (collapse parallel edges at load / scipy for global passes /
+rustworkx) before grinding on.
+
 **Step 0 — prereqs.** Drop a `.env` at the repo root (prod MLflow + GCS
 values; Snowflake fields NOT needed — registered-dataset loads read MLflow +
 GCS only). `uv sync --group fraud`. Verify: running

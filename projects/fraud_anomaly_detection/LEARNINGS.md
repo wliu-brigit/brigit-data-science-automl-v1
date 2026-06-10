@@ -5,6 +5,50 @@ Append as they emerge; date each entry. (Long-term these belong in MLflow at
 the experiment/project level — this file is the ad-hoc home until the
 workflow settles.)
 
+## 2026-06-09 — persisted entity-graph store: capability proven on the sample (infra, not metrics)
+
+**What was built (design: docs/superpowers/specs/2026-06-09-fraud-entity-graph-store-design.md).**
+The graph effort's throwaway in-memory UnionFind is replaced by a persisted,
+self-contained DuckDB store (`graph/build.py`: uncapped edges + full
+timestamps + all 7 entity types + full advances snapshot; rebuild-only
+refresh) with parameterized igraph views (`graph/load.py`: layers / degree
+cap / as-of / dynamic scenario overlay) and question-level helpers
+(`graph/queries.py`: near_flagged, components, ring, project_users,
+hub_report). Lossless store, opinionated views: every judgment call is an
+analysis-time parameter — high-degree entities are STORED in full (they're
+the fraud-farm signal; the cap is only a traversal view choice). Deps live
+in the project-scoped `fraud` dependency group (`uv sync --group fraud`).
+
+**Capability demo on the 20k fraud-enriched sample** (graph_store_demo;
+sample is graph-thinned — numbers are capability evidence, NOT transferable):
+build 123,252 edges / 19,301 users across all 7 entity types in seconds;
+dynamic scenario overlay flags 1,024 users against the current register at
+load time (nothing persisted); 36 users sit within 3 user-hops of a flagged
+user (all at hop 1 — proximity queries work; the thinned sample has no
+deeper chains); 238 multi-type components (>=3 users & >=2 types, cap=20)
+hold 538 fraud users / 1,397 total (~38% vs ~3.9% sample base — the v1
+multi-type-density discriminator visibly survives even sample thinning);
+hub report cleanly separates farms from infrastructure on the time axis
+(top: a 136-user device over 99 days at 38% fraud-user rate vs bank-account
+hubs with 40-41 users in 4-9 DAYS at 100% — the latter is the programmatic
+fraud signature); ring deep-dive + weighted user-user projection (4,823
+pairs at cap=20; 1,419 multi-type) round out the question list. Store
+persists, reopens cold, rebuilds idempotently.
+
+**DuckPGQ probe verdict: SKIPPED — extension unavailable on this platform.**
+No osx_arm64 build published for DuckDB v1.5.3 (HTTP 404 from the community
+extension repo). The probe script (`analysis/graph_pgq_probe.py`) is ready
+to produce an AGREES/DISAGREES verdict vs the igraph baseline; retry when
+duckpgq publishes for the platform/version, or on a linux/amd64 host. The
+platform lag is itself a maturity datapoint: igraph stays the only
+traversal engine, as the design assumed.
+
+**Next (unchanged from the v3 plan):** re-point the build at `v2_2ac98b52`
+(full v3) — the store schema and views carry over as-is; the value question
+(does multi-type density + new node types move coverage off ~0.01%?) is
+TODO #2, now answerable with persistent infrastructure instead of one-off
+scripts.
+
 ## 2026-06-09 — graph / entity-ring detection on v1_76d3ad45: real multi-hop signal, but block-tier is anecdotal + maturity-censored; durable win is review-tier
 
 **The effort.** First real graph build (TODO TIER 2), all on the pinned

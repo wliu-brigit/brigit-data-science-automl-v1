@@ -17,9 +17,10 @@ Validate with:
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
-from automl.data import DataSpec, SnowflakeSource
+from automl.data import DataSpec, LocalCSVSource, SnowflakeSource
 from automl.eval import Auc, EvalSpec
 from automl.model import RequiredTransformer
 from automl.project import (
@@ -56,13 +57,32 @@ TASK = BinaryClassification(target="went_dpd45")
 # Upstream DDL for the legacy tables is kept as reference-only provenance in
 # data/queries/upstream_*.sql.
 
-source = SnowflakeSource(
-    base_table="neobank_ncm_v3_replicate_base",
-    base_table_sql="data/queries/base_table.sql",
-    training_data_sql="data/queries/training_data.sql",
-    unique_key="entity_id",
-    split_group_key="user_id",
-)
+# Source toggle (project-owned escape hatch, see package CLAUDE.md): the real
+# recipe is the SnowflakeSource below. Until VPN day, set
+#
+#     NEOBANK_NCM_CSV=/path/to/base_table.csv
+#
+# to swap in a LocalCSVSource at config load — offline QA and loop dry-runs
+# against the synthetic fixture (tests/fixtures.write_fixture_csv) run the
+# whole harness without Snowflake. Unset the variable to point back at the
+# warehouse; the per-experiment pinned dataset keeps results comparable
+# (re-materializing under a new source is an explicit --refresh-data step).
+_CSV_OVERRIDE = os.environ.get("NEOBANK_NCM_CSV", "").strip()
+
+if _CSV_OVERRIDE:
+    source: LocalCSVSource | SnowflakeSource = LocalCSVSource(
+        csv_path=Path(_CSV_OVERRIDE),
+        unique_key="entity_id",
+        split_group_key="user_id",
+    )
+else:
+    source = SnowflakeSource(
+        base_table="neobank_ncm_v3_replicate_base",
+        base_table_sql="data/queries/base_table.sql",
+        training_data_sql="data/queries/training_data.sql",
+        unique_key="entity_id",
+        split_group_key="user_id",
+    )
 
 DATA = DataSpec(
     source=source,
@@ -75,6 +95,8 @@ DATA = DataSpec(
         "split",
         "is_known",
         "origination_date",
+        # legacy server-side downsample replay (sampling machinery, never a feature)
+        "unknown_train_hash_rank",
         # label surrogate for the unknown group — never a feature
         "synthetic_score",
         # loan/account context kept for analysis, not underwriting features
@@ -124,7 +146,7 @@ EVAL = EvalSpec(primary=Auc())
 #                train-side eval dies (silently) on train's NULL-target
 #                unknown rows, so the legacy "train known-only" diagnostic
 #                is computed on demand against this split instead
-#                (scripts/evaluate_oot.py --split train_known).
+#                (scripts/evaluate_split.py --split train_known).
 #   test         Nov–Dec 2025, known-only — the in-loop leaderboard metric
 #                (disjoint from train: the loop fits train_split, scores
 #                eval_split)

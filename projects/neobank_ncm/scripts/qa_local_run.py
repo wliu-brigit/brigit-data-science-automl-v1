@@ -1,10 +1,11 @@
 """QA dry run of the full harness path with a CSV stand-in for Snowflake.
 
-Generates the synthetic fixture, swaps the recipe's source to LocalCSVSource
-at the session level (config.py is untouched), materializes the dataset
-(GCS + MLflow registration), and runs the baseline replication trial through
-the real runner — pre-fit contract, fit, pyfunc logging, evaluation on the
-test split, artifacts, manifest. Snowflake is the only seam not exercised.
+Generates the synthetic fixture, flips the project's source toggle
+(NEOBANK_NCM_CSV — see config.py) so the recipe itself resolves to a
+LocalCSVSource, materializes the dataset (GCS + MLflow registration), and
+runs the baseline replication trial through the real runner — pre-fit
+contract, fit, pyfunc logging, evaluation on the test split, artifacts,
+manifest. Snowflake is the only seam not exercised.
 
 Logs under a transient qa/ namespace so `automl project delete --scope qa`
 sweeps it. Usage:
@@ -15,15 +16,12 @@ sweeps it. Usage:
 from __future__ import annotations
 
 import argparse
-import dataclasses
 import json
+import os
 import tempfile
 from datetime import date
 from pathlib import Path
 
-from automl.data import DataSpec, LocalCSVSource, materialize
-from automl.project import update_session, use_project
-from automl.runner import run_trial
 from projects.neobank_ncm.tests.fixtures import write_fixture_csv
 
 
@@ -38,22 +36,18 @@ def main() -> None:
     if not args.namespace.startswith("qa/"):
         raise SystemExit("namespace must start with qa/ — this is a transient QA run")
 
-    session = use_project("neobank_ncm", namespace=args.namespace)
-
     csv_path = write_fixture_csv(
         Path(tempfile.mkdtemp(prefix="neobank_qa_")) / "base_table.csv"
     )
     print(f"fixture: {csv_path}")
 
-    spec = DataSpec(
-        source=LocalCSVSource(
-            csv_path=csv_path, unique_key="entity_id", split_group_key="user_id"
-        ),
-        metadata_cols=session.config.data_spec.metadata_cols,
-        exclude_cols=session.config.data_spec.exclude_cols,
-        dry_run_rows=session.config.data_spec.dry_run_rows,
-    )
-    session = update_session(config=dataclasses.replace(session.config, data_spec=spec))
+    # the source toggle must be set before the project config loads
+    os.environ["NEOBANK_NCM_CSV"] = str(csv_path)
+    from automl.data import materialize
+    from automl.project import use_project
+    from automl.runner import run_trial
+
+    session = use_project("neobank_ncm", namespace=args.namespace)
 
     dataset = materialize(refresh_data=True, include_rows=False, session=session)
     print(f"dataset materialized: {dataset.id}")

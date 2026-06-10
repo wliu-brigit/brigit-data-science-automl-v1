@@ -46,7 +46,7 @@ windows) and evaluated on `oot` once (legacy Phases 4–5).
 - To reproduce legacy sampling: order unknowns by `HASH(entity_id)` and take
   the first 200K (their server-side downsample), then sample to the ratio
   target with `random_state=42`. Reference counts from the final run:
-  282,642 known train rows + 70,662 sampled unknowns → 423,962 weighted rows.
+  282,642 known train rows + 70,660 sampled unknowns → 423,962 weighted rows.
 - `bankinstitution`: enters the model only as its WoE encoding — the
   required transformer `neobank_bankinstitution_woe`
   (model/preprocessing.py) ports the legacy semantics: fit on labeled rows
@@ -67,8 +67,10 @@ windows) and evaluated on `oot` once (legacy Phases 4–5).
   MODEL_CLASS) replays the full legacy recipe — locked features, WoE,
   dual-record soft labels at 80/20, median/payday imputation, monotone
   constraints, locked XGBoost params. Run it first; its test-split AUC is
-  the replication checkpoint. `scripts/evaluate_oot.py` is the one
-  sanctioned OOT read for the winner.
+  the replication checkpoint — compare against the **constrained** legacy
+  number ≈ 0.7002 (`test_auc_constrained`; the 0.7016 in Goal is the
+  unconstrained variant, the loop's stretch reference). `scripts/evaluate_split.py
+  --split oot` is the one sanctioned OOT read for the winner.
 - XGBoost first (legacy winner), LightGBM as challenger.
 - Median imputation for non-payday numerics (legacy also coerced ±inf to NaN
   before imputing); the 11 derived ratio/flag candidates from the legacy EDA
@@ -79,6 +81,13 @@ windows) and evaluated on `oot` once (legacy Phases 4–5).
 
 ## Trial-code requirements
 
+- To load project assets (the locked params/features in `data/legacy/*.json`,
+  the WoE encoder), resolve paths via the package, never via `__file__`
+  traversal — trial code executes from a deep trial directory, so
+  `Path(__file__).parents[N]` math breaks. Use
+  `PROJECT_DIR = Path(projects.neobank_ncm.__file__).parent`, or import the
+  ready-made anchors: `from projects.neobank_ncm.model.baseline import
+  DECISIONS_PATH, FEAT_RENAME`.
 - The train frame mixes known rows (`went_dpd45` 0/1) and unknown rows
   (`went_dpd45` NULL, `synthetic_score` set). `fit` must handle both — drop
   unknowns or soft-label them; never feed NULL targets to the estimator.

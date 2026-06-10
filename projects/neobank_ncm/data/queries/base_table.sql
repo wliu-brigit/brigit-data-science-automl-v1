@@ -17,7 +17,9 @@
 --
 -- No sampling: all unknown rows are kept. The legacy 200K downsample
 -- (QUALIFY ROW_NUMBER() OVER (ORDER BY HASH(entity_id)) <= 200000) is a
--- modeling step left to trial code, reproducible from this snapshot.
+-- modeling step left to trial code — materialized below as
+-- unknown_train_hash_rank (Snowflake HASH is deterministic), so trial code
+-- replays the exact legacy pool from this snapshot.
 --
 -- Derived features replicate add_derived_features() from the legacy
 -- notebooks (row-wise, deterministic). NULLs propagate exactly like the
@@ -94,6 +96,18 @@ SELECT
 
     -- tax season flag (Feb–Apr origination)
     CASE WHEN MONTH(j.origination_date) IN (2, 3, 4) THEN 1 ELSE 0 END
-        AS istaxseason
+        AS istaxseason,
+
+    -- legacy server-side downsample replay: the legacy pull kept the first
+    -- 200K unknown-train rows ORDER BY HASH(entity_id) (deterministic in
+    -- Snowflake). Materializing the rank makes that exact pool reproducible
+    -- from the snapshot; NULL outside the unknown-train group. Consumed by
+    -- the baseline's ratio draw — sampling machinery, never a feature.
+    CASE WHEN NOT j.is_known AND j.split = 'train' THEN
+        ROW_NUMBER() OVER (
+            PARTITION BY j.is_known, j.split
+            ORDER BY HASH(j.entity_id)
+        )
+    END AS unknown_train_hash_rank
 
 FROM joined j

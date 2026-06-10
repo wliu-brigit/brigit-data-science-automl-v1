@@ -10,16 +10,22 @@ decisions in data/legacy/experiment_decisions.json:
   (y=1 weighted synthetic_score / y=0 weighted 1-synthetic_score), sampled
   to the locked 80/20 known/unknown ratio with random_state=42
 - median imputation for non-payday numerics (±inf coerced to NaN first),
-  NaN passthrough for payday features, one-hot highestpayfrequency
+  NaN passthrough for payday features, one-hot highestpayfrequency;
+  imputer/OHE fit on known rows only (legacy fit the preprocessor on
+  known_train_full, never on the dual-record frame)
 - XGBoost with the locked hyperparameters, n_estimators, and monotone
   constraints; random_state=42 / nthread=4 as in the legacy notebook (the
   harness seed argument is deliberately ignored to stay faithful)
 
-Known deviation from the legacy run: the legacy pipeline downsampled
-unknowns to 200K server-side (ORDER BY HASH(entity_id)) before the ratio
-sample. Snowflake's HASH is not reproducible in pandas, so this model
-samples the ratio target directly from all scored unknowns. Counts match;
-the exact row draw differs.
+The legacy pipeline downsampled unknowns to 200K server-side
+(ORDER BY HASH(entity_id)) before the ratio sample. Snowflake's HASH is
+deterministic and the base table materializes that rank
+(unknown_train_hash_rank), so fit replays the exact legacy pool: rank
+<= 200K, ordered by rank, then the random_state=42 ratio draw — the same
+pool membership the legacy pull saw, and a draw that is identical
+run-to-run. (The legacy notebook's own draw order depended on unpinned
+Snowflake result ordering, so the historical 70,660 exact rows are not
+recoverable by anyone; the pool is.)
 """
 
 from __future__ import annotations
@@ -48,6 +54,12 @@ TARGET = "went_dpd45"
 BANK_COL = "bankinstitution"
 WOE_COL = "bankinstitution_woe"
 SYNTHETIC_COL = "synthetic_score"
+ENTITY_COL = "entity_id"
+
+# Legacy server-side downsample: first 200K unknown-train rows by
+# HASH(entity_id), materialized as unknown_train_hash_rank in the base table.
+RANK_COL = "unknown_train_hash_rank"
+UNKNOWN_TRAIN_SAMPLE = 200_000
 
 # Final-notebook feature-name migration (experiment-phase name -> updated SA
 # spec name), keys/values normalized to lower-no-underscore.
@@ -88,6 +100,7 @@ class NeobankNCMReplicationModel(BaseModel):
         self.woe_encoder_ = None
         self.input_cols_: list[str] = []
         self.missing_features_: list[str] = []
+        self.sampled_unknown_ids_: list = []
 
     # ── fit ──────────────────────────────────────────────────────────────
     def fit(self, df_train: pd.DataFrame, registry=None, seed: int = 0):
@@ -134,15 +147,25 @@ class NeobankNCMReplicationModel(BaseModel):
             self.woe_encoder_.mapping_ = {}
             self.woe_encoder_.other_woe_ = 0.0
 
-        # 3. soft-label dual records at the locked known/unknown ratio
+        # 3. soft-label dual records at the locked known/unknown ratio.
+        # First replay the legacy server-side downsample from the materialized
+        # hash rank (rank <= 200K), and pin the frame order by that rank so
+        # the random_state=42 ratio draw is identical run-to-run.
         ratio = float(decisions["winning_ratio"])
         scored = (
             unknown[unknown[syn_col].notna()] if syn_col is not None else unknown.iloc[0:0]
         )
+        rank_col = by_norm.get(_norm(RANK_COL))
+        if rank_col is not None and len(scored) and scored[rank_col].notna().any():
+            scored = scored[scored[rank_col] <= UNKNOWN_TRAIN_SAMPLE].sort_values(rank_col)
         if len(known) and len(scored):
             n_syn_target = max(1, int(len(known) * (1 - ratio) / ratio))
             if len(scored) > n_syn_target:
                 scored = scored.sample(n_syn_target, random_state=42)
+        entity_col = by_norm.get(_norm(ENTITY_COL))
+        self.sampled_unknown_ids_ = (
+            scored[entity_col].tolist() if entity_col is not None and len(scored) else []
+        )
         if len(scored):
             pos = scored.copy()
             pos[target] = 1
@@ -191,7 +214,13 @@ class NeobankNCMReplicationModel(BaseModel):
             transformers, remainder="drop", verbose_feature_names_out=False
         ).set_output(transform="pandas")
 
-        X = self.preprocessor.fit_transform(self._prepare(train, num_cols))
+        # Legacy fits preprocessing on known rows only (final notebook cell 20:
+        # preprocessor.fit on known_train_full) — imputation medians and OHE
+        # categories must not see the duplicated dual records. Fall back to the
+        # expanded frame only when the sample has no known rows at all.
+        fit_frame = known if len(known) else train
+        self.preprocessor.fit(self._prepare(fit_frame, num_cols))
+        X = self.preprocessor.transform(self._prepare(train, num_cols))
         y = train[target].astype(int)
 
         # 5. monotone constraints over the model columns (OHE columns get 0)

@@ -1,15 +1,19 @@
-"""Post-AutoML OOT evaluation — legacy Phase 5, run ONCE on the winner.
+"""Evaluate a logged trial model on any named split (default: oot).
 
-The `oot` split (Jan–Feb 2026, known-only) is never touched by the AutoML
-loop; this script is the one sanctioned read. It resolves the named split
-recorded with the dataset, scores the winning trial's logged model on it,
-and attaches the result to that trial's MLflow run — the same two library
-calls the runner uses for the in-loop eval, pointed at the held-out split.
+Resolves the named split recorded with the dataset, scores the trial's
+logged model on it, and attaches the result to that trial's MLflow run —
+the same two library calls the runner uses for the in-loop eval, pointed
+at the requested split. Two sanctioned uses:
 
-Usage (needs warehouse/MLflow access — the final, on-VPN step):
+- `--split oot` — legacy Phase 5, run ONCE on the winner. The `oot` split
+  (Jan–Feb 2026, known-only) is never touched by the AutoML loop.
+- `--split train_known` — the legacy train known-only diagnostic (the
+  runner's automatic train eval skips on this project's NULL-target rows).
 
-    uv run python projects/neobank_ncm/scripts/evaluate_oot.py \
-        --model-run-id <winning trial's MLflow run id> [--dataset-id <id>]
+Usage (needs warehouse/MLflow access):
+
+    uv run python projects/neobank_ncm/scripts/evaluate_split.py \
+        --model-run-id <trial's MLflow run id> [--split oot] [--dataset-id <id>]
 
 The headline comparison: oot AUC here vs the legacy v3 OOT known-only AUC
 (data/legacy/preprocessor_meta.json -> performance.oot_known_only_auc).

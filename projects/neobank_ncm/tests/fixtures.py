@@ -10,6 +10,7 @@ exclude_cols works. Signal is planted so AUC is comfortably above chance.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -62,7 +63,14 @@ def make_synthetic_base_table(
         frames.append(_block(rng, window=window, is_known=is_known, n=n, offset=offset))
         offset += n
     df = pd.concat(frames, ignore_index=True)
-    return df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
+    df = df.sample(frac=1.0, random_state=seed).reset_index(drop=True)
+    # the legacy server-side downsample rank, exactly as base_table.sql
+    # materializes it: rank within the unknown-train group by a deterministic
+    # hash of entity_id, NULL everywhere else
+    unk_train = ~df["is_known"] & (df["split"] == "train")
+    df["unknown_train_hash_rank"] = np.nan
+    df.loc[unk_train, "unknown_train_hash_rank"] = _hash_rank(df.loc[unk_train, "entity_id"])
+    return df
 
 
 def write_fixture_csv(path: Path, **kwargs) -> Path:
@@ -159,6 +167,13 @@ def _block(rng, *, window: str, is_known: bool, n: int, offset: int) -> pd.DataF
     # an excluded column — must be dropped by DataSpec.exclude_cols
     df["signupsourcetype"] = rng.choice(["ORGANIC", "PAID", "REFERRAL"], n)
     return df
+
+
+def _hash_rank(values: pd.Series) -> pd.Series:
+    keys = values.map(
+        lambda v: int.from_bytes(hashlib.md5(str(v).encode()).digest()[:8], "big")
+    )
+    return keys.rank(method="first")
 
 
 def _z(series: pd.Series) -> np.ndarray:

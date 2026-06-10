@@ -95,3 +95,8 @@ def test_scenario_overlay_matches_engine(toy_store, tmp_path):
     flagged = {v["raw_id"] for v in g.vs if v["kind"] == "user" and v["scenario_big_loan"]}
     assert flagged == {"u2"}  # only u2 has loan_amount > 100
     assert g.vs.find(name="user:u2")["scenario_any"]
+
+
+def test_missing_node_attr_raises(toy_store):
+    with pytest.raises(ValueError, match="node_attrs not found"):
+        load_graph(toy_store, node_attrs=("no_such_column",), scenarios=False)

@@ -115,9 +115,10 @@ def load_graph(
 
             flags = assign(base)
 
-    # Filter node_attrs to only columns that exist in base
-    available_attrs = [col for col in node_attrs if col in base.columns]
-    per_user = pd.concat([base[[USER_ID]], base[available_attrs], flags], axis=1)
+    missing = [col for col in node_attrs if col not in base.columns]
+    if missing:
+        raise ValueError(f"node_attrs not found in base: {sorted(missing)}")
+    per_user = pd.concat([base[[USER_ID]], base[list(node_attrs)], flags], axis=1)
     agg = per_user.groupby(USER_ID).max()  # labels/flags: any advance counts
     for col in agg.columns:
         values = agg[col].reindex([n.split(":", 1)[1] for n in user_names])

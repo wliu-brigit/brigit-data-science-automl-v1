@@ -45,6 +45,10 @@ dev = [
     "numba>=0.61",
     "ipykernel>=7.2.0",
 ]
+fraud = [
+    "duckdb>=1.5.3",
+    "igraph>=1.0.0",
+]
 
 [tool.pytest.ini_options]
 # projects/*/tests: project-owned tests live inside their project folder,

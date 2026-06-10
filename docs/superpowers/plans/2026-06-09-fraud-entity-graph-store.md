@@ -34,19 +34,19 @@
 - Modify: `.gitignore`
 - Create: `projects/fraud_anomaly_detection/graph/__init__.py`
 
-- [ ] **Step 1: Add dependencies to the project-scoped group**
+- [x] **Step 1: Add dependencies to the project-scoped group**
 
 Run: `uv add --group fraud duckdb igraph`
 Expected: a new `fraud = ["duckdb>=...", "igraph>=..."]` entry appears under
 `[dependency-groups]` in pyproject.toml (alongside `dev`), and both packages
 install (igraph is the C-core graph library, PyPI name `igraph`).
 
-- [ ] **Step 2: Verify imports via the group**
+- [x] **Step 2: Verify imports via the group**
 
 Run: `uv run --group fraud python -c "import duckdb, igraph; print(duckdb.__version__, igraph.__version__)"`
 Expected: two version strings, no error.
 
-- [ ] **Step 3: Gitignore the store files**
+- [x] **Step 3: Gitignore the store files**
 
 Append to `.gitignore` (after the `*.parquet` line):
 
@@ -55,7 +55,7 @@ Append to `.gitignore` (after the `*.parquet` line):
 *.duckdb.wal
 ```
 
-- [ ] **Step 4: Create the package**
+- [x] **Step 4: Create the package**
 
 Create `projects/fraud_anomaly_detection/graph/__init__.py`:
 
@@ -72,7 +72,7 @@ analysis-time view.
 """
 ```
 
-- [ ] **Step 5: Document the group in the project README**
+- [x] **Step 5: Document the group in the project README**
 
 In `projects/fraud_anomaly_detection/README.md`, insert this section right
 before `## Writing PROJECT_INSTRUCTIONS.md` (mirrors the scaffold template's
@@ -100,7 +100,7 @@ Current contents: `duckdb` + `igraph` — the persisted entity-graph store
 (Note: the inner ```bash fence ends before the section's final paragraph —
 copy the structure exactly as shown.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add pyproject.toml .gitignore projects/fraud_anomaly_detection/graph/__init__.py \
@@ -128,7 +128,7 @@ later tasks is derivable by eye:
 **Files:**
 - Create: `projects/fraud_anomaly_detection/tests/conftest.py`
 
-- [ ] **Step 1: Write the fixture**
+- [x] **Step 1: Write the fixture**
 
 ```python
 """Shared fixtures for the graph-store tests: a hand-checkable toy world."""
@@ -188,7 +188,7 @@ Expected toy facts used throughout (derive once, reuse):
 - screened device cells = **1** (`a12`), distinct users = **9**, advances = **12**
 - `d1` has 2 distinct users, `dH` has 5, `b1` has 2, `d4` has 1.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add projects/fraud_anomaly_detection/tests/conftest.py
@@ -205,7 +205,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Create: `projects/fraud_anomaly_detection/graph/build.py`
 - Test: `projects/fraud_anomaly_detection/tests/test_graph_build.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `projects/fraud_anomaly_detection/tests/test_graph_build.py`:
 
@@ -275,12 +275,12 @@ def test_rebuild_is_idempotent(toy_df, tmp_path):
     assert _q(path, "SELECT count(*) FROM edges") == [(11,)]
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_build.py -q`
 Expected: collection error — `No module named 'projects.fraud_anomaly_detection.graph.build'`
 
-- [ ] **Step 3: Implement `graph/build.py`**
+- [x] **Step 3: Implement `graph/build.py`**
 
 ```python
 """Build the persisted entity-graph store: one lossless, self-contained DuckDB file.
@@ -405,12 +405,12 @@ def build_store(
         con.close()
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_build.py -q`
 Expected: 7 passed.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add projects/fraud_anomaly_detection/graph/build.py \
@@ -428,7 +428,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Create: `projects/fraud_anomaly_detection/graph/load.py`
 - Test: `projects/fraud_anomaly_detection/tests/test_graph_load.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `projects/fraud_anomaly_detection/tests/test_graph_load.py`:
 
@@ -532,12 +532,12 @@ def test_scenario_overlay_matches_engine(toy_store, tmp_path):
     assert g.vs.find(name="user:u2")["scenario_any"]
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_load.py -q`
 Expected: collection error — `No module named '...graph.load'`
 
-- [ ] **Step 3: Implement `graph/load.py`**
+- [x] **Step 3: Implement `graph/load.py`**
 
 ```python
 """Load parameterized graph views from the store.
@@ -660,19 +660,19 @@ def load_graph(
     return g
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_load.py -q`
 Expected: 9 passed. (If `QUALIFY` placement errors: move the cap into a
 subquery — `SELECT * FROM (SELECT ..., count(DISTINCT user_id) OVER (...) AS du
 FROM edges WHERE ...) WHERE du <= ?` — same semantics.)
 
-- [ ] **Step 5: Run build tests too (shared fixture untouched?)**
+- [x] **Step 5: Run build tests too (shared fixture untouched?)**
 
 Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_build.py projects/fraud_anomaly_detection/tests/test_graph_load.py -q`
 Expected: all pass.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add projects/fraud_anomaly_detection/graph/load.py \
@@ -690,7 +690,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 - Create: `projects/fraud_anomaly_detection/graph/queries.py`
 - Test: `projects/fraud_anomaly_detection/tests/test_graph_queries.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `projects/fraud_anomaly_detection/tests/test_graph_queries.py`:
 
@@ -774,12 +774,12 @@ def test_hub_report_orders_and_annotates(toy_store):
     assert d1["fraud_user_rate"] == 0.5  # u1 fraud, u2 not
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_queries.py -q`
 Expected: collection error — `No module named '...graph.queries'`
 
-- [ ] **Step 3: Implement `graph/queries.py`**
+- [x] **Step 3: Implement `graph/queries.py`**
 
 ```python
 """Question-level helpers on a loaded graph view (or directly on the store).
@@ -949,14 +949,14 @@ def hub_report(
         return con.execute(sql, params + params).df()
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/test_graph_queries.py -q`
 Expected: 7 passed. (If the `(a, b) IN (SELECT (a, b) ...)` row-constructor
 form errors on this DuckDB version, rewrite cap_cond as a join against
 `entities` filtered on `n_users <= ?` — same semantics.)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add projects/fraud_anomaly_detection/graph/queries.py \
@@ -977,7 +977,7 @@ metrics/structure don't transfer — spec risks 1–2).
 **Files:**
 - Create: `projects/fraud_anomaly_detection/analysis/graph_store_demo.py`
 
-- [ ] **Step 1: Write the demo script**
+- [x] **Step 1: Write the demo script**
 
 ```python
 """Capability demo for the persisted entity-graph store, on the local sample.
@@ -1084,7 +1084,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Run the demo**
+- [x] **Step 2: Run the demo**
 
 Run: `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_store_demo`
 Expected: all 7 banners print with non-trivial numbers; store file exists at
@@ -1093,7 +1093,7 @@ succeeds identically (rebuild idempotent). If step 3 aborts on missing
 trigger columns, STOP and surface to wendao (the sample would need re-pulling
 with those columns — do not silently drop scenarios).
 
-- [ ] **Step 3: Verify the store reopens cold**
+- [x] **Step 3: Verify the store reopens cold**
 
 Run: `uv run --group fraud python -c "
 import duckdb
@@ -1101,7 +1101,7 @@ con = duckdb.connect('projects/fraud_anomaly_detection/data/graph/fraud_graph.du
 print(con.execute('SELECT key, value FROM meta').fetchall())"`
 Expected: meta rows including built_at, source, n_edges and per-type counts.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add projects/fraud_anomaly_detection/analysis/graph_store_demo.py
@@ -1121,7 +1121,7 @@ network). Nothing depends on the outcome.
 **Files:**
 - Create: `projects/fraud_anomaly_detection/analysis/graph_pgq_probe.py`
 
-- [ ] **Step 1: Write the probe**
+- [x] **Step 1: Write the probe**
 
 ```python
 """DuckPGQ probe — scoped experiment, nothing depends on it (spec: probe only).
@@ -1221,7 +1221,7 @@ if __name__ == "__main__":
     main()
 ```
 
-- [ ] **Step 2: Run the probe**
+- [x] **Step 2: Run the probe**
 
 Run: `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_pgq_probe`
 Expected: either `VERDICT: AGREES/DISAGREES ...` with timings, or
@@ -1230,7 +1230,7 @@ line — Task 8 writes it into LEARNINGS. A DISAGREES or SKIPPED verdict is a
 valid outcome, not a task failure; syntax errors from the extension count as
 SKIPPED (note the error text).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add projects/fraud_anomaly_detection/analysis/graph_pgq_probe.py
@@ -1246,22 +1246,22 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 **Files:**
 - Modify: `projects/fraud_anomaly_detection/LEARNINGS.md` (prepend new entry under the header)
 
-- [ ] **Step 1: Run the full project test suite**
+- [x] **Step 1: Run the full project test suite**
 
 Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/ -q`
 Expected: all pass (scenario tests AND the three new graph test files).
 
-- [ ] **Step 2: Lint**
+- [x] **Step 2: Lint**
 
 Run: `uv run ruff check projects/fraud_anomaly_detection/graph projects/fraud_anomaly_detection/analysis/graph_store_demo.py projects/fraud_anomaly_detection/analysis/graph_pgq_probe.py`
 Expected: clean (fix anything it flags).
 
-- [ ] **Step 3: Re-run the demo end-to-end once more**
+- [x] **Step 3: Re-run the demo end-to-end once more**
 
 Run: `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_store_demo`
 Expected: completes; capture the printed numbers for the LEARNINGS entry.
 
-- [ ] **Step 4: Write the LEARNINGS entry**
+- [x] **Step 4: Write the LEARNINGS entry**
 
 Prepend under the file header of `projects/fraud_anomaly_detection/LEARNINGS.md`
 (newest first — above the 2026-06-09 graph/entity-ring entry), filling the
@@ -1302,7 +1302,7 @@ TODO #2, now answerable with persistent infrastructure instead of one-off
 scripts.
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add projects/fraud_anomaly_detection/LEARNINGS.md
@@ -1315,9 +1315,9 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ## Verification checklist (whole plan)
 
-- [ ] `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/ -q` — all green
-- [ ] `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_store_demo` — 7 banners, store file present
-- [ ] `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_pgq_probe` — a VERDICT line
-- [ ] `git status` — clean (no stray `.duckdb` tracked; `data/graph/` ignored)
-- [ ] Spec cross-check: lossless store (no cap in build.py), self-contained (advances snapshot queried by load), scenario overlay dynamic (register read at load time), hub report uncapped, projection capped by default
+- [x] `uv run --group fraud pytest projects/fraud_anomaly_detection/tests/ -q` — all green
+- [x] `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_store_demo` — 7 banners, store file present
+- [x] `uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_pgq_probe` — a VERDICT line
+- [x] `git status` — clean (no stray `.duckdb` tracked; `data/graph/` ignored)
+- [x] Spec cross-check: lossless store (no cap in build.py), self-contained (advances snapshot queried by load), scenario overlay dynamic (register read at load time), hub report uncapped, projection capped by default
 ```

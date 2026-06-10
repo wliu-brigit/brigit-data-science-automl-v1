@@ -177,10 +177,11 @@ engine has no query language):
 - `ring(g, user_id, hops)` — ego subgraph around a user for deep-dives
   (communities, centrality, plotting live here, per component — small after
   capping).
-- `project_users(g, weight=...)` — user↔user projection; weight schemes:
-  shared-entity count per type, distinct-type count, recency-decayed. Always
-  projects from a degree-capped view (an uncapped 136-user device alone emits
-  9,180 pairs).
+- `project_users(store, ...)` — user↔user projection (SQL on the store — set
+  math is the database's home turf); weight schemes: shared-entity count +
+  distinct-type count (recency-decay deferred — add as a scheme when an
+  analysis needs it). Always projects from a degree-capped view (an uncapped
+  136-user device alone emits 9,180 pairs).
 - `hub_report(store, top_n)` — SQL on `entities`/`edges`, NO cap: distinct
   users, activity span, users-per-day density, attached-user fraud rate.
   Separates fraud farms (many users, days, high fraud rate) from shared

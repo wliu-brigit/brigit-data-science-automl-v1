@@ -301,3 +301,5 @@ we remove it by construction.
 Ask. The **code is the source of truth for current behavior; the user is the
 source of truth for intent.** `docs/` captures intent and history (see
 [`docs/README.md`](docs/README.md)), not how things work today.
+`docs/HANDOFF.md` is written only when wrapping a session for handoff (or
+when asked) — never updated mid-session as a status log.

@@ -1,4 +1,4 @@
-# projects/{project_name}/
+# projects/fraud_anomaly_detection/
 
 One prediction problem: its recipe, its overrides, its tests. The library
 stays generic; everything specific to this problem lives here.
@@ -6,40 +6,49 @@ stays generic; everything specific to this problem lives here.
 ## Layout — mirror the library's domains
 
 ```
-{project_name}/
+fraud_anomaly_detection/
 ├── README.md                # this file
 ├── config.py                # the recipe: TASK / DATA / EVAL / RUN_CONFIG
+├── scenarios/               # the scenario home (SCENARIOS.md is the prose stance)
+│   ├── register.yaml        #   THE file to edit: definitions; doc 2 = machine-owned stats
+│   ├── engine.py            #   loads/compiles/runs the register (never edit per-scenario)
+│   ├── gate.py              #   fit gate trials apply (drop matched rows before fit)
+│   ├── validation.py        #   refresh the evidence doc: uv run python -m ...scenarios.validation
+│   └── __init__.py          #   bound register API: SCENARIOS / assign / residual_mask
 ├── PROJECT_INSTRUCTIONS.md  # domain guidance the agent loop reads every turn
-├── data/                    # custom DataPipeline (when the default needs replacing)
-│   └── queries/             # base_table.sql + training_data.sql (Snowflake)
+├── data/
+│   ├── queries/             # base_table.sql + training_data.sql (Snowflake)
+│   ├── sample/              # local sample parquet (gitignored)
+│   └── graph/               # built graph stores, *.duckdb (gitignored, rebuildable)
 ├── eval/                    # custom Metric classes (automl.eval protocol)
-├── model/                   # custom transformers / preprocessing
+├── model/                   # custom transformers / pipeline overrides
+├── graph/                   # persisted entity-graph store library
+│                            #   build / load / queries / asof (leak-free) / discover (queues)
+├── analysis/                # read-only investigation runners — see analysis/README.md
 └── tests/                   # project-owned tests; a bare `pytest` runs them
 ```
 
 Project code mirrors the library package it extends, so imports read the
-same on both sides: `from projects.{project_name}.eval.metrics import ...`
+same on both sides: `from projects.fraud_anomaly_detection.eval.metrics import ...`
 next to `from automl.eval import ...`. Keep project tests in `tests/` here —
 never in the repo-level `tests/` tree, which belongs to the core library.
 
 ## Project-specific dependencies
 
-Shared tooling (pytest, pandas, the core ML stack) lives in the repo's
-default `dev` dependency group — never re-declare it. When this project needs
-a package the core doesn't ship, declare it in a dependency group named after
-the project (the same `[dependency-groups]` mechanism as `dev`; everything
-resolves in the one shared lockfile, so versions stay consistent repo-wide
-while installs stay opt-in):
+Shared tooling lives in the repo's default `dev` dependency group. Packages
+only this project needs live in the `fraud` dependency group (the same
+`[dependency-groups]` mechanism as `dev`, one shared lockfile — consistent
+versions repo-wide, opt-in install):
 
 ```bash
-uv add --group {project_name} <package>   # declare (creates the group on first use)
-uv sync --group {project_name}            # opt in, once per checkout
-uv run --group {project_name} ...         # or per command, no sync needed
+uv sync --group fraud                 # opt in, once per checkout
+uv add --group fraud <package>        # add a new project dependency
+uv run --group fraud python -m ...    # or per command, no sync needed
 ```
 
-In this project's tests, guard imports of group-only packages with
-`pytest.importorskip("<package>")` — a bare `pytest` run then skips them
-cleanly for sessions that never synced the group.
+Current contents: `duckdb` + `igraph` — the persisted entity-graph store
+(`graph/`). Tests importing group-only packages guard with
+`pytest.importorskip`, so a bare `pytest` stays green without the group.
 
 ## Writing PROJECT_INSTRUCTIONS.md
 

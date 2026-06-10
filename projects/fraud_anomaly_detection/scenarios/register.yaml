@@ -1,0 +1,345 @@
+# Scenario register — the codified fraud scenarios. THIS is the file to edit.
+#
+# The detection stance (SCENARIOS.md): named scenarios with a behavioral
+# theory, conjunctive triggers, and explicit disqualifiers — not additive
+# point scores. One definition serves the fit gate, the eval reporting, and
+# the backtests; editing this file never mints a dataset version.
+#
+# Schema (engine.py loads and validates this file):
+#
+#   Required per scenario: name, tier, status, entry_date, theory, trigger.
+#     name    — unique slug; becomes the flag column scenario_<name>.
+#     theory  — the fraud-intent story that justifies every trigger bullet.
+#               If you can't tell one, it's a credit-risk rule, not a scenario.
+#     trigger — a list of comparisons; the row matches when ALL bullets hold.
+#   Optional: title (display name, defaults to name), typology (the published
+#     industry pattern this instantiates — FATF/FinCEN framing; fill in at
+#     grounding time), disqualifiers (a list of comparisons; ANY one holding
+#     releases the row — the credit-risk firewall).
+#
+#   Each "- " bullet under trigger/disqualifiers is one comparison:
+#     - column: <col>          # compare a column ...
+#       op: <op>               # ... with one of: == != < <= > >= isin notin
+#       value: <v>             #     (is_null / not_null take no value)
+#     - hours_between: [<later_ts>, <earlier_ts>]   # or compare elapsed hours
+#       op: <op>               #   between two timestamp columns. Stopgap: when
+#       value: <hours>         #   the TODO.md speed features land in the base
+#                              #   table this becomes a plain column comparison.
+#   Nulls never match. Bullets are declarative data, so a register entry can
+#   be compiled to a SQL WHERE clause mechanically when a rule ships.
+#
+# To add a scenario:
+#   1. Append its entry below — newest last; the register is ordered by entry_date.
+#   2. Bump `version` and pin the predicate in tests/test_scenarios.py.
+#   3. Refresh the validation evidence (the second, machine-owned document
+#      at the bottom of this file — never edit it by hand):
+#        uv run python -m projects.fraud_anomaly_detection.scenarios.validation
+#   4. OPTIONAL, once piloting toward promotion: mirror the trigger as SQL in
+#      scenarios/backtest/monthly_backtest.py (the SCENARIOS list; bump its
+#      REGISTER_VERSION) and run the month-over-month backtest — that result is
+#      the promotion-gate stat (SCENARIOS.md). Skip it while a scenario is still
+#      a fresh draft; the backtest uses the same outcome definitions, so a
+#      confirmed scenario drops straight in. See scenarios/backtest/README.md.
+#
+# Status discipline: a scenario enters as status: draft (a finding being
+# piloted) and becomes signed_off only after the promotion gate in
+# SCENARIOS.md (monthly backtest + case sample + explicit sign-off).
+# Nothing here is law until then.
+
+version: "2026-06-08.2"
+
+scenarios:
+  # Lineage: entered as "S1b" in the round-2 analysis (prose: SCENARIOS.md).
+  # Same typology as the identity-side ring signature (many fresh identities
+  # sharing one bank account — the current heuristic's top band), which is a
+  # sibling scenario not yet codified here.
+  - name: ring_account_reuse
+    title: Ring cash-out via account reuse
+    typology: >-
+      Ring bust-out through a mule bank account (first-party fraud;
+      FATF/FinCEN mule-account typology)
+    tier: block
+    status: draft
+    entry_date: "2026-06-06"
+    theory: >-
+      The identity is hours old but the bank account already has advance
+      history — a day-old user cannot have taken those prior advances, so
+      other identities drew through this account before: a ring cashing out
+      through a reused mule account, observed from the account side. No
+      identity-count join needed, so it is real-time friendly.
+    trigger:  # ALL three must hold
+      # the cash-out is immediate: identity → advance within 24h
+      - hours_between: [feature_as_of_ts, identity_created_time]
+        op: "<="
+        value: 24
+      # the advance is sizable
+      - column: loan_amount
+        op: ">"
+        value: 100
+      # the account has RECENT advance history (someone drew through it within
+      # 7 days — stale reuse validated as innocent: lifetime-only matches were
+      # 0/17 never-paid on v1_42baf0ba; 7d ≡ 72h there, ring-cycling speed)
+      - column: prior_advances_on_bank_account_7d
+        op: ">"
+        value: 0
+
+  # Sibling of ring_account_reuse — the identity-side signature of the same
+  # mule-account typology. Variant comparison on v1_42baf0ba (2026-06-06):
+  # the fresh-identity count beat pure advance-velocity triggers (89% vs
+  # 41-47% never-paid), and its unique capture vs the sibling validates at
+  # 79% — it stands on its own, not just as overlap. Pure-velocity cycling
+  # (e.g. advances_7d >= 3 alone) deliberately NOT registered: 23-28%
+  # never-paid on unique capture = mitigate/review material pending case review.
+  - name: ring_identity_burst
+    title: Ring bust-out via identity burst
+    typology: >-
+      Ring bust-out through a mule bank account (first-party fraud;
+      FATF/FinCEN mule-account typology)
+    tier: block
+    status: draft
+    entry_date: "2026-06-06"
+    theory: >-
+      One operator manufactures a batch of fresh identities within days and
+      points them all at the same receiving bank account. Three brand-new
+      identities (all created inside 72h) linked to one account has no
+      innocent version — organic account sharing involves long-standing
+      identities, not a burst of newborns.
+    trigger:
+      # >= 3 identities created in the 72h before this advance, all linked to
+      # this advance's bank account (the column counts only identities CREATED
+      # in-window — the freshness is what kills the innocent story)
+      - column: users_on_bank_account_72h
+        op: ">="
+        value: 3
+
+  # ── New scarce-resource sharing edges (entered 2026-06-08) ────────────────
+  # Same mule/ring typology as the two scenarios above, but keyed on resources
+  # the fraudster cannot fragment as easily as a bank account_number. Evidence:
+  # the v2 feature base (v1_76d3ad45, full snapshot) materialized these as-of,
+  # prior-only sharing counts; an unsupervised Isolation Forest on the gated
+  # residual independently surfaced them 100-200x enriched at the top (runs in
+  # analysis/unsupervised_lens.py), and analysis/edge_precision_screen.py gives
+  # the per-edge precision below. All three are PROACTIVE gates (knowable at
+  # advance time). Threshold differs by edge BY DESIGN: persistent_account_id
+  # is the same REAL account (clean at >=2), while device/phone admit innocent
+  # stale/household reuse at >=2 and need >=3 fresh-in-72h to kill that story.
+  - name: ring_shared_persistent_account
+    title: Ring on a shared real bank account (persistent id)
+    typology: >-
+      Ring bust-out through a mule bank account, virtual-number-resistant
+      (first-party fraud; FATF/FinCEN mule-account typology)
+    tier: block
+    status: draft
+    entry_date: "2026-06-08"
+    theory: >-
+      Plaid persistent_account_id is the stable id that maps an institution's
+      virtual/rotating account numbers back to the one real account. Two or more
+      freshly-created identities drawing on a SINGLE real account within 72h has
+      no innocent version — one real bank account belongs to one person; a burst
+      of newborn identities on it is a ring. It also catches the Chase
+      virtual-account-number ring (#6988) that per-account_number counting
+      misses, because every virtual number collapses to one persistent id.
+    # Shape stat (v1_76d3ad45 residual+mature, base never-paid ~5.1%): 72h>=2 ->
+    # 93.0% never-paid (18.3x, n=215); 72h>=3 -> 98.4% (n=189). persistent id is
+    # ~96% unique, so a value shared by >=2 fresh identities is a sub-0.1%
+    # anomaly. Window: 72h — precision decays to ~69% at 30d (stale real sharing).
+    trigger:
+      - column: users_on_persistent_account_id_72h
+        op: ">="
+        value: 2
+    disqualifiers:
+      # a legitimately joint account has multiple holders by design — not a ring
+      - column: is_joint
+        op: "=="
+        value: 1
+
+  - name: ring_device_burst
+    title: Ring bust-out via shared device
+    typology: >-
+      Synthetic/duplicate-identity ring on a single device (first-party fraud;
+      FATF/FinCEN mule-account typology)
+    tier: block
+    status: draft
+    entry_date: "2026-06-08"
+    theory: >-
+      One physical device enrolling three or more identities all created inside
+      72h is a device farm minting synthetic identities — organic device sharing
+      (a household tablet, a hand-me-down phone) involves long-standing
+      identities, not a burst of three newborns. The >=3 bar is deliberate:
+      >=2 admits innocent stale reuse (64% never-paid), >=3 fresh-in-72h does not.
+    # Shape stat (v1_76d3ad45 residual+mature): 72h>=3 -> 80.5% never-paid
+    # (15.8x, n=343); 72h>=2 dilutes to 64.0%. device_id is ~96% unique.
+    # Window: 72h — precision decays with lookback (innocent stale device reuse).
+    trigger:
+      - column: users_on_device_id_72h
+        op: ">="
+        value: 3
+  # NOTE: a ring_shared_phone (phone 72h>=3, 97.5% never-paid) was evaluated and
+  # deliberately NOT registered (2026-06-08): its UNIQUE capture was 2 rows @ 0%
+  # — every phone-ring row already matches a device/identity/account ring, so it
+  # adds gross precision but no marginal coverage. Kept here as a record of the
+  # decision, not as a rule.
+---
+# ── validation stats — machine-owned; refresh with ──────────────────────────
+# uv run python -m projects.fraud_anomaly_detection.scenarios.validation
+computed_at: '2026-06-08'
+dataset_id: v1_76d3ad45
+scenarios_version: 2026-06-08.2
+n_rows: 1021950
+baseline:
+  n_mature: 689639
+  never_paid_rate: 0.04197808453422217
+  dpd45_rate: 0.06283867356689514
+  bands:
+    LOW:
+      n: 1002264
+      share: 0.9807368266549245
+      n_mature: 674889
+      n_never_paid: 33814
+      n_resolved: 894274
+      never_paid_rate: 0.037811677405358984
+    POSSIBLE:
+      n: 15538
+      share: 0.015204266353539801
+      n_mature: 11052
+      n_never_paid: 1179
+      n_resolved: 11813
+      never_paid_rate: 0.09980529924659273
+    EXTREMELY_LIKELY:
+      n: 3170
+      share: 0.003101913009442732
+      n_mature: 3037
+      n_never_paid: 2847
+      n_resolved: 3052
+      never_paid_rate: 0.9328309305373526
+    LIKELY:
+      n: 978
+      share: 0.0009569939820930574
+      n_mature: 661
+      n_never_paid: 358
+      n_resolved: 812
+      never_paid_rate: 0.4408866995073892
+scenarios:
+  ring_account_reuse:
+    tier: block
+    status: draft
+    entry_date: '2026-06-06'
+    n: 2562
+    share: 0.0025069719653603405
+    n_mature: 2310
+    n_never_paid: 2212
+    n_resolved: 2376
+    never_paid_rate: 0.930976430976431
+    n_dpd45: 2212
+    dpd45_rate: 0.9575757575757575
+    lift_vs_base: 22.17767774080932
+    unique_n: 47
+    unique_never_paid_rate: 0.6976744186046512
+    band_distribution:
+      EXTREMELY_LIKELY: 2030
+      LIKELY: 332
+      POSSIBLE: 178
+      LOW: 22
+  ring_identity_burst:
+    tier: block
+    status: draft
+    entry_date: '2026-06-06'
+    n: 3841
+    share: 0.003758500905132345
+    n_mature: 3523
+    n_never_paid: 3220
+    n_resolved: 3594
+    never_paid_rate: 0.895937673900946
+    n_dpd45: 3220
+    dpd45_rate: 0.9139937553221686
+    lift_vs_base: 21.34298608052358
+    unique_n: 51
+    unique_never_paid_rate: 0.6444444444444445
+    band_distribution:
+      EXTREMELY_LIKELY: 3151
+      LIKELY: 556
+      POSSIBLE: 134
+  ring_shared_persistent_account:
+    tier: block
+    status: draft
+    entry_date: '2026-06-08'
+    n: 379
+    share: 0.0003708596310974118
+    n_mature: 257
+    n_never_paid: 237
+    n_resolved: 257
+    never_paid_rate: 0.9221789883268483
+    n_dpd45: 237
+    dpd45_rate: 0.9221789883268483
+    lift_vs_base: 21.968105466438136
+    unique_n: 26
+    unique_never_paid_rate: 0.23809523809523808
+    band_distribution:
+      LOW: 309
+      EXTREMELY_LIKELY: 39
+      POSSIBLE: 20
+      LIKELY: 11
+  ring_device_burst:
+    tier: block
+    status: draft
+    entry_date: '2026-06-08'
+    n: 4433
+    share: 0.004337785605949411
+    n_mature: 3877
+    n_never_paid: 3503
+    n_resolved: 3982
+    never_paid_rate: 0.8797086891009543
+    n_dpd45: 3503
+    dpd45_rate: 0.9035336600464277
+    lift_vs_base: 20.95637995068073
+    unique_n: 245
+    unique_never_paid_rate: 0.5
+    band_distribution:
+      EXTREMELY_LIKELY: 3094
+      LIKELY: 563
+      LOW: 392
+      POSSIBLE: 384
+overall:
+  union:
+    n: 4595
+    share: 0.004496306081510837
+    n_mature: 4006
+    n_never_paid: 3593
+    n_resolved: 4124
+    never_paid_rate: 0.8712415130940834
+  discovery:
+    n: 423
+    share: 0.00041391457507705855
+    n_mature: 269
+    n_never_paid: 237
+    n_resolved: 277
+    never_paid_rate: 0.855595667870036
+  overlap:
+    n_multi_matched: 4226
+    pairs:
+      ring_account_reuse & ring_identity_burst: 2368
+      ring_account_reuse & ring_shared_persistent_account: 48
+      ring_account_reuse & ring_device_burst: 2478
+      ring_identity_burst & ring_shared_persistent_account: 59
+      ring_identity_burst & ring_device_burst: 3753
+      ring_shared_persistent_account & ring_device_burst: 351
+  residual:
+    n: 1017355
+    share: 0.9955036939184891
+    n_mature: 685633
+    n_never_paid: 34605
+    n_resolved: 905827
+    never_paid_rate: 0.03820265900663151
+    bands:
+      LOW:
+        n_left: 1001841
+        coverage: 0.00042204449127176074
+      POSSIBLE:
+        n_left: 15122
+        coverage: 0.026773072467499034
+      EXTREMELY_LIKELY:
+        n_left: 0
+        coverage: 1.0
+      LIKELY:
+        n_left: 392
+        coverage: 0.5991820040899796

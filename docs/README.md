@@ -21,6 +21,12 @@ Work moves through three folders in order:
 Pick up an effort by moving it `to-do/ → execution/`; finish it by moving it
 `execution/ → archive/`.
 
+> **Promotion to `execution/` is explicit and user-gated** — like
+> [`HANDOFF.md`](HANDOFF.md), an effort moves into `execution/` *only when the
+> user asks*, never automatically. New plans and specs land in `to-do/` and
+> stay there until then. `execution/` holds only what is actively being worked
+> right now, so it stays small and uncluttered.
+
 ## Writing an entry
 
 Package each effort as a **self-contained folder with its own `README.md`** as

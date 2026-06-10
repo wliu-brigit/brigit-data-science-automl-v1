@@ -17,6 +17,11 @@ uv sync
 
 Python >=3.11 is required. All work goes through `uv` (e.g. `uv run automl ...`).
 
+Shared tooling lives in the default `dev` dependency group, synced
+automatically. Packages that only one project under `projects/` needs live in
+a dependency group named after that project — opt in with
+`uv sync --group <project>`; each project's README has the details.
+
 ## Prerequisites
 
 Before running on real data:

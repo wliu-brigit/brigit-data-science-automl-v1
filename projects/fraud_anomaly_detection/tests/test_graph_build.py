@@ -1,6 +1,5 @@
 """Store builder: lossless edges, sentinel screening, self-contained snapshot."""
 
-import pandas as pd
 import pytest
 
 duckdb = pytest.importorskip("duckdb")  # project deps: uv sync --group fraud

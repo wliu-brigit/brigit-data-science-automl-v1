@@ -68,7 +68,7 @@ def run_trial(
     dataset_id: str | None = None,
 ) -> TrialResult:
     """Run one project model through the data->fit->eval->log chain."""
-    faulthandler.enable()
+    _enable_faulthandler()
 
     # MLflow's HTTP retry budget is capped once, seam-wide, at import of
     # automl.mlflow.client (HTTP_MAX_RETRIES) — no runner-specific override.
@@ -78,6 +78,18 @@ def run_trial(
         experiment_id=_active_experiment_id_or_none(context.session),
     ):
         return _run_trial(context)
+
+
+def _enable_faulthandler() -> None:
+    """Best-effort native-crash tracebacks; never a failure source.
+
+    ``faulthandler.enable`` needs a real stderr file descriptor —
+    sys-level capture (in-process CLI calls under pytest) has none.
+    """
+    try:
+        faulthandler.enable()
+    except (AttributeError, OSError, ValueError):
+        pass
 
 
 def _run_trial(context: TrialExecutionContext) -> TrialResult:

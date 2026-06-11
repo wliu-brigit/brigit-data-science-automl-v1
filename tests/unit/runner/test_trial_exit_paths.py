@@ -189,3 +189,13 @@ def test_log_issue_artifacts_called_on_failure_path(monkeypatch):
         "log_issue_artifacts must be called on the failure path; "
         f"calls observed: {issue_calls}"
     )
+
+
+def test_enable_faulthandler_survives_stderr_without_fileno(monkeypatch):
+    """In-process CLI calls under sys-level capture have a fileno-less stderr;
+    faulthandler is best-effort diagnostics and must never fail the trial."""
+    import io
+    import sys
+
+    monkeypatch.setattr(sys, "stderr", io.StringIO())
+    trial_module._enable_faulthandler()

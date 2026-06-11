@@ -5,86 +5,70 @@ new session can pick up cold. **Not a changelog** — keep only what's current a
 relevant. Rewritten at each wrap, not appended to.
 
 > **These docs are best-effort documentation. The code is the source of truth
-> for current behavior.** Anything in `execution/` describes *intent and the
-> design as discussed* — before building on a claim about how the system behaves
-> today, confirm it against the code. The `design.md` files flag the spots most
-> worth verifying.
+> for current behavior.**
 
-**Last updated:** 2026-06-10 — branch `core/dataset-read-reliability`, cut clean
-off `main` (`cc688b5`). This session **scoped two core reliability efforts and
-captured their designs**; **no implementation yet**, by intent.
+**Last updated:** 2026-06-11 — branch `core/dataset-read-reliability`. The
+trial-reliability effort is **designed, implemented, reviewed, and live-tested**
+in one pass; the implementation is up as a PR for remote review/merge.
 
-## Why this branch exists
+## What this session did
 
-Running `neobank_ncm` on full data kept failing on the data-read path (transient
-GCS read failures) and on serving validation (timeout crash + a silent native
-crash). On the `neobank_ncm_v3_replicate` branch those were patched with
-**band-aids** (an outer whole-frame retry loop; a bytes-decode fix + configurable
-timeout). We deliberately **did not port the band-aids** — the goal is to fix the
-root causes holistically. This branch carries the **designs only**, off `main`,
-so a focused session can finalize and implement them and merge to `main`.
+1. **Merged the two reliability efforts into one**:
+   `docs/execution/trial-reliability/` (design ratified with three corrections
+   to the predecessor docs — read `design.md` §"Corrections"; the predecessor
+   folders are gone, findings migrated).
+2. **Implemented all five plans** (subagent-driven; each passed spec + quality
+   review, fixes folded in): serving-validation hardening, content-addressed
+   dataset cache + robust populate, read-once contract builder, TrialContext +
+   issue ledger, `skip_snowflake_live_check`. See
+   `docs/execution/trial-reliability/README.md` for the map.
+3. **Fixed what verification surfaced**: a `faulthandler.enable()` crash under
+   sys-captured stderr (found only by the live e2e), integration-tier cache
+   isolation + a pre-existing env-dependent integration test, and three stale
+   e2e gates (archive-rename delete semantics, MLflow-3 logged-model artifact
+   tree, `automl.trial.create` module-vs-function import collision).
+4. **Docs honesty**: `per_trial_seconds` is now documented everywhere as an
+   advisory budget (decided 2026-06-10; nothing enforces it); only
+   `serving_validation_seconds` is a real timeout. The stale to-do was deleted.
+
+## Verification at wrap
+
+- `tests/unit` + `tests/contracts`: **647 passed, 1 skipped**.
+- `tests/integration`: **41 passed, 0 failed** (now hermetic).
+- `tests/e2e` (live GCS + local MLflow, Snowflake test excluded, notebooks
+  gated off): **7 passed** including the walking skeleton — the live loop ran
+  materialize → cached reads → trial → eval against the real bucket.
+- Measured: `dataframe_content_hash` ≈ 34s per full-scale neobank slice — with
+  network reads gone, hashing dominates the contract step. Future optimization
+  candidate, deliberately out of scope.
 
 ## How to pick up
 
-Don't dive into code first. (1) Read this; (2) read the two efforts under
-[`docs/execution/`](execution/) — each has a `README.md` front door, a `design.md`
-with the recommended approach + caveats, and the migrated findings as evidence;
-(3) **finalize each design and write its `plans/`** (this branch is the
-`writing-plans` stage, not implementation). Verify the "where main is today" and
-"caveats" sections against the actual code before planning — they're best-effort.
+1. **Review/merge the PR** (head `core/dataset-read-reliability-impl`, base
+   `core/dataset-read-reliability` — wendao merges on the remote). Then take
+   `core/dataset-read-reliability` → `main` when ready.
+2. **After it reaches `main`**: move `docs/execution/trial-reliability/` to
+   `docs/archive/` (it records its own completion), and **rebase
+   `neobank_ncm_v3_replicate`** — its band-aids drop out: the
+   `_read_and_verify_dataset` retry (cache replaces it), the `_decode_tail` +
+   timeout patches (landed properly), and `SnowflakeSource(skip_live_check=True)`
+   in `projects/neobank_ncm/config.py` (move to
+   `RUN_CONFIG.skip_snowflake_live_check`).
+3. QA hygiene: this session's e2e routes (plus two stale 2026-06-09 neobank
+   dry-run routes) are **archived** under `deleted/qa/...`; permanent disposal
+   is `automl mlflow purge --scope qa --apply` whenever convenient (local/admin
+   context; consider `mlflow_local gc-auth` after, per machine notes).
 
-## The two efforts (in `docs/execution/`)
+## Open / parked
 
-1. **`dataset-read-reliability/`** — the big one, mostly net-new design. A
-   content-addressed **local cache** at the read seam so the full multi-GB frame
-   is fetched **once** per trial (today ~6–7×, incl. the serving-validation
-   subprocess), with a **robust populate** (resumable + checksum + tuned retry)
-   that **retires the band-aid retry**, plus a read-once contract-builder tweak,
-   LRU-on-write retention, and an `automl data cache` CLI verb. Includes a small
-   **companion**: move Snowflake `skip_live_check` from the source onto
-   `RUN_CONFIG`.
-2. **`serving-validation-robustness/`** — a tighter cluster on one seam
-   (`automl/runner/serving_validation.py` + the loop manager): make a validation
-   **timeout or native crash** always leave a visible failure report/tag (the
-   SIGSEGV path is silent today), lift the known-good timeout fixes from the
-   neobank branch, and settle the **open decision**: should a validation
-   timeout/crash **fail-soft** (keep the trained model + eval metric, continue)
-   **vs halt** the loop. That decision likely touches the agent/loop layer, not
-   just the runner.
-
-## What this session changed on this branch (docs only)
-
-- Archived the **completed** `snowflake-source-and-split-keys` effort
-  `execution/ → archive/2026-06-04-snowflake-source-and-split-keys/` (it was
-  "IMPLEMENTED" — `execution/` should stay ~empty).
-- Created the two `execution/` efforts above (READMEs + `design.md` + migrated
-  findings).
-- Dropped three loose notes into [`to-do/`](to-do/) so they reach `main` and
-  aren't lost: `tiny_eval-retry-orphaned-gcs-artifact.md` (eval-write
-  idempotency — different seam, same reliability theme),
-  `tiny_snowflake-metadata-query-helper.md`, and
-  `tiny_per-trial-seconds-not-enforced.md` (already decided: leave as-is, fix
-  docs).
-
-## Where `main` stands (context)
-
-- `main` (`cc688b5`) has the naive read path: single-shot
-  `download_as_bytes()`, manifest-hash verification, slice — **no** retry, **no**
-  cache, **no** read-once; the contract builder and the serving-validation
-  subprocess each re-read the full frame. `serving_validation.py` has the
-  hardcoded 120s timeout and the bytes-crash + silent-SIGSEGV gaps. None of the
-  neobank-branch patches are on `main`.
-- The `neobank_ncm_v3_replicate` branch (separate worktree) is the runnable
-  integration branch and still carries the band-aids; when this effort merges to
-  `main`, that branch rebases and its redundant core diff drops out.
-
-## Constraints to respect
-
-- **No band-aid porting.** Re-derive fixes from the design; the only safe lift is
-  the two known-good serving-validation fixes (`_decode_tail` + configurable
-  timeout), noted in that effort's `design.md`.
-- **Content-addressing is the safety property** for any cache — key on
-  `dataset_id` + content hash, verify against the manifest, GCS stays the single
-  source of truth.
-- **Layering:** generic mechanism in `automl/utils/`, dataset-specific policy at
-  the data read seam, hashing stays in `automl/data/contract.py`. CLI verbs thin.
+- `docs/to-do/runner-crash-supervision.md` — a natively-crashed runner still
+  leaves no finalized MLflow record (consciously accepted boundary #3 of the
+  design; ledger JSONL + stderr traceback are the evidence until a supervisor
+  seam exists).
+- Design §3 boundaries #1–#2 remain consciously accepted: the loop still halts
+  on a hard-failed trial, and correctness-failed models stay FINISHED with
+  `validation.status` as the deployability signal (audit of leaderboard
+  consumers still worth doing).
+- `docs/to-do/tiny_eval-retry-orphaned-gcs-artifact.md` (eval-write
+  idempotency) and `multi-runner-architecture.md` (cache eviction concurrency)
+  are untouched, as scoped.

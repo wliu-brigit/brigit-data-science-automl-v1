@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 from pathlib import Path
 
@@ -15,15 +16,24 @@ ISSUES_ARTIFACT = "trial/issues.json"
 
 
 def log_issue_artifacts(run_id: str, issues: IssueRecorder) -> None:
-    """Publish the ledger + count tag. Called on BOTH trial exit paths."""
+    """Publish the ledger + count tag. Called on BOTH trial exit paths.
+
+    Deliberate asymmetry: the failure *report* (``log_failure_artifacts``)
+    propagates exceptions so callers know publishing failed; this ledger
+    publish never does — a blip here must never flip a FINISHED trial to
+    FAILED or mask the original error on the failure path.
+    """
     if not run_id:
         return
-    payload = {"schema_version": 1, "issues": issues.snapshot()}
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        path = Path(tmp_dir) / "issues.json"
-        path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
-        runner_artifacts.write_local_file(run_id, ISSUES_ARTIFACT, path)
-    mlflow_trial.set_tags(run_id, {mlflow_tags.TRIAL_ISSUE_COUNT: issues.count})
+    try:
+        payload = {"schema_version": 1, "issues": issues.snapshot()}
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = Path(tmp_dir) / "issues.json"
+            path.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+            runner_artifacts.write_local_file(run_id, ISSUES_ARTIFACT, path)
+        mlflow_trial.set_tags(run_id, {mlflow_tags.TRIAL_ISSUE_COUNT: issues.count})
+    except Exception as exc:  # noqa: BLE001 - ledger publish is best-effort
+        print(f"issue-ledger publish failed for run {run_id}: {exc}", file=sys.stderr)
 
 
 __all__ = ["ISSUES_ARTIFACT", "log_issue_artifacts"]

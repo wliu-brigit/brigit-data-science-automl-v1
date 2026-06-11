@@ -42,13 +42,35 @@ def test_publishes_issues_json_and_count_tag(monkeypatch):
 
 
 def test_no_run_id_is_a_noop(monkeypatch):
-    def explode(*args, **kwargs):
-        raise AssertionError("must not publish without a run")
+    calls: list = []
 
-    monkeypatch.setattr(issue_artifacts.runner_artifacts, "write_local_file", explode)
+    def record_call(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(issue_artifacts.runner_artifacts, "write_local_file", record_call)
     ctx = TrialContext()
     ctx.record_issue("x", phase="fit")
     issue_artifacts.log_issue_artifacts("", ctx.issues)
+    assert calls == []
+
+
+def test_publish_failure_is_swallowed(monkeypatch, capsys):
+    def exploding_write(*args, **kwargs):
+        raise RuntimeError("MLflow blip")
+
+    monkeypatch.setattr(issue_artifacts.runner_artifacts, "write_local_file", exploding_write)
+    monkeypatch.setattr(
+        issue_artifacts.mlflow_trial,
+        "set_tags",
+        lambda run_id, tags: None,
+    )
+    ctx = TrialContext()
+    ctx.record_issue("something happened", phase="fit")
+    # Must not raise
+    issue_artifacts.log_issue_artifacts("run123", ctx.issues)
+    captured = capsys.readouterr()
+    assert "run123" in captured.err
+    assert "issue-ledger publish failed" in captured.err
 
 
 def test_zero_issues_still_publishes_count_zero(monkeypatch):

@@ -75,6 +75,7 @@ def _artifact_manifest_entries(*, has_agent_proposal: bool) -> list[dict[str, ob
         ("features/feature_registry.csv", "text/csv"),
         ("model/MLmodel", "text/yaml"),
         ("timing/summary.json", "application/json"),
+        ("trial/issues.json", "application/json"),
         ("validation/data/input.csv", "text/csv"),
         ("validation/data/input.parquet", "application/parquet"),
         ("validation/data/expected.parquet", "application/parquet"),

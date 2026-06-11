@@ -30,10 +30,15 @@ class IssueRecorder:
         severity: str = "error",
     ) -> None:
         if isinstance(problem, BaseException):
-            snapshot = ExceptionSnapshot.from_exception(problem)
-            error_class = snapshot.error_class
-            message = snapshot.message
-            traceback_tail = snapshot.to_dict()["traceback_tail"]
+            try:
+                snapshot = ExceptionSnapshot.from_exception(problem)
+                error_class = snapshot.error_class
+                message = snapshot.message
+                traceback_tail = snapshot.to_dict()["traceback_tail"]
+            except Exception:  # noqa: BLE001 - snapshot extraction must never raise
+                error_class = type(problem).__name__
+                message = f"<unprintable {type(problem).__name__}>"
+                traceback_tail = []
         else:
             error_class = ""
             message = str(problem)

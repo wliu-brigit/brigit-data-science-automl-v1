@@ -277,6 +277,7 @@ def test_run_trial_executes_homecredit_chain_and_logs_artifacts(tmp_path, monkey
             "features/feature_registry.csv",
             "model/MLmodel",
             "timing/summary.json",
+            "trial/issues.json",
             "validation/data/input.csv",
             "validation/data/input.parquet",
             "validation/data/expected.parquet",

@@ -57,6 +57,18 @@ def test_snapshot_is_json_serializable():
     json.dumps(recorder.snapshot())
 
 
+def test_record_survives_exception_whose_str_raises():
+    class _EvilError(Exception):
+        def __str__(self):
+            raise RuntimeError("nope")
+
+    recorder = IssueRecorder()
+    recorder.record(_EvilError(), phase="fit")
+    (issue,) = recorder.snapshot()
+    assert issue["error_class"] == "_EvilError"
+    assert "unprintable" in issue["message"]
+
+
 def test_try_log_train_eval_records_issue_instead_of_swallowing(monkeypatch):
     from automl.runner import trial as trial_module
     from automl.runner.context import TrialContext

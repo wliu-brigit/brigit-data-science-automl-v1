@@ -107,6 +107,20 @@ Ratified with the user:
 - **Retry/modular runner is explicitly deferred** to a future effort; this
   design only lays its foundation (§6, record vs machinery).
 
+**Known boundaries (consciously accepted, 2026-06-10):**
+
+1. **The loop still halts on the first hard-failed trial.** Fail-soft covers
+   only trials that complete; a thrown exception still exits 1 and the manager
+   skill stops without repair. This effort shrinks the probability, not the
+   blast radius — loop-survival policy belongs to the future retry effort.
+2. **A correctness-failed model stays FINISHED on the leaderboard.** Anything
+   that selects "the best model" for export/serving must respect
+   `validation.status`; the plans include an audit of leaderboard consumers.
+3. **A parent native crash is diagnosable, not durably recorded** — the MLflow
+   run stays RUNNING; evidence lives in stderr + the local issues JSONL.
+   Closing this needs a supervisor seam outside the runner process, parked at
+   `docs/to-do/runner-crash-supervision.md`.
+
 ## 4. Pillar 1 — content-addressed dataset cache
 
 ```
@@ -273,6 +287,8 @@ step-driver inherits it untouched.
 - Superseded predecessor efforts: `dataset-read-reliability/`,
   `serving-validation-robustness/` (removed from `execution/` when this
   merged design landed; history in git).
+- Parked out of this design: `to-do/runner-crash-supervision.md` (supervisor
+  seam for natively-crashed runner processes — boundary #3 in §3).
 - Related, left in `to-do/`: `tiny_eval-retry-orphaned-gcs-artifact.md`
   (eval-write idempotency — different seam, same theme),
   `tiny_per-trial-seconds-not-enforced.md` (decided: docs fix only),

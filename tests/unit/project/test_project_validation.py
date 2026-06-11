@@ -15,6 +15,7 @@ from automl.project import (
     Session,
     validate_project,
 )
+from automl.project.checks import snowflake_connection
 
 pytestmark = pytest.mark.unit
 
@@ -243,6 +244,67 @@ def test_validate_project_live_snowflake_missing_sql_file_errors(monkeypatch, tm
     messages = "\n".join(issue.message for issue in issues)
     assert "base_table_sql" in messages
     assert "training_data_sql" in messages
+
+
+class _SourceSf:
+    kind = "snowflake"
+    base_table_sql = "sql/base.sql"
+    training_data_sql = "sql/train.sql"
+
+
+class _DataSpecSf:
+    source = _SourceSf()
+
+
+class _RunConfigSkip:
+    skip_snowflake_live_check = True
+
+
+class _SkippingConfig:
+    data_spec = _DataSpecSf()
+    run_config = _RunConfigSkip()
+    project_dir = Path(".")
+
+
+def _sf_issues(config, monkeypatch, *, probe=None, sql_exists=True):
+    from automl.utils.io import snowflake as sf
+
+    monkeypatch.setattr(sf, "missing_env", lambda: [])
+    monkeypatch.setattr(Path, "exists", lambda self: sql_exists)
+    calls = []
+    monkeypatch.setattr(sf, "check_connection", lambda: calls.append(1))
+    found = list(snowflake_connection(config=config, probe=probe))
+    return found, calls
+
+
+def test_config_flag_skips_probe_with_warning(monkeypatch):
+    issues, probe_calls = _sf_issues(_SkippingConfig(), monkeypatch)
+    assert probe_calls == []
+    assert any(
+        issue.level == "warning" and "skipped" in issue.message for issue in issues
+    )
+
+
+def test_probe_true_overrides_config_flag(monkeypatch):
+    issues, probe_calls = _sf_issues(_SkippingConfig(), monkeypatch, probe=True)
+    assert probe_calls == [1]
+    assert not any("skipped" in issue.message for issue in issues)
+
+
+def test_probe_false_skips_even_without_config_flag(monkeypatch):
+    class _NoFlagConfig(_SkippingConfig):
+        run_config = None
+
+    issues, probe_calls = _sf_issues(_NoFlagConfig(), monkeypatch, probe=False)
+    assert probe_calls == []
+    assert any("skipped" in issue.message for issue in issues)
+
+
+def test_env_and_sql_checks_still_run_when_skipping(monkeypatch):
+    issues, _ = _sf_issues(_SkippingConfig(), monkeypatch, sql_exists=False)
+    assert any(
+        issue.level == "error" and "file not found" in issue.message for issue in issues
+    )
 
 
 def test_validate_project_wraps_crashed_domain_checks(monkeypatch, tmp_path):

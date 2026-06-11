@@ -573,37 +573,37 @@ def _trial_data_contract(
     loaded_fit,
 ) -> TrialDataContract:
     run_config = active.config.require_run_config()
+    # One full-frame load (a local cache hit once plan 2 lands); every split's
+    # slice is derived in memory. Hash semantics are unchanged: hash the
+    # *sliced* frame, exactly as the per-split loads did.
+    full = data.load_dataset_by_id(loaded_fit.id, session=active)
     slices: list[SliceContract] = []
-    for name in run_config.splits.predicates:
-        if name == loaded_fit.split_name:
-            loaded = loaded_fit
-        else:
-            loaded = data.load_dataset_by_id(
-                loaded_fit.id,
-                split_name=name,
-                session=active,
-            )
+    for name, predicate in run_config.splits.predicates.items():
+        sliced = full.df[predicate.mask(full.df)].reset_index(drop=True)
         slices.append(
             SliceContract(
                 name=name,
-                predicate=loaded.predicate.to_dict(),
-                n_rows=loaded.n_rows,
-                content_hash=dataframe_content_hash(loaded.df),
+                predicate=predicate.to_dict(),
+                n_rows=len(sliced),
+                content_hash=dataframe_content_hash(sliced),
             )
         )
-    return TrialDataContract(
+        del sliced
+    contract = TrialDataContract(
         trial=TrialRef(
             project_name=active.project_name,
             experiment_id=active.active_experiment_id,
             trial_id=trial_id,
             run_id=run_id,
         ),
-        dataset=DatasetRef.from_dataset(loaded_fit.dataset),
+        dataset=DatasetRef.from_dataset(full.dataset),
         splits={
             name: predicate.to_dict() for name, predicate in run_config.splits.predicates.items()
         },
         slices=tuple(slices),
     )
+    del full
+    return contract
 
 
 def _try_log_train_eval(

@@ -1190,6 +1190,16 @@ def test_retired_top_level_verbs_are_not_registered(verb):
         main([verb])
 
 
+def test_validate_project_has_probe_snowflake_flag():
+    from automl.cli import build_parser
+
+    parser = build_parser()
+    validate_parser = _subparser(parser, "validate", "project")
+    options = _option_strings(validate_parser)
+    assert "--probe-snowflake" in options
+    assert "--no-probe-snowflake" in options
+
+
 def test_data_cache_verbs_exist():
     from automl.cli import build_parser
 

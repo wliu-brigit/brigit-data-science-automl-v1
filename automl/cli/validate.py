@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 from . import _validate_actions as actions
@@ -12,6 +13,12 @@ def add_parser(subparsers) -> None:
     validate_sub = parser.add_subparsers(dest="target", required=True)
 
     project = validate_sub.add_parser("project")
+    project.add_argument(
+        "--probe-snowflake",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="force the Snowflake live probe on/off, overriding RUN_CONFIG.skip_snowflake_live_check",
+    )
     project.set_defaults(func=actions._project)
 
     model = validate_sub.add_parser("model")

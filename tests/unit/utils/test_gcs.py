@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -212,3 +213,34 @@ def test_parquet_write_requires_explicit_overwrite_for_existing_object():
     blob = client.bucket("bucket").blob("path/data.parquet")
     assert blob.uploads[-1]["if_generation_match"] is None
     pd.testing.assert_frame_equal(gcs.read_parquet(uri, client=client), second)
+
+
+def test_download_to_file_passes_checksum_and_retry(tmp_path):
+    from automl.utils.io import gcs
+
+    captured = {}
+
+    class _Blob:
+        def download_to_filename(self, filename, *, checksum=None, retry=None):
+            captured["filename"] = filename
+            captured["checksum"] = checksum
+            captured["retry"] = retry
+            Path(filename).write_bytes(b"payload")
+
+    class _Bucket:
+        def blob(self, name):
+            captured["blob_name"] = name
+            return _Blob()
+
+    class _Client:
+        def bucket(self, name):
+            captured["bucket"] = name
+            return _Bucket()
+
+    dest = tmp_path / "out.bin"
+    gcs.download_to_file("gs://bucket-x/path/data.parquet", dest, client=_Client())
+    assert captured["bucket"] == "bucket-x"
+    assert captured["blob_name"] == "path/data.parquet"
+    assert captured["checksum"] == "crc32c"
+    assert captured["retry"] is not None
+    assert dest.read_bytes() == b"payload"

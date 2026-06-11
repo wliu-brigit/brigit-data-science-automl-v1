@@ -27,6 +27,24 @@ same on both sides: `from projects.neobank_ncm.eval.metrics import ...`
 next to `from automl.eval import ...`. Keep project tests in `tests/` here —
 never in the repo-level `tests/` tree, which belongs to the core library.
 
+## Project-specific dependencies
+
+Shared tooling lives in the repo's default `dev` dependency group. Packages
+only this project needs live in the `neobank_ncm` dependency group (the same
+`[dependency-groups]` mechanism as `dev`, one shared lockfile — consistent
+versions repo-wide, opt-in install):
+
+```bash
+uv sync --group neobank_ncm                 # opt in, once per checkout
+uv add --group neobank_ncm <package>        # add a new project dependency
+uv run --group neobank_ncm python -m ...    # or per command, no sync needed
+```
+
+Current contents: `torch` — for the neural/tabular-NN model family the
+PROJECT_INSTRUCTIONS calls out to explore. Tests importing group-only
+packages guard with `pytest.importorskip`, so a bare `pytest` stays green
+without the group.
+
 ## Writing PROJECT_INSTRUCTIONS.md
 
 The proposer and coder read this file fresh **every turn** — it is how you

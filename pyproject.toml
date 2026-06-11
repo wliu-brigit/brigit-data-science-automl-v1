@@ -49,6 +49,9 @@ fraud = [
     "duckdb>=1.5.3",
     "igraph>=1.0.0",
 ]
+neobank_ncm = [
+    "torch>=2.12.0",
+]
 
 [tool.pytest.ini_options]
 # projects/*/tests: project-owned tests live inside their project folder,

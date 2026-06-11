@@ -178,11 +178,21 @@ RUN_CONFIG = RunConfig(
     experiment_id="neobank_ncm_v3_replicate",
     splits=SPLITS,
     models=ModelsConfig(
-        manager=ModelRoute("sonnet", "medium"),
-        proposer=ModelRoute("sonnet", "medium"),
-        coder=ModelRoute("sonnet", "medium"),
+        manager=ModelRoute("opus", "high"),
+        proposer=ModelRoute("opus", "high"),
+        coder=ModelRoute("opus", "high"),
     ),
     per_trial_seconds=600,
+    # Full-data serving validation loads the model from GCS + benchmarks it; the
+    # 300s core default has been tight on this dataset. Give it headroom so a
+    # slow-but-healthy validation isn't killed.
+    serving_validation_seconds=600,
+    # The dataset is already materialized to GCS, and the AutoML loop reads from
+    # GCS (only `data materialize --refresh-source` touches Snowflake). Skip the
+    # live SELECT 1 in the preflight so the loop validates and runs off-VPN —
+    # GCS is throttled on the VPN anyway. Materialize still fails loudly if
+    # Snowflake is unreachable; offline checks (env vars, SQL files) still run.
+    skip_snowflake_live_check=True,
     train_split="train",
     eval_split="test",
 )

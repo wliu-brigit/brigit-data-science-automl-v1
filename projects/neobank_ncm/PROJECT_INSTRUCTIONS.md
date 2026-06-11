@@ -72,6 +72,15 @@ windows) and evaluated on `oot` once (legacy Phases 4–5).
   unconstrained variant, the loop's stretch reference). `scripts/evaluate_split.py
   --split oot` is the one sanctioned OOT read for the winner.
 - XGBoost first (legacy winner), LightGBM as challenger.
+- **Neural approaches are in scope — try a reasonable one.** PyTorch is
+  available (`uv sync --group neobank_ncm`). A tabular net is a genuinely
+  different model family from the GBMs above and worth a real attempt; the
+  architecture and feature handling are your call — apply standard tabular-NN
+  hygiene as you judge best. The only non-negotiables are the project-wide
+  ones: fit/scale/select on known-train rows only (never touch `test`/`oot`),
+  stay within `per_trial_seconds`, and use the same `synthetic_score` soft-label
+  data the GBMs train on. Flag in the trial's findings any legacy property a net
+  ends up dropping (e.g. the monotone constraints).
 - Median imputation for non-payday numerics (legacy also coerced ±inf to NaN
   before imputing); the 11 derived ratio/flag candidates from the legacy EDA
   are already materialized in the base table (8 survived their selection, 3

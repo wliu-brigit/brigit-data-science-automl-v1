@@ -55,6 +55,7 @@ def log_validation_artifacts(
     model_registry,
     timing: TimingRecorder | None = None,
     model_uri: str | None = None,
+    context=None,
 ) -> dict[str, object]:
     tolerance = 1e-10
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -132,6 +133,7 @@ def log_validation_artifacts(
                 report_path=report_path,
                 tolerance=tolerance,
                 model_uri=model_uri,
+                context=context,
             )
         with timed_phase(timing, "validation_publish"):
             if latency_path.exists():
@@ -146,6 +148,12 @@ def log_validation_artifacts(
                     json.dumps(latency_detail, indent=2),
                     encoding="utf-8",
                 )
+                if context is not None:
+                    context.record_issue(
+                        "validation latency not measured (validation failed)",
+                        phase="validation_publish",
+                        severity="warning",
+                    )
             report = _validation_report_document(
                 raw_report,
                 run_id=run_id,
@@ -222,6 +230,7 @@ def _run_pyfunc_validation(
     report_path: Path,
     tolerance: float,
     model_uri: str | None = None,
+    context=None,
 ) -> dict[str, object]:
     # Prefer the MLflow 3 logged-model URI (``models:/<id>``). It resolves
     # straight to the model's artifact location; the legacy ``runs:/<run>/model``
@@ -571,6 +580,8 @@ except Exception as exc:
             "stderr_tail": stderr_tail,
         }
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        if context is not None:
+            context.record_issue(report["error"], phase="validation", severity="error")
         return report
     if completed.returncode < 0:
         signum = -completed.returncode
@@ -595,6 +606,8 @@ except Exception as exc:
             "stderr_tail": _decode_tail(completed.stderr),
         }
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        if context is not None:
+            context.record_issue(report["error"], phase="validation", severity="error")
         return report
     if report_path.exists():
         with report_path.open(encoding="utf-8") as handle:

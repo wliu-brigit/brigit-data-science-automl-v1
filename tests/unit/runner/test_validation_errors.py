@@ -246,3 +246,27 @@ def test_report_document_preserves_diagnostic_fields():
     assert document["signal"] == 11
     assert document["signal_name"] == "SIGSEGV"
     assert document["stderr_tail"] == "boom"
+
+
+def test_timeout_records_ledger_issue(tmp_path, monkeypatch):
+    from automl.runner.context import TrialContext
+
+    def _raise_timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=["python"], timeout=7, stderr=b"slow")
+
+    monkeypatch.setattr(serving_validation.subprocess, "run", _raise_timeout)
+    ctx = TrialContext()
+    serving_validation._run_pyfunc_validation(
+        run_id="run123",
+        active=_session(tmp_path),
+        input_parquet=tmp_path / "input.parquet",
+        input_csv=tmp_path / "input.csv",
+        expected_parquet=tmp_path / "expected.parquet",
+        input_schema=tmp_path / "input_schema.json",
+        report_path=tmp_path / "report.json",
+        tolerance=1e-10,
+        context=ctx,
+    )
+    (issue,) = ctx.issues.snapshot()
+    assert issue["severity"] == "error"
+    assert "exceeded" in issue["message"]

@@ -196,3 +196,29 @@ def test_validation_timeout_uses_run_config(tmp_path, monkeypatch):
     )
     assert captured["timeout"] == 77
     assert "77" in report["error"]
+
+
+def test_signal_killed_child_produces_labeled_report(tmp_path, monkeypatch):
+    def _fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0] if args else [], returncode=-11, stdout="", stderr=""
+        )
+
+    monkeypatch.setattr(serving_validation.subprocess, "run", _fake_run)
+    report_path = tmp_path / "report.json"
+    report = serving_validation._run_pyfunc_validation(
+        run_id="run123",
+        active=_FakeSession(),
+        input_parquet=tmp_path / "input.parquet",
+        input_csv=tmp_path / "input.csv",
+        expected_parquet=tmp_path / "expected.parquet",
+        input_schema=tmp_path / "input_schema.json",
+        report_path=report_path,
+        tolerance=1e-10,
+    )
+    assert report["status"] == "failed"
+    assert report["error_class"] == "SignalExit"
+    assert report["signal"] == 11
+    assert report["signal_name"] == "SIGSEGV"
+    assert "SIGSEGV" in report["error"]
+    assert json.loads(report_path.read_text(encoding="utf-8"))["error_class"] == "SignalExit"

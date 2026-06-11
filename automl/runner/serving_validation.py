@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -568,6 +569,30 @@ except Exception as exc:
             ),
             "error_class": "TimeoutExpired",
             "stderr_tail": stderr_tail,
+        }
+        report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        return report
+    if completed.returncode < 0:
+        signum = -completed.returncode
+        try:
+            signal_name = signal.Signals(signum).name
+        except ValueError:
+            signal_name = f"signal {signum}"
+        report = {
+            "schema_version": 1,
+            "status": "failed",
+            "model_uri": resolved_model_uri,
+            "row_count": 0,
+            "max_abs_diff": None,
+            "tolerance": tolerance,
+            "error": (
+                f"validation subprocess died on {signal_name} "
+                f"(returncode {completed.returncode}); any partial report is untrusted"
+            ),
+            "error_class": "SignalExit",
+            "signal": signum,
+            "signal_name": signal_name,
+            "stderr_tail": _decode_tail(completed.stderr),
         }
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         return report

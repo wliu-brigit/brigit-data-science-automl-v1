@@ -115,8 +115,9 @@ Only import packages present in `allowed_dependencies`. If another package is ne
 
 ## Running The Trial
 
-Per-trial timeout is enforced inside the runner from
-`projects/<project_name>/config.py: RUN_CONFIG.per_trial_seconds`.
+`RUN_CONFIG.per_trial_seconds` (`projects/<project_name>/config.py`) is an
+advisory time budget — design the trial to fit it; the runner does not enforce
+it as a hard kill.
 
 For dry-run:
 

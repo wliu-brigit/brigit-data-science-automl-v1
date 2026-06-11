@@ -285,6 +285,10 @@ def _publish_failure_artifacts(
     exc: BaseException,
 ) -> None:
     has_agent_proposal = log_agent_proposal(run_id=ctx.run_id, trial_dir=ctx.trial_dir)
+    # Ledger first: its publish swallows everything, while log_failure_artifacts
+    # deliberately propagates — this order keeps the issue evidence even when
+    # the failure report itself can't reach MLflow.
+    log_issue_artifacts(ctx.run_id, ctx.issues)
     log_failure_artifacts(
         failure=RunnerFailureReport(
             runner_kind="trial",
@@ -302,7 +306,6 @@ def _publish_failure_artifacts(
         ),
         has_agent_proposal=has_agent_proposal,
     )
-    log_issue_artifacts(ctx.run_id, ctx.issues)
 
 
 def _start_failure_run(

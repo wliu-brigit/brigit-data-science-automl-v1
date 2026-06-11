@@ -23,7 +23,10 @@ DEFAULT_MAX_BYTES = 20 * 1024**3  # 20 GB — a couple of full datasets
 
 
 def dataset_cache() -> BlobCache:
-    root = Path(os.environ.get(ENV_CACHE_DIR) or DEFAULT_CACHE_DIR).expanduser()
+    # resolve() normalizes to an absolute path. A relative AUTOML_CACHE_DIR
+    # still resolves per-process (against each process's cwd) — set an
+    # absolute path when subprocesses are in play.
+    root = Path(os.environ.get(ENV_CACHE_DIR) or DEFAULT_CACHE_DIR).expanduser().resolve()
     max_bytes = int(os.environ.get(ENV_CACHE_MAX_BYTES) or DEFAULT_MAX_BYTES)
     return BlobCache(root / "datasets", max_bytes=max_bytes)
 

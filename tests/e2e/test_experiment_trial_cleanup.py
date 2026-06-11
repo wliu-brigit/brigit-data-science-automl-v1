@@ -78,11 +78,12 @@ def test_experiment_trial_cleanup_gate():
         report = delete_experiment(experiment_id, apply=True, session=active)
         assert report.applied is True
         assert gcs.list_blob_names(route_prefix) == []
-        assert (
-            mlflow_client.raw()
-            .get_experiment_by_name(f"{namespace}/{active.project_name}/{experiment_id}")
-            .lifecycle_stage
-            == "deleted"
-        )
+        # Delete archives the route first: renamed to deleted/<route>, the
+        # original name freed (see automl/project/cleanup.py).
+        route = f"{namespace}/{active.project_name}/{experiment_id}"
+        assert mlflow_client.raw().get_experiment_by_name(route) is None
+        archived = mlflow_client.raw().get_experiment_by_name(f"deleted/{route}")
+        assert archived is not None
+        assert archived.lifecycle_stage == "deleted"
     finally:
         clear_session()

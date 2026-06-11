@@ -13,11 +13,17 @@ from automl.agent.timeline import handle_event, publish
 from automl.data import materialize
 from automl.experiment import delete as delete_experiment
 from automl.experiment import leaderboard
+from automl.mlflow import client as mlflow_client
 from automl.mlflow import tags
 from automl.mlflow import trial as mlflow_trial
 from automl.project import clear_session, use_project
 from automl.runner import run_trial
-from automl.trial import TrialStatus, create
+from automl.trial import TrialStatus
+# Import the function from its module directly: the package's lazy
+# `create` attribute is shadowed by the submodule of the same name once
+# anything imports automl.trial.create (the CLI does), yielding a module
+# instead of the callable depending on import order.
+from automl.trial.create import create
 from automl.agent import validate_proposal
 
 pytestmark = [pytest.mark.e2e, pytest.mark.qa]
@@ -85,9 +91,17 @@ def test_generated_trial_folder_full_loop_gate():
         }
         assert "source/model.py" not in artifact_paths
         assert "agent/proposer/proposal.json" in artifact_paths
+        # The code bundle rides the MLflow-3 logged model: the run's own
+        # artifact walk doesn't surface the virtual model/ tree, but a direct
+        # model/code listing resolves through the runs:/<id>/model compat path
+        # (same mechanism load_model_source uses).
+        code_paths = [
+            str(item.path)
+            for item in mlflow_client.raw().list_artifacts(result.run_id, "model/code")
+        ]
         assert any(
             path.startswith("model/code/trial_model_") and path.endswith(".py")
-            for path in artifact_paths
+            for path in code_paths
         )
         assert not any("/__pycache__/" in path or path.endswith(".pyc") for path in artifact_paths)
         assert not any("/experiments/" in path for path in artifact_paths)

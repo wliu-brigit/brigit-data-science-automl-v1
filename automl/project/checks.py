@@ -197,12 +197,12 @@ def snowflake_connection(*, config: Any, probe: bool | None = None) -> Iterable[
     config_skips = bool(getattr(run_config, "skip_snowflake_live_check", False))
     skip_probe = (not probe) if probe is not None else config_skips
     if skip_probe:
+        cause = "probe override" if probe is not None else "RUN_CONFIG.skip_snowflake_live_check"
         yield Issue(
             level="warning",
             check="project.connections.snowflake",
             message=(
-                "Snowflake live probe skipped "
-                "(RUN_CONFIG.skip_snowflake_live_check / probe override); "
+                f"Snowflake live probe skipped ({cause}); "
                 "env and SQL-file checks still ran"
             ),
         )

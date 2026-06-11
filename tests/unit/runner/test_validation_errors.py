@@ -1,4 +1,6 @@
+import json
 import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import pandas as pd
@@ -9,6 +11,16 @@ from automl.project import ProjectConfig, Session
 from automl.runner import artifacts, serving_validation
 
 pytestmark = pytest.mark.unit
+
+
+class _FakeConfig:
+    mlflow_tracking_uri = "http://127.0.0.1:9"
+    repo_root = Path(".")
+    run_config = None
+
+
+class _FakeSession:
+    config = _FakeConfig()
 
 
 def _session(tmp_path):
@@ -130,3 +142,25 @@ def test_validation_publish_uses_local_artifact_writer(tmp_path, monkeypatch):
         ("run-1", "validation/latency_detail.json", True),
         ("run-1", "validation/report.json", True),
     ]
+
+
+def test_timeout_report_serializes_with_bytes_stderr(tmp_path, monkeypatch):
+    def _raise_timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=["python"], timeout=7, stderr=b"\xff boom \xfe")
+
+    monkeypatch.setattr(serving_validation.subprocess, "run", _raise_timeout)
+    report_path = tmp_path / "report.json"
+    report = serving_validation._run_pyfunc_validation(
+        run_id="run123",
+        active=_FakeSession(),
+        input_parquet=tmp_path / "input.parquet",
+        input_csv=tmp_path / "input.csv",
+        expected_parquet=tmp_path / "expected.parquet",
+        input_schema=tmp_path / "input_schema.json",
+        report_path=report_path,
+        tolerance=1e-10,
+    )
+    assert report["status"] == "failed"
+    assert report["error_class"] == "TimeoutExpired"
+    assert isinstance(report["stderr_tail"], str)
+    assert json.loads(report_path.read_text(encoding="utf-8"))["status"] == "failed"

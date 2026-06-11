@@ -25,6 +25,18 @@ from automl.runner.timing import TimingRecorder, timed_phase
 _VALIDATION_TIMEOUT_S = 120
 
 
+def _decode_tail(raw: object, *, limit: int = 1000) -> str:
+    """Last ``limit`` chars of subprocess output, always as ``str``.
+
+    ``TimeoutExpired.stderr`` is bytes even under ``text=True``.
+    """
+    if raw is None:
+        return ""
+    if isinstance(raw, bytes):
+        return raw[-limit:].decode("utf-8", "replace")
+    return str(raw)[-limit:]
+
+
 def log_validation_artifacts(
     *,
     run_id: str,
@@ -533,7 +545,7 @@ except Exception as exc:
     except subprocess.TimeoutExpired as exc:
         # Don't crash the trial: record a specific failure report so the run has
         # something actionable (alongside the fixtures already published).
-        stderr_tail = (exc.stderr or b"")[-1000:] if isinstance(exc.stderr, bytes) else (exc.stderr or "")[-1000:]
+        stderr_tail = _decode_tail(exc.stderr)
         report = {
             "schema_version": 1,
             "status": "failed",
@@ -561,13 +573,13 @@ except Exception as exc:
             "row_count": 0,
             "max_abs_diff": None,
             "tolerance": tolerance,
-            "error": completed.stderr[-1000:],
+            "error": _decode_tail(completed.stderr),
         }
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     if not isinstance(report, dict):
         raise ValidationError("validation report must be a JSON object")
     if completed.returncode != 0 and "error" not in report:
-        report["error"] = completed.stderr[-1000:]
+        report["error"] = _decode_tail(completed.stderr)
     return report
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -19,10 +20,29 @@ from automl.project import Session
 from automl.runner.timing import TimingRecorder, timed_phase
 
 
-# Wall-clock budget for the serving-validation subprocess. With the logged-model
-# URI (``models:/<id>``) the model now loads in well under this; the cap only
-# guards a genuinely pathological run rather than a slow artifact resolution.
-_VALIDATION_TIMEOUT_S = 120
+# Fallback wall-clock budget for the serving-validation subprocess when the
+# session has no RUN_CONFIG. Projects tune this via
+# RUN_CONFIG.serving_validation_seconds (default 300 — the observed full-data
+# baseline sat at 120.07s, so the old 120s cap was boundary-tight).
+_DEFAULT_VALIDATION_TIMEOUT_S = 300
+
+
+def _validation_timeout_seconds(active: Session) -> int:
+    run_config = getattr(active.config, "run_config", None)
+    value = getattr(run_config, "serving_validation_seconds", None)
+    return int(value) if value else _DEFAULT_VALIDATION_TIMEOUT_S
+
+
+def _decode_tail(raw: object, *, limit: int = 1000) -> str:
+    """Last ``limit`` chars of subprocess output, always as ``str``.
+
+    ``TimeoutExpired.stderr`` is bytes even under ``text=True``.
+    """
+    if raw is None:
+        return ""
+    if isinstance(raw, bytes):
+        return raw[-limit:].decode("utf-8", "replace")
+    return str(raw)[-limit:]
 
 
 def log_validation_artifacts(
@@ -35,6 +55,7 @@ def log_validation_artifacts(
     model_registry,
     timing: TimingRecorder | None = None,
     model_uri: str | None = None,
+    context=None,
 ) -> dict[str, object]:
     tolerance = 1e-10
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -112,6 +133,7 @@ def log_validation_artifacts(
                 report_path=report_path,
                 tolerance=tolerance,
                 model_uri=model_uri,
+                context=context,
             )
         with timed_phase(timing, "validation_publish"):
             if latency_path.exists():
@@ -126,6 +148,12 @@ def log_validation_artifacts(
                     json.dumps(latency_detail, indent=2),
                     encoding="utf-8",
                 )
+                if context is not None:
+                    context.record_issue(
+                        "validation latency not measured (validation failed)",
+                        phase="validation_publish",
+                        severity="warning",
+                    )
             report = _validation_report_document(
                 raw_report,
                 run_id=run_id,
@@ -202,11 +230,13 @@ def _run_pyfunc_validation(
     report_path: Path,
     tolerance: float,
     model_uri: str | None = None,
+    context=None,
 ) -> dict[str, object]:
     # Prefer the MLflow 3 logged-model URI (``models:/<id>``). It resolves
     # straight to the model's artifact location; the legacy ``runs:/<run>/model``
     # fallback first probes the (empty) run artifact path, which 500s and is then
     # retried.
+    timeout_s = _validation_timeout_seconds(active)
     resolved_model_uri = model_uri or f"runs:/{run_id}/model"
     script = r"""
 import json
@@ -527,13 +557,13 @@ except Exception as exc:
             env=child_env,
             capture_output=True,
             text=True,
-            timeout=_VALIDATION_TIMEOUT_S,
+            timeout=timeout_s,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
         # Don't crash the trial: record a specific failure report so the run has
         # something actionable (alongside the fixtures already published).
-        stderr_tail = (exc.stderr or b"")[-1000:] if isinstance(exc.stderr, bytes) else (exc.stderr or "")[-1000:]
+        stderr_tail = _decode_tail(exc.stderr)
         report = {
             "schema_version": 1,
             "status": "failed",
@@ -542,13 +572,42 @@ except Exception as exc:
             "max_abs_diff": None,
             "tolerance": tolerance,
             "error": (
-                f"validation subprocess exceeded {_VALIDATION_TIMEOUT_S}s "
-                f"loading/benchmarking {resolved_model_uri!r}"
+                f"validation subprocess exceeded {timeout_s}s "
+                f"loading/benchmarking {resolved_model_uri!r} "
+                "(RUN_CONFIG.serving_validation_seconds)"
             ),
             "error_class": "TimeoutExpired",
             "stderr_tail": stderr_tail,
         }
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        if context is not None:
+            context.record_issue(report["error"], phase="validation", severity="error")
+        return report
+    if completed.returncode < 0:
+        signum = -completed.returncode
+        try:
+            signal_name = signal.Signals(signum).name
+        except ValueError:
+            signal_name = f"signal {signum}"
+        report = {
+            "schema_version": 1,
+            "status": "failed",
+            "model_uri": resolved_model_uri,
+            "row_count": 0,
+            "max_abs_diff": None,
+            "tolerance": tolerance,
+            "error": (
+                f"validation subprocess died on {signal_name} "
+                f"(returncode {completed.returncode}); any partial report is untrusted"
+            ),
+            "error_class": "SignalExit",
+            "signal": signum,
+            "signal_name": signal_name,
+            "stderr_tail": _decode_tail(completed.stderr),
+        }
+        report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+        if context is not None:
+            context.record_issue(report["error"], phase="validation", severity="error")
         return report
     if report_path.exists():
         with report_path.open(encoding="utf-8") as handle:
@@ -561,13 +620,13 @@ except Exception as exc:
             "row_count": 0,
             "max_abs_diff": None,
             "tolerance": tolerance,
-            "error": completed.stderr[-1000:],
+            "error": _decode_tail(completed.stderr),
         }
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
     if not isinstance(report, dict):
         raise ValidationError("validation report must be a JSON object")
     if completed.returncode != 0 and "error" not in report:
-        report["error"] = completed.stderr[-1000:]
+        report["error"] = _decode_tail(completed.stderr)
     return report
 
 
@@ -602,6 +661,9 @@ def _validation_report_document(
     }
     if raw_report.get("error"):
         document["error"] = raw_report["error"]
+    for key in ("error_class", "signal", "signal_name", "stderr_tail"):
+        if raw_report.get(key) not in (None, ""):
+            document[key] = raw_report[key]
     return document
 
 

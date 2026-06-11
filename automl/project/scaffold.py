@@ -128,7 +128,13 @@ EVAL = EvalSpec(primary=Auc())
 #                    orchestrates, the proposer designs the next trial, the
 #                    coder implements it. Each is ModelRoute(model, effort);
 #                    effort is one of "low" / "medium" / "high".
-# per_trial_seconds  hard time budget for a single trial.
+# per_trial_seconds  advisory time budget for a single trial, surfaced to
+#                    the proposer/coder as a constraint — not enforced as a
+#                    hard kill (only serving_validation_seconds is enforced).
+# serving_validation_seconds  wall-clock budget (default 300) for the post-fit
+#                    serving-validation subprocess; raise for slow/VPN loads.
+# skip_snowflake_live_check   bool (default False); set True to skip the live
+#                    SELECT 1 probe when off-VPN — env and SQL checks still run.
 # Deeper reference: agent-skills/references/setup/run-config.md
 
 RUN_CONFIG = RunConfig(

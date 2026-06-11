@@ -1188,3 +1188,26 @@ def test_retired_top_level_verbs_are_not_registered(verb):
 
     with pytest.raises(SystemExit):
         main([verb])
+
+
+def test_validate_project_has_probe_snowflake_flag():
+    from automl.cli import build_parser
+
+    parser = build_parser()
+    validate_parser = _subparser(parser, "validate", "project")
+    options = _option_strings(validate_parser)
+    assert "--probe-snowflake" in options
+    assert "--no-probe-snowflake" in options
+
+
+def test_data_cache_verbs_exist():
+    from automl.cli import build_parser
+
+    parser = build_parser()
+    cache_parser = _subparser(parser, "data", "cache")
+    subparser_action = next(
+        action
+        for action in cache_parser._actions
+        if isinstance(action, argparse._SubParsersAction)
+    )
+    assert set(subparser_action.choices) == {"list", "prune", "clear"}

@@ -134,6 +134,8 @@ class RunConfig:
     per_trial_seconds: int
     train_split: str
     eval_split: str
+    serving_validation_seconds: int
+    skip_snowflake_live_check: bool
 
     def __init__(
         self,
@@ -144,6 +146,8 @@ class RunConfig:
         per_trial_seconds: int,
         train_split: str = "train",
         eval_split: str = "test",
+        serving_validation_seconds: int = 300,
+        skip_snowflake_live_check: bool = False,
     ) -> None:
         chosen_splits = splits if splits is not None else Splits()
         if not isinstance(chosen_splits, Splits):
@@ -164,6 +168,19 @@ class RunConfig:
             raise ValueError(
                 f"per_trial_seconds must be a positive integer, got {per_trial_seconds!r}"
             )
+        if (
+            isinstance(serving_validation_seconds, bool)
+            or not isinstance(serving_validation_seconds, int)
+            or serving_validation_seconds < 1
+        ):
+            raise ValueError(
+                f"serving_validation_seconds must be a positive integer, got {serving_validation_seconds!r}"
+            )
+        if not isinstance(skip_snowflake_live_check, bool):
+            raise TypeError(
+                "skip_snowflake_live_check must be a bool, "
+                f"got {type(skip_snowflake_live_check).__name__}"
+            )
         chosen_splits.resolve(train_split)
         chosen_splits.resolve(eval_split)
 
@@ -173,5 +190,7 @@ class RunConfig:
         object.__setattr__(self, "per_trial_seconds", per_trial_seconds)
         object.__setattr__(self, "train_split", train_split)
         object.__setattr__(self, "eval_split", eval_split)
+        object.__setattr__(self, "serving_validation_seconds", serving_validation_seconds)
+        object.__setattr__(self, "skip_snowflake_live_check", skip_snowflake_live_check)
 
 __all__ = ["ModelRoute", "ModelsConfig", "RunConfig", "Splits"]

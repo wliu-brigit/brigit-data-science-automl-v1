@@ -16,9 +16,15 @@ fraud_anomaly_detection/
 │   ├── validation.py        #   refresh the evidence doc: uv run python -m ...scenarios.validation
 │   └── __init__.py          #   bound register API: SCENARIOS / assign / residual_mask
 ├── PROJECT_INSTRUCTIONS.md  # domain guidance the agent loop reads every turn
-├── data/queries/            # base_table.sql + training_data.sql (Snowflake)
+├── data/
+│   ├── queries/             # base_table.sql + training_data.sql (Snowflake)
+│   ├── sample/              # local sample parquet (gitignored)
+│   └── graph/               # built graph stores, *.duckdb (gitignored, rebuildable)
 ├── eval/                    # custom Metric classes (automl.eval protocol)
 ├── model/                   # custom transformers / pipeline overrides
+├── graph/                   # persisted entity-graph store library
+│                            #   build / load / queries / asof (leak-free) / discover (queues)
+├── analysis/                # read-only investigation runners — see analysis/README.md
 └── tests/                   # project-owned tests; a bare `pytest` runs them
 ```
 
@@ -26,6 +32,23 @@ Project code mirrors the library package it extends, so imports read the
 same on both sides: `from projects.fraud_anomaly_detection.eval.metrics import ...`
 next to `from automl.eval import ...`. Keep project tests in `tests/` here —
 never in the repo-level `tests/` tree, which belongs to the core library.
+
+## Project-specific dependencies
+
+Shared tooling lives in the repo's default `dev` dependency group. Packages
+only this project needs live in the `fraud` dependency group (the same
+`[dependency-groups]` mechanism as `dev`, one shared lockfile — consistent
+versions repo-wide, opt-in install):
+
+```bash
+uv sync --group fraud                 # opt in, once per checkout
+uv add --group fraud <package>        # add a new project dependency
+uv run --group fraud python -m ...    # or per command, no sync needed
+```
+
+Current contents: `duckdb` + `igraph` — the persisted entity-graph store
+(`graph/`). Tests importing group-only packages guard with
+`pytest.importorskip`, so a bare `pytest` stays green without the group.
 
 ## Writing PROJECT_INSTRUCTIONS.md
 

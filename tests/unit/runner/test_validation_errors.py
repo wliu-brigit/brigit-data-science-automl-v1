@@ -1,3 +1,4 @@
+import json
 import subprocess
 from types import SimpleNamespace
 
@@ -6,6 +7,7 @@ import pytest
 
 from automl.errors import ValidationError
 from automl.project import ProjectConfig, Session
+from automl.project.run_config import ModelRoute, ModelsConfig, RunConfig
 from automl.runner import artifacts, serving_validation
 
 pytestmark = pytest.mark.unit
@@ -130,3 +132,141 @@ def test_validation_publish_uses_local_artifact_writer(tmp_path, monkeypatch):
         ("run-1", "validation/latency_detail.json", True),
         ("run-1", "validation/report.json", True),
     ]
+
+
+def test_timeout_report_serializes_with_bytes_stderr(tmp_path, monkeypatch):
+    def _raise_timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=["python"], timeout=7, stderr=b"\xff boom \xfe")
+
+    monkeypatch.setattr(serving_validation.subprocess, "run", _raise_timeout)
+    report_path = tmp_path / "report.json"
+    report = serving_validation._run_pyfunc_validation(
+        run_id="run123",
+        active=_session(tmp_path),
+        input_parquet=tmp_path / "input.parquet",
+        input_csv=tmp_path / "input.csv",
+        expected_parquet=tmp_path / "expected.parquet",
+        input_schema=tmp_path / "input_schema.json",
+        report_path=report_path,
+        tolerance=1e-10,
+    )
+    assert report["status"] == "failed"
+    assert report["error_class"] == "TimeoutExpired"
+    assert isinstance(report["stderr_tail"], str)
+    assert json.loads(report_path.read_text(encoding="utf-8"))["status"] == "failed"
+
+
+def test_validation_timeout_uses_run_config(tmp_path, monkeypatch):
+    captured = {}
+
+    def _capture_run(*args, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
+        raise subprocess.TimeoutExpired(cmd=["python"], timeout=kwargs.get("timeout"))
+
+    monkeypatch.setattr(serving_validation.subprocess, "run", _capture_run)
+
+    _models = ModelsConfig(
+        manager=ModelRoute("sonnet", "medium"),
+        proposer=ModelRoute("sonnet", "medium"),
+        coder=ModelRoute("sonnet", "medium"),
+    )
+    real_run_config = RunConfig(
+        experiment_id="exp",
+        models=_models,
+        per_trial_seconds=600,
+        serving_validation_seconds=77,
+    )
+    active = Session(
+        config=ProjectConfig(
+            project_name="demo",
+            repo_root=tmp_path,
+            project_dir=tmp_path / "projects" / "demo",
+            config_path=tmp_path / "projects" / "demo" / "config.py",
+            gcs_bucket="bucket",
+            mlflow_tracking_uri="file:///tmp/mlruns",
+            run_config=real_run_config,
+        )
+    )
+
+    report = serving_validation._run_pyfunc_validation(
+        run_id="run123",
+        active=active,
+        input_parquet=tmp_path / "input.parquet",
+        input_csv=tmp_path / "input.csv",
+        expected_parquet=tmp_path / "expected.parquet",
+        input_schema=tmp_path / "input_schema.json",
+        report_path=tmp_path / "report.json",
+        tolerance=1e-10,
+    )
+    assert captured["timeout"] == 77
+    assert "77" in report["error"]
+
+
+def test_signal_killed_child_produces_labeled_report(tmp_path, monkeypatch):
+    def _fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(
+            args=args[0] if args else [], returncode=-11, stdout="", stderr=""
+        )
+
+    monkeypatch.setattr(serving_validation.subprocess, "run", _fake_run)
+    report_path = tmp_path / "report.json"
+    report = serving_validation._run_pyfunc_validation(
+        run_id="run123",
+        active=_session(tmp_path),
+        input_parquet=tmp_path / "input.parquet",
+        input_csv=tmp_path / "input.csv",
+        expected_parquet=tmp_path / "expected.parquet",
+        input_schema=tmp_path / "input_schema.json",
+        report_path=report_path,
+        tolerance=1e-10,
+    )
+    assert report["status"] == "failed"
+    assert report["error_class"] == "SignalExit"
+    assert report["signal"] == 11
+    assert report["signal_name"] == "SIGSEGV"
+    assert "SIGSEGV" in report["error"]
+    assert json.loads(report_path.read_text(encoding="utf-8"))["error_class"] == "SignalExit"
+
+
+def test_report_document_preserves_diagnostic_fields():
+    raw = {
+        "status": "failed",
+        "row_count": 0,
+        "max_abs_diff": None,
+        "error": "validation subprocess died on SIGSEGV",
+        "error_class": "SignalExit",
+        "signal": 11,
+        "signal_name": "SIGSEGV",
+        "stderr_tail": "boom",
+    }
+    document = serving_validation._validation_report_document(
+        raw, run_id="run123", tolerance=1e-10
+    )
+    assert document["error_class"] == "SignalExit"
+    assert document["signal"] == 11
+    assert document["signal_name"] == "SIGSEGV"
+    assert document["stderr_tail"] == "boom"
+
+
+def test_timeout_records_ledger_issue(tmp_path, monkeypatch):
+    from automl.runner.context import TrialContext
+
+    def _raise_timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd=["python"], timeout=7, stderr=b"slow")
+
+    monkeypatch.setattr(serving_validation.subprocess, "run", _raise_timeout)
+    ctx = TrialContext()
+    serving_validation._run_pyfunc_validation(
+        run_id="run123",
+        active=_session(tmp_path),
+        input_parquet=tmp_path / "input.parquet",
+        input_csv=tmp_path / "input.csv",
+        expected_parquet=tmp_path / "expected.parquet",
+        input_schema=tmp_path / "input_schema.json",
+        report_path=tmp_path / "report.json",
+        tolerance=1e-10,
+        context=ctx,
+    )
+    (issue,) = ctx.issues.snapshot()
+    assert issue["severity"] == "error"
+    assert "exceeded" in issue["message"]

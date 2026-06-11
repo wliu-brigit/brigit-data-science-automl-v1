@@ -15,7 +15,6 @@ from automl.project import (
     Session,
     validate_project,
 )
-
 pytestmark = pytest.mark.unit
 
 
@@ -151,7 +150,13 @@ def test_validate_project_live_passes_when_probes_succeed(monkeypatch, tmp_path)
     assert report.issues == []
 
 
-def _snowflake_session(monkeypatch, tmp_path, *, with_sql_files: bool = True):
+def _snowflake_session(
+    monkeypatch,
+    tmp_path,
+    *,
+    with_sql_files: bool = True,
+    skip_snowflake_probe: bool = False,
+):
     """A live-validation session over a Snowflake-backed project, GCS/MLflow mocked."""
     from automl.data import SnowflakeSource
     from automl.mlflow import client as mlflow_client
@@ -162,7 +167,18 @@ def _snowflake_session(monkeypatch, tmp_path, *, with_sql_files: bool = True):
     monkeypatch.setattr(gcs, "delete_prefix", lambda *args, **kwargs: 0)
     monkeypatch.setattr(mlflow_client, "check_connection", lambda tracking_uri: None)
 
+    base_run_config = RunConfig(
+        experiment_id="baseline",
+        models=ModelsConfig(
+            manager=ModelRoute("sonnet", "medium"),
+            proposer=ModelRoute("sonnet", "medium"),
+            coder=ModelRoute("sonnet", "medium"),
+        ),
+        per_trial_seconds=60,
+        skip_snowflake_live_check=skip_snowflake_probe,
+    )
     session = _session(tmp_path)
+    object.__setattr__(session.config, "run_config", base_run_config)
     if with_sql_files:
         queries = session.config.project_dir / "data" / "queries"
         queries.mkdir(parents=True, exist_ok=True)
@@ -243,6 +259,89 @@ def test_validate_project_live_snowflake_missing_sql_file_errors(monkeypatch, tm
     messages = "\n".join(issue.message for issue in issues)
     assert "base_table_sql" in messages
     assert "training_data_sql" in messages
+
+
+def test_config_flag_skips_probe_with_warning(monkeypatch, tmp_path):
+    """skip_snowflake_live_check=True + probe=None → no connection attempt, one warning."""
+    for name in ("SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"):
+        monkeypatch.setenv(name, "x")
+    probe_calls = []
+    monkeypatch.setattr(
+        "automl.utils.io.snowflake.check_connection",
+        lambda: probe_calls.append(1),
+    )
+    session = _snowflake_session(monkeypatch, tmp_path, skip_snowflake_probe=True)
+
+    report = validate_project(session=session, live=True)
+
+    sf_issues = [i for i in report.issues if i.check == "project.connections.snowflake"]
+    assert probe_calls == []
+    assert any(
+        i.level == "warning"
+        and "skipped" in i.message
+        and "RUN_CONFIG.skip_snowflake_live_check" in i.message
+        for i in sf_issues
+    )
+
+
+def test_probe_true_overrides_config_flag(monkeypatch, tmp_path):
+    """probe=True forces the live probe even when skip_snowflake_live_check=True."""
+    for name in ("SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"):
+        monkeypatch.setenv(name, "x")
+    probe_calls = []
+    monkeypatch.setattr(
+        "automl.utils.io.snowflake.check_connection",
+        lambda: probe_calls.append(1),
+    )
+    session = _snowflake_session(monkeypatch, tmp_path, skip_snowflake_probe=True)
+
+    report = validate_project(session=session, live=True, probe_snowflake=True)
+
+    assert probe_calls == [1]
+    assert not any(
+        "skipped" in i.message
+        for i in report.issues
+        if i.check == "project.connections.snowflake"
+    )
+
+
+def test_probe_false_skips_even_without_config_flag(monkeypatch, tmp_path):
+    """probe=False skips the live probe even when skip_snowflake_live_check=False."""
+    for name in ("SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"):
+        monkeypatch.setenv(name, "x")
+    probe_calls = []
+    monkeypatch.setattr(
+        "automl.utils.io.snowflake.check_connection",
+        lambda: probe_calls.append(1),
+    )
+    # skip_snowflake_probe=False → flag is False; probe=False should still skip
+    session = _snowflake_session(monkeypatch, tmp_path, skip_snowflake_probe=False)
+
+    report = validate_project(session=session, live=True, probe_snowflake=False)
+
+    sf_issues = [i for i in report.issues if i.check == "project.connections.snowflake"]
+    assert probe_calls == []
+    assert any(
+        i.level == "warning"
+        and "skipped" in i.message
+        and "probe override" in i.message
+        for i in sf_issues
+    )
+
+
+def test_env_and_sql_checks_still_run_when_skipping(monkeypatch, tmp_path):
+    """Missing SQL files produce error-level issues even when the live probe is skipped."""
+    for name in ("SNOWFLAKE_ACCOUNT", "SNOWFLAKE_USER", "SNOWFLAKE_PASSWORD"):
+        monkeypatch.setenv(name, "x")
+    monkeypatch.setattr("automl.utils.io.snowflake.check_connection", lambda: None)
+    session = _snowflake_session(
+        monkeypatch, tmp_path, skip_snowflake_probe=True, with_sql_files=False
+    )
+
+    report = validate_project(session=session, live=True)
+
+    sf_issues = [i for i in report.issues if i.check == "project.connections.snowflake"]
+    assert any(i.level == "error" and "file not found" in i.message for i in sf_issues)
 
 
 def test_validate_project_wraps_crashed_domain_checks(monkeypatch, tmp_path):

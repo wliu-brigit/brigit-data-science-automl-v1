@@ -75,6 +75,11 @@ def test_trial_run_manifest_round_trips_current_runner_payload_shape():
                 "schema_version": 1,
             },
             {
+                "path": "trial/issues.json",
+                "content_type": "application/json",
+                "schema_version": 1,
+            },
+            {
                 "path": "validation/data/input.csv",
                 "content_type": "text/csv",
                 "schema_version": 1,

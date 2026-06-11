@@ -16,6 +16,8 @@ htmlcov/
 .env.*
 !.env.example
 *.parquet
+*.duckdb
+*.duckdb.wal
 .ipynb_checkpoints/
 uv.lock
 mlruns/

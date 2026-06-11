@@ -1,103 +1,74 @@
 # Handoff — continue here
 
 Temporary hand-over note: where the last session left off and what's open, so a
-new session can pick up. **Not a changelog** — keep only what's current and
-relevant; detail lives in the project docs. Rewritten at each wrap, not appended
-to.
+new session can pick up cold. **Not a changelog** — keep only what's current and
+relevant. Rewritten at each wrap, not appended to.
 
-**Last updated:** 2026-06-09 (legacy replication complete offline — audited,
-loop-proven, downstream analyses ported; commit + VPN day are what's left)
+> **These docs are best-effort documentation. The code is the source of truth
+> for current behavior.**
 
-## How to pick up (per wendao)
+**Last updated:** 2026-06-11 — branch `core/dataset-read-reliability`. The
+trial-reliability effort is **designed, implemented, reviewed, and live-tested**
+in one pass; the implementation is up as a PR for remote review/merge.
 
-Don't dive into code. (1) Read this plus the project docs below; (2) summarize
-where things stand; (3) **recommend 2–3 options and let wendao pick.** The next
-move is wendao's call, not a queue to drain.
+## What this session did
 
-## What this effort is
+1. **Merged the two reliability efforts into one**:
+   `docs/execution/trial-reliability/` (design ratified with three corrections
+   to the predecessor docs — read `design.md` §"Corrections"; the predecessor
+   folders are gone, findings migrated).
+2. **Implemented all five plans** (subagent-driven; each passed spec + quality
+   review, fixes folded in): serving-validation hardening, content-addressed
+   dataset cache + robust populate, read-once contract builder, TrialContext +
+   issue ledger, `skip_snowflake_live_check`. See
+   `docs/execution/trial-reliability/README.md` for the map.
+3. **Fixed what verification surfaced**: a `faulthandler.enable()` crash under
+   sys-captured stderr (found only by the live e2e), integration-tier cache
+   isolation + a pre-existing env-dependent integration test, and three stale
+   e2e gates (archive-rename delete semantics, MLflow-3 logged-model artifact
+   tree, `automl.trial.create` module-vs-function import collision).
+4. **Docs honesty**: `per_trial_seconds` is now documented everywhere as an
+   advisory budget (decided 2026-06-10; nothing enforces it); only
+   `serving_validation_seconds` is a real timeout. The stale to-do was deleted.
 
-Branch `neobank_NCM_V3_replicate`, project `projects/neobank_ncm/`. Goal:
-**faithfully replicate** the legacy Neobank NCM underwriting model v3 inside
-this harness — same data, same techniques, same metrics — then let the AutoML
-loop explore beyond it. Legacy home (read-only):
-`brigit/data-science/models/underwriting/neobank/new_user/v3.0/`; its
-`notebooks/neobank_ncm_model_v3_final.ipynb` is the canonical reference.
-Everything except running against the real warehouse is **done and
-offline-verified**; the working tree holds the uncommitted checkpoint
-(touches `projects/neobank_ncm/` and `docs/` only — zero core changes).
+## Verification at wrap
 
-## Where things stand (all verified, not just written)
+- `tests/unit` + `tests/contracts`: **647 passed, 1 skipped**.
+- `tests/integration`: **41 passed, 0 failed** (now hermetic).
+- `tests/e2e` (live GCS + local MLflow, Snowflake test excluded, notebooks
+  gated off): **7 passed** including the walking skeleton — the live loop ran
+  materialize → cached reads → trial → eval against the real bucket.
+- Measured: `dataframe_content_hash` ≈ 34s per full-scale neobank slice — with
+  network reads gone, hashing dominates the contract step. Future optimization
+  candidate, deliberately out of scope.
 
-- **Training parity audited line-by-line vs legacy** (notebooks + artifacts):
-  locked params/constraints/features byte-identical (`data/legacy/*.json` ==
-  legacy artifacts), test window confirmed Nov–Dec 2025, derived-feature SQL
-  exact. Two real fixes landed: the preprocessor (medians/OHE) now fits on
-  **known rows only** as legacy did, and the legacy 600K→200K unknown
-  downsample is **replayed exactly** via a materialized
-  `unknown_train_hash_rank` (Snowflake HASH is deterministic) + rank-sorted
-  random_state=42 draw. Baseline checkpoint number = **0.7002**
-  (`test_auc_constrained`); 0.7016 is the unconstrained stretch reference.
-- **Source toggle**: `NEOBANK_NCM_CSV=/path/to.csv` swaps the recipe to a
-  LocalCSVSource at config load; unset = real Snowflake. The whole harness —
-  QA script, loop, tests — runs offline through it.
-- **Agent loop dry-ran end-to-end** (first time ever) under
-  `qa/neobank-loop-dryrun-20260609`: proposed/coded/ran an `lgbm_challenger`
-  (fixture test AUC 0.7346 vs baseline 0.7457). One coder failure
-  (`__file__` path math) became a Trial-code rule in PROJECT_INSTRUCTIONS.
-- **Downstream analyses ported** (wendao pulled the phase forward):
-  `analysis/` (data/scoring/policy/impact) replicates the legacy
-  financial-impact + new-links-eval computations exactly;
-  `scripts/evaluate_new_links_daily.py` logs the QA/eval run to MLflow;
-  `notebooks/financial_impact_analysis.ipynb` mirrors the legacy cell story
-  (parity mode = legacy artifacts; trial mode = any logged model). The RI
-  model is never re-run — its outputs are frozen snapshots. Adversarial
-  parity review + code review done; findings fixed.
-- **Tests: 84 green** — 52 contracts + 32 project (WoE, replay determinism,
-  split isolation incl. oot-unknowns-in-no-split, analysis formulas
-  hand-computed, script e2e with stub model + file MLflow).
+## How to pick up
 
-## Learnings that will bite a new session
+1. **Review/merge the PR** (head `core/dataset-read-reliability-impl`, base
+   `core/dataset-read-reliability` — wendao merges on the remote). Then take
+   `core/dataset-read-reliability` → `main` when ready.
+2. **After it reaches `main`**: move `docs/execution/trial-reliability/` to
+   `docs/archive/` (it records its own completion), and **rebase
+   `neobank_ncm_v3_replicate`** — its band-aids drop out: the
+   `_read_and_verify_dataset` retry (cache replaces it), the `_decode_tail` +
+   timeout patches (landed properly), and `SnowflakeSource(skip_live_check=True)`
+   in `projects/neobank_ncm/config.py` (move to
+   `RUN_CONFIG.skip_snowflake_live_check`).
+3. QA hygiene: this session's e2e routes (plus two stale 2026-06-09 neobank
+   dry-run routes) are **archived** under `deleted/qa/...`; permanent disposal
+   is `automl mlflow purge --scope qa --apply` whenever convenient (local/admin
+   context; consider `mlflow_local gc-auth` after, per machine notes).
 
-- Required transformers must be named entries inside `model.preprocessor`;
-  the prefit-WoE pattern exists because ColumnTransformer refits on the
-  training frame (known-only fit must not see dual-record labels).
-- The runner's automatic train-split eval silently skips here (NULL targets
-  by design) — `train_known` + `scripts/evaluate_split.py` cover it.
-- Trial code must resolve project assets via the package
-  (`projects.neobank_ncm.__file__`), never `__file__` parents math — trials
-  execute from deep trial dirs.
-- The legacy financial notebook's D1 "null-out" was **dead code** (case bug);
-  the port replicates the executed behavior (raw D1 score) — see the comment
-  in `analysis/policy.py`.
-- `import mlflow` is allowed only inside `automl/mlflow` (contract test);
-  project code goes through the seam (`automl.mlflow.trial.artifacts
-  .load_model`, `bound_for` + `raw()`).
-- Synthetic labels train; they never enter a reported metric. The analysis
-  layer's `effective_bad` is policy-analysis-only, same legacy rule.
+## Open / parked
 
-## Open items (options for wendao, roughly in order)
-
-1. **Commit the checkpoint** (working tree: project folder + this file +
-   `docs/to-do/neobank-ncm-vpn-day.md`).
-2. **VPN day** — the full runbook with expected numbers is
-   [`docs/to-do/neobank-ncm-vpn-day.md`](to-do/neobank-ncm-vpn-day.md):
-   flip the toggle, DESCRIBE checks, materialize, baseline vs 0.7002, WoE
-   diff, real loop, then §7 downstream parity (D2 AUC ≈ 0.6935, RI corr
-   0.9999) and the winner's financial analysis.
-3. **Sweep QA namespaces** when done inspecting:
-   `automl project delete --scope qa` (covers the csv-dryrun + loop-dryrun
-   namespaces and the gitignored local state).
-4. Parked design call: core preflight live-probes Snowflake even when the
-   experiment has a pinned dataset (the toggle sidesteps it; a fix would
-   live in `automl/project/checks.py` + the validate recipe).
-5. Next phase after the parity run: the decision-memo write-up the analysis
-   feeds (explicitly out of scope so far).
-
-## Constraints to respect
-
-- **No VPN/Snowflake until the user calls it** — everything must stay
-  runnable offline (the toggle + parquet escape hatches; .env works for
-  MLflow/GCS).
-- Legacy folder is read-only. QA/dev MLflow runs go under `qa/...`
-  namespaces. The `oot` split is touched once, post-AutoML, via
-  `scripts/evaluate_split.py`.
+- `docs/to-do/runner-crash-supervision.md` — a natively-crashed runner still
+  leaves no finalized MLflow record (consciously accepted boundary #3 of the
+  design; ledger JSONL + stderr traceback are the evidence until a supervisor
+  seam exists).
+- Design §3 boundaries #1–#2 remain consciously accepted: the loop still halts
+  on a hard-failed trial, and correctness-failed models stay FINISHED with
+  `validation.status` as the deployability signal (audit of leaderboard
+  consumers still worth doing).
+- `docs/to-do/tiny_eval-retry-orphaned-gcs-artifact.md` (eval-write
+  idempotency) and `multi-runner-architecture.md` (cache eviction concurrency)
+  are untouched, as scoped.

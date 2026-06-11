@@ -9,7 +9,9 @@ from typing import Any
 from automl.validate.base import Issue, ValidationReport, run_check
 
 
-def validate_project(*, session=None, live: bool = False) -> ValidationReport:
+def validate_project(
+    *, session=None, live: bool = False, probe_snowflake: bool | None = None
+) -> ValidationReport:
     """Validate the active project.
 
     Structural checks always run. ``live=True`` adds service connectivity
@@ -61,6 +63,7 @@ def validate_project(*, session=None, live: bool = False) -> ValidationReport:
                 "project.connections.snowflake",
                 snowflake_connection,
                 config=config,
+                probe=probe_snowflake,
             )
         )
     return ValidationReport(issues=issues)
@@ -163,7 +166,7 @@ def mlflow_connection(*, config: Any) -> Iterable[Issue]:
         )
 
 
-def snowflake_connection(*, config: Any) -> Iterable[Issue]:
+def snowflake_connection(*, config: Any, probe: bool | None = None) -> Iterable[Issue]:
     """Live Snowflake probe: env vars present, SQL files on disk, SELECT 1 connects."""
     source = getattr(config.data_spec, "source", None)
     if getattr(source, "kind", "") != "snowflake":
@@ -190,6 +193,20 @@ def snowflake_connection(*, config: Any) -> Iterable[Issue]:
                 check="project.connections.snowflake",
                 message=f"{label} file not found: {resolved}",
             )
+    run_config = getattr(config, "run_config", None)
+    config_skips = bool(getattr(run_config, "skip_snowflake_live_check", False))
+    skip_probe = (not probe) if probe is not None else config_skips
+    if skip_probe:
+        cause = "probe override" if probe is not None else "RUN_CONFIG.skip_snowflake_live_check"
+        yield Issue(
+            level="warning",
+            check="project.connections.snowflake",
+            message=(
+                f"Snowflake live probe skipped ({cause}); "
+                "env and SQL-file checks still ran"
+            ),
+        )
+        return
     try:
         sf.check_connection()
     except Exception as exc:  # noqa: BLE001 - driver errors surface verbatim

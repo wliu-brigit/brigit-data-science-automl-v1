@@ -28,7 +28,9 @@ RUN_CONFIG = RunConfig(
 | `experiment_id` | One modeling cycle within the project, such as `2026-Q2` or `2026-05-07`. Use only letters, numbers, `_`, `-`, and `.`; slashes, spaces, and URI punctuation are rejected. Lex-sortable strings are recommended. |
 | `splits` | Named row-criteria over the materialized dataset, as `Where(...)` predicates. Ops: `== != < <= > >= .isin([...]) .notin([...]) .is_null() .not_null()`, composed with `& \| ~`. See "Splits" below. |
 | `models` | Per-role model routing for the manager, proposer, and coder agents via `ModelsConfig` with `ModelRoute(model, effort)` for each. |
-| `per_trial_seconds` | Timeout budget for a single trial execution. |
+| `per_trial_seconds` | Advisory time budget (seconds) for a single trial, surfaced to the proposer/coder as a planning constraint. Not enforced as a hard kill — the only enforced timeout is `serving_validation_seconds`. |
+| `serving_validation_seconds` | Wall-clock budget (seconds, default 300) for the post-fit serving-validation subprocess. Raise for slow or VPN model loads. |
+| `skip_snowflake_live_check` | `bool`, default `False`. When `True`, skips only the live Snowflake `SELECT 1` probe in `validate --live`; env-var and SQL-file checks still run. Intended for off-VPN work. The CLI flags `--probe-snowflake` / `--no-probe-snowflake` override this per-invocation. |
 
 ## Splits
 

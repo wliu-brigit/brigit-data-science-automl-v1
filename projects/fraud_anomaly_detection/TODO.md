@@ -23,10 +23,14 @@ dilution). `training_data.sql` feeds BOTH train and test; SPLIT_PCT divides them
 1. Re-baseline on v3 with the Aug-2025/mature pool — confirm locked scenarios
    fire (`validation --no-dry-run`), re-measure precision/volume on deeper
    history, establish the new residual.
-2. **★ Graph with the NEW node types** — re-point `analysis/graph_discovery_sweep.py`
-   at `v2_2ac98b52`, add `phone_key`/`address_key` node types (types could reach
-   5). Multi-type density is what worked; this is the direct test of whether v3
-   lifts the v1 ceilings (review-tier, ~0.01% coverage).
+2. **★ Graph with the NEW node types** — via the persisted graph stack (built
+   2026-06-09, replaces the pruned v1 scripts; see `analysis/README.md`):
+   `analysis/graph_store_build.py` (needs `.env` + prod registry) then
+   `graph_question_battery.py` + `graph_discovery_queues.py` with
+   `--store .../fraud_graph_v3.duckdb`. All 7 entity types are already in the
+   store schema; multi-type density is what worked; this is the direct test of
+   whether v3 lifts the v1 ceilings (review-tier, ~0.01% coverage). Leak-free
+   rule measurement: `graph.asof.leakfree_features`.
 3. **Bad-neighbour-count as a model feature** — better-populated now (Aug start
    matures more seeds). Review-tier as a rule; test as a feature.
 4. If graph still caps out → pivot to Tier-3 data for the neobank fast-churn

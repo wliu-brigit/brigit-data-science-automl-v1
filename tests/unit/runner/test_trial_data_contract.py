@@ -120,6 +120,7 @@ def test_slice_hashes_match_direct_slicing(monkeypatch):
         loaded_fit=_loaded_fit(),
     )
     run_config = _run_config()
+    assert len(contract.slices) == 2
     for slice_contract in contract.slices:
         predicate = run_config.splits.resolve(slice_contract.name)
         expected = _FRAME[predicate.mask(_FRAME)].reset_index(drop=True)

@@ -588,6 +588,8 @@ def _trial_data_contract(
                 content_hash=dataframe_content_hash(sliced),
             )
         )
+        # Rebinding alone would keep the previous slice alive while the next
+        # mask/copy evaluates; the del caps the loop at one resident slice.
         del sliced
     contract = TrialDataContract(
         trial=TrialRef(

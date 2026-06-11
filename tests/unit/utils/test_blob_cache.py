@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import time
 from pathlib import Path
 
 import pytest
@@ -89,3 +88,45 @@ def test_keys_are_sanitized_to_safe_dirnames(tmp_path):
     path = cache.get_or_populate("ds/01:sha256:ab", "data.bin", _populate_with(b"x"))
     assert path.parent.name == "ds_01_sha256_ab"
     assert path.parent.parent == cache.root
+
+
+# ---------------------------------------------------------------------------
+# Fix 2: .tmp orphan sweeping
+# ---------------------------------------------------------------------------
+
+
+def test_get_or_populate_sweeps_old_tmp_orphans(tmp_path):
+    """Old .tmp orphans (mtime far in the past) are removed by get_or_populate."""
+    cache = BlobCache(tmp_path / "cache", max_bytes=1_000_000)
+    # Plant a fake orphan with an old mtime.
+    tmp_dir = cache.root / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    orphan = tmp_dir / "orphan_old.tmp"
+    orphan.write_bytes(b"stale bytes")
+    os.utime(orphan, (1, 1))  # mtime = epoch+1s, definitely old
+
+    # Also plant a fresh tmp file that should survive.
+    fresh = tmp_dir / "orphan_fresh.tmp"
+    fresh.write_bytes(b"fresh bytes")
+    # Leave mtime as current (just created).
+
+    cache.get_or_populate("key-fresh", "data.bin", _populate_with(b"ok"))
+
+    assert not orphan.exists(), "old orphan should have been swept"
+    assert fresh.exists(), "fresh tmp file should survive"
+
+
+def test_clear_removes_tmp_dir_contents(tmp_path):
+    """clear() removes all contents of .tmp regardless of age."""
+    cache = BlobCache(tmp_path / "cache", max_bytes=1_000_000)
+    tmp_dir = cache.root / ".tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    orphan = tmp_dir / "leftovers.tmp"
+    orphan.write_bytes(b"crash leftovers")
+    os.utime(orphan, (1, 1))
+
+    cache.get_or_populate("k", "data.bin", _populate_with(b"x"))
+    cache.clear()
+
+    assert not orphan.exists(), ".tmp orphan should be removed by clear()"
+    assert not any(tmp_dir.iterdir()) if tmp_dir.exists() else True

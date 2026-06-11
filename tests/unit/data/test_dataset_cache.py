@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import contextlib
+from unittest.mock import MagicMock
+
+import pandas as pd
 import pytest
 
 from automl.data import cache as dataset_cache_module
-from automl.data.dataset import ComponentHashes, Dataset
+from automl.data import registry as data_registry
+from automl.data.dataset import Dataset
+from automl.errors import DataError, StorageError
 
 pytestmark = pytest.mark.unit
 
@@ -61,11 +67,6 @@ def test_list_prune_clear_round_trip(tmp_path, monkeypatch):
     assert dataset_cache_module.list_cache() == []
 
 
-import pandas as pd
-
-from automl.data import registry as data_registry
-
-
 def test_read_dataset_files_populates_once_then_hits(tmp_path, monkeypatch):
     monkeypatch.setenv("AUTOML_CACHE_DIR", str(tmp_path))
     dataset = _dataset()
@@ -120,3 +121,134 @@ def test_evict_dataset_entry_removes_cached_files(tmp_path, monkeypatch):
     data_registry._read_dataset_files(dataset)
     assert data_registry.evict_dataset_entry(dataset) is True
     assert data_registry.evict_dataset_entry(dataset) is False
+
+
+# ---------------------------------------------------------------------------
+# Fix 1: corrupt cached file self-heals (evict-and-repopulate-once)
+# ---------------------------------------------------------------------------
+
+
+def _make_fake_download(frame, registry_frame, downloads):
+    """Return a fake download function that records calls and writes valid bytes."""
+
+    def fake_download(uri, dest, **kwargs):
+        downloads.append(uri)
+        if str(uri).endswith("data.parquet"):
+            frame.to_parquet(dest, index=False)
+        else:
+            registry_frame.to_csv(dest, index=False)
+
+    return fake_download
+
+
+def test_corrupt_cached_parquet_self_heals(tmp_path, monkeypatch):
+    """Corrupt cached parquet triggers evict + re-download; result is correct."""
+    monkeypatch.setenv("AUTOML_CACHE_DIR", str(tmp_path))
+    dataset = _dataset()
+    frame = pd.DataFrame({"y": [10, 20]})
+    registry_frame = pd.DataFrame({"name": ["y"], "dtype": ["int64"]})
+    downloads = []
+    monkeypatch.setattr(
+        data_registry.gcs,
+        "download_to_file",
+        _make_fake_download(frame, registry_frame, downloads),
+    )
+
+    # Populate the cache with valid bytes.
+    data_registry._read_dataset_files(dataset)
+    assert len(downloads) == 2
+
+    # Corrupt the cached parquet on disk.
+    cache = dataset_cache_module.dataset_cache()
+    key = dataset_cache_module.cache_key(dataset)
+    cached_parquet = cache.path_for(key, "data.parquet")
+    cached_parquet.write_bytes(b"not parquet")
+
+    # The call must succeed, return the correct frame, and re-download.
+    got_registry, got_frame = data_registry._read_dataset_files(dataset)
+    pd.testing.assert_frame_equal(got_frame, frame)
+    pd.testing.assert_frame_equal(got_registry, registry_frame)
+    assert len(downloads) == 4  # 2 original + 2 self-heal re-downloads
+
+
+def test_persistent_corrupt_download_raises_storage_error(tmp_path, monkeypatch):
+    """If GCS keeps returning corrupt bytes, StorageError is raised (no loop)."""
+    monkeypatch.setenv("AUTOML_CACHE_DIR", str(tmp_path))
+    dataset = _dataset()
+
+    def always_corrupt(uri, dest, **kwargs):
+        dest.write_bytes(b"garbage")
+
+    monkeypatch.setattr(data_registry.gcs, "download_to_file", always_corrupt)
+
+    with pytest.raises(StorageError):
+        data_registry._read_dataset_files(dataset)
+
+
+# ---------------------------------------------------------------------------
+# Fix 3: DataError during validate_loaded_dataset evicts + re-raises
+# ---------------------------------------------------------------------------
+
+
+def test_load_dataset_by_id_evicts_on_data_error(tmp_path, monkeypatch):
+    """DataError from validate_loaded_dataset causes cache eviction and re-raise."""
+    monkeypatch.setenv("AUTOML_CACHE_DIR", str(tmp_path))
+    dataset = _dataset()
+    frame = pd.DataFrame({"y": [1, 2]})
+    registry_frame = pd.DataFrame({"name": ["y"], "dtype": ["int64"]})
+
+    monkeypatch.setattr(
+        data_registry.gcs,
+        "download_to_file",
+        _make_fake_download(frame, registry_frame, []),
+    )
+
+    # Fake experiment_artifacts.read_dataset_record to return our dataset dict.
+    dataset_dict = {
+        "id": dataset.id,
+        "identity_hash": dataset.identity_hash,
+        "component_hashes": dataset.component_hashes.to_dict(),
+        "gcs_bucket": dataset.gcs_bucket,
+        "project_name": dataset.project_name,
+        "created_at": dataset.created_at,
+        "source_identity": dataset.source_identity,
+        "n_rows": dataset.n_rows,
+        "n_columns": dataset.n_columns,
+        "target_column": dataset.target_column,
+    }
+    monkeypatch.setattr(
+        data_registry.experiment_artifacts,
+        "read_dataset_record",
+        lambda dataset_id, **_kwargs: dataset_dict,
+    )
+
+    # Fake mlflow_client.bound_for as a no-op context manager.
+    @contextlib.contextmanager
+    def fake_bound_for(*args, **kwargs):
+        yield
+
+    monkeypatch.setattr(data_registry.mlflow_client, "bound_for", fake_bound_for)
+
+    # Force validate_loaded_dataset to raise DataError.
+    monkeypatch.setattr(
+        data_registry,
+        "validate_loaded_dataset",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(DataError("forced")),
+    )
+
+    # Cache entry should not exist yet; populate it first via _read_dataset_files.
+    data_registry._read_dataset_files(dataset)
+    cache = dataset_cache_module.dataset_cache()
+    key = dataset_cache_module.cache_key(dataset)
+    assert cache.path_for(key, "data.parquet").exists()
+
+    # load_dataset_by_id must raise DataError and evict the cache entry.
+    session_mock = MagicMock()
+    session_mock.active_experiment_id = "exp_001"
+    session_mock.config.require_run_config.return_value.splits.resolve.return_value = None
+
+    with pytest.raises(DataError):
+        data_registry.load_dataset_by_id(dataset.id, session=session_mock)
+
+    # Cache entry must be gone.
+    assert not cache.path_for(key, "data.parquet").exists()

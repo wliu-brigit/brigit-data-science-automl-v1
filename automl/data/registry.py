@@ -171,7 +171,8 @@ def _read_dataset_files(dataset: Dataset):
 
     cache = dataset_cache()
     key = cache_key(dataset)
-    try:
+
+    def _populate_files() -> tuple:
         data_path = cache.get_or_populate(
             key,
             "data.parquet",
@@ -182,9 +183,20 @@ def _read_dataset_files(dataset: Dataset):
             "feature_registry.csv",
             lambda tmp: gcs.download_to_file(dataset.registry_gcs_uri, tmp),
         )
-        return pd.read_csv(registry_path), pd.read_parquet(data_path)
-    except Exception as exc:
-        raise StorageError(f"Failed to read dataset {dataset.id!r}") from exc
+        return data_path, registry_path
+
+    last_exc: Exception | None = None
+    for attempt in range(2):
+        try:
+            data_path, registry_path = _populate_files()
+            return pd.read_csv(registry_path), pd.read_parquet(data_path)
+        except Exception as exc:
+            last_exc = exc
+            if attempt == 0:
+                # First parse failure: evict corrupt cached files and retry once.
+                cache.remove(key)
+            # Second failure falls through to raise StorageError below.
+    raise StorageError(f"Failed to read dataset {dataset.id!r}") from last_exc
 
 
 def evict_dataset_entry(dataset: Dataset) -> bool:

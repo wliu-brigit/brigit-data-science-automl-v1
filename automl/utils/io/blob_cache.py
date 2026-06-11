@@ -46,6 +46,7 @@ class BlobCache:
         filename: str,
         populate: Callable[[Path], None],
     ) -> Path:
+        self._sweep_tmp()
         target = self.path_for(key, filename)
         if target.exists():
             _touch(target.parent)
@@ -96,7 +97,33 @@ class BlobCache:
         for entry in self.entries():
             shutil.rmtree(entry.path, ignore_errors=True)
             removed += 1
+        # Remove any .tmp leftovers (crash orphans) regardless of age.
+        tmp_dir = self.root / ".tmp"
+        if tmp_dir.exists():
+            for item in tmp_dir.iterdir():
+                try:
+                    item.unlink()
+                except OSError:
+                    pass
         return removed
+
+    def _sweep_tmp(self, max_age_seconds: float = 3600) -> None:
+        """Remove stale .tmp files (older than max_age_seconds).
+
+        Called at the top of get_or_populate so crash orphans from a prior
+        run are cleaned up before the next populate.  Any OSError is silently
+        ignored — sweeping must never break a populate.
+        """
+        tmp_dir = self.root / ".tmp"
+        if not tmp_dir.exists():
+            return
+        cutoff = time.time() - max_age_seconds
+        for item in tmp_dir.iterdir():
+            try:
+                if item.stat().st_mtime < cutoff:
+                    item.unlink()
+            except OSError:
+                pass
 
     def prune(self, *, max_bytes: int | None = None) -> int:
         """Evict least-recently-used entries until under ``max_bytes``."""

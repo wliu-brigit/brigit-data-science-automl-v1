@@ -187,3 +187,29 @@ def test_serving_validation_seconds_rejects_invalid(bad):
             per_trial_seconds=600,
             serving_validation_seconds=bad,
         )
+
+
+def test_skip_snowflake_live_check_defaults_false():
+    config = RunConfig(experiment_id="exp", models=_models(), per_trial_seconds=600)
+    assert config.skip_snowflake_live_check is False
+
+
+def test_skip_snowflake_live_check_accepts_true():
+    config = RunConfig(
+        experiment_id="exp",
+        models=_models(),
+        per_trial_seconds=600,
+        skip_snowflake_live_check=True,
+    )
+    assert config.skip_snowflake_live_check is True
+
+
+@pytest.mark.parametrize("bad", [1, "true", None])
+def test_skip_snowflake_live_check_rejects_non_bool(bad):
+    with pytest.raises(TypeError):
+        RunConfig(
+            experiment_id="exp",
+            models=_models(),
+            per_trial_seconds=600,
+            skip_snowflake_live_check=bad,
+        )

@@ -164,3 +164,35 @@ def test_timeout_report_serializes_with_bytes_stderr(tmp_path, monkeypatch):
     assert report["error_class"] == "TimeoutExpired"
     assert isinstance(report["stderr_tail"], str)
     assert json.loads(report_path.read_text(encoding="utf-8"))["status"] == "failed"
+
+
+def test_validation_timeout_uses_run_config(tmp_path, monkeypatch):
+    captured = {}
+
+    def _capture_run(*args, **kwargs):
+        captured["timeout"] = kwargs.get("timeout")
+        raise subprocess.TimeoutExpired(cmd=["python"], timeout=kwargs.get("timeout"))
+
+    monkeypatch.setattr(serving_validation.subprocess, "run", _capture_run)
+
+    class _RunConfig:
+        serving_validation_seconds = 77
+
+    class _Config(_FakeConfig):
+        run_config = _RunConfig()
+
+    class _Session:
+        config = _Config()
+
+    report = serving_validation._run_pyfunc_validation(
+        run_id="run123",
+        active=_Session(),
+        input_parquet=tmp_path / "input.parquet",
+        input_csv=tmp_path / "input.csv",
+        expected_parquet=tmp_path / "expected.parquet",
+        input_schema=tmp_path / "input_schema.json",
+        report_path=tmp_path / "report.json",
+        tolerance=1e-10,
+    )
+    assert captured["timeout"] == 77
+    assert "77" in report["error"]

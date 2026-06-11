@@ -19,10 +19,17 @@ from automl.project import Session
 from automl.runner.timing import TimingRecorder, timed_phase
 
 
-# Wall-clock budget for the serving-validation subprocess. With the logged-model
-# URI (``models:/<id>``) the model now loads in well under this; the cap only
-# guards a genuinely pathological run rather than a slow artifact resolution.
-_VALIDATION_TIMEOUT_S = 120
+# Fallback wall-clock budget for the serving-validation subprocess when the
+# session has no RUN_CONFIG. Projects tune this via
+# RUN_CONFIG.serving_validation_seconds (default 300 — the observed full-data
+# baseline sat at 120.07s, so the old 120s cap was boundary-tight).
+_DEFAULT_VALIDATION_TIMEOUT_S = 300
+
+
+def _validation_timeout_seconds(active: Session) -> int:
+    run_config = getattr(active.config, "run_config", None)
+    value = getattr(run_config, "serving_validation_seconds", None)
+    return int(value) if value else _DEFAULT_VALIDATION_TIMEOUT_S
 
 
 def _decode_tail(raw: object, *, limit: int = 1000) -> str:
@@ -219,6 +226,7 @@ def _run_pyfunc_validation(
     # straight to the model's artifact location; the legacy ``runs:/<run>/model``
     # fallback first probes the (empty) run artifact path, which 500s and is then
     # retried.
+    timeout_s = _validation_timeout_seconds(active)
     resolved_model_uri = model_uri or f"runs:/{run_id}/model"
     script = r"""
 import json
@@ -539,7 +547,7 @@ except Exception as exc:
             env=child_env,
             capture_output=True,
             text=True,
-            timeout=_VALIDATION_TIMEOUT_S,
+            timeout=timeout_s,
             check=False,
         )
     except subprocess.TimeoutExpired as exc:
@@ -554,8 +562,9 @@ except Exception as exc:
             "max_abs_diff": None,
             "tolerance": tolerance,
             "error": (
-                f"validation subprocess exceeded {_VALIDATION_TIMEOUT_S}s "
-                f"loading/benchmarking {resolved_model_uri!r}"
+                f"validation subprocess exceeded {timeout_s}s "
+                f"loading/benchmarking {resolved_model_uri!r} "
+                "(RUN_CONFIG.serving_validation_seconds)"
             ),
             "error_class": "TimeoutExpired",
             "stderr_tail": stderr_tail,

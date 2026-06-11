@@ -38,7 +38,10 @@ using these values.
 `automl validate project` probes the connection live for Snowflake-backed
 projects (`project.connections.snowflake`): missing required env vars are an
 error listing exactly which; otherwise it runs `SELECT 1` and surfaces driver
-errors verbatim, and checks both SQL files exist on disk.
+errors verbatim, and checks both SQL files exist on disk. Set
+`RUN_CONFIG.skip_snowflake_live_check = True` to skip only the `SELECT 1` when
+off-VPN (env-var and SQL-file checks still run); `--no-probe-snowflake` does the
+same per-invocation.
 
 ## Common gotchas
 

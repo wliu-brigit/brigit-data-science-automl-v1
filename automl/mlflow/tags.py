@@ -19,6 +19,7 @@ TRIAL_ID = "trial.id"
 TRIAL_NUMBER = "trial.number"
 TRIAL_HYPOTHESIS = "trial.hypothesis"
 TRIAL_TRAINING_ORIGIN = "trial.origin"
+TRIAL_ISSUE_COUNT = "trial.issue_count"
 
 DATA_CONTRACT_URI = "data.contract_artifact"
 MODEL_URI = "model.uri"
@@ -79,6 +80,7 @@ __all__ = [
     "RUN_KIND",
     "TRIAL_ID",
     "TRIAL_HYPOTHESIS",
+    "TRIAL_ISSUE_COUNT",
     "TRIAL_NUMBER",
     "TRIAL_SLUG",
     "TRIAL_STATUS",

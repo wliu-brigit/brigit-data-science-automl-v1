@@ -39,7 +39,9 @@ exit on errors):
   - `project.connections.snowflake` — live probe, emitted only for
     Snowflake-backed projects: missing `SNOWFLAKE_*` env vars → error listing
     exactly which; else `SELECT 1` (driver errors verbatim) and both SQL files
-    must exist on disk
+    must exist on disk. The `SELECT 1` is skipped (warning issued) when
+    `RUN_CONFIG.skip_snowflake_live_check = True` or `--no-probe-snowflake` is
+    passed; env-var and SQL-file checks still run either way.
 
 After running, render a short per-service report: one line per area
 (config, env, placeholders, GCS, MLflow, Snowflake) with pass/fail and the

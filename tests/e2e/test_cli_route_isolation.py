@@ -130,9 +130,13 @@ def test_cli_route_isolates_dry_run_and_namespace_universes(capsys):
         assert qa_delete["applied"] is True
         assert gcs.list_blob_names(qa_prefix) == []
         assert gcs.list_blob_names(real_prefix)
-        qa_experiment = mlflow_client.raw().get_experiment_by_name(qa_route)
-        assert qa_experiment is not None
-        assert qa_experiment.lifecycle_stage == "deleted"
+        # Delete archives the route first: the experiment is renamed to
+        # deleted/<route> and the original name is freed (see
+        # automl/project/cleanup.py).
+        assert mlflow_client.raw().get_experiment_by_name(qa_route) is None
+        qa_archived = mlflow_client.raw().get_experiment_by_name(f"deleted/{qa_route}")
+        assert qa_archived is not None
+        assert qa_archived.lifecycle_stage == "deleted"
         assert mlflow_client.raw().get_experiment_by_name(real_route).lifecycle_stage == "active"
     finally:
         for kwargs in (

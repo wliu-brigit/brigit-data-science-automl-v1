@@ -59,3 +59,64 @@ def test_list_prune_clear_round_trip(tmp_path, monkeypatch):
     assert listed[0]["size_bytes"] == 10
     assert dataset_cache_module.clear_cache() == 1
     assert dataset_cache_module.list_cache() == []
+
+
+import pandas as pd
+
+from automl.data import registry as data_registry
+
+
+def test_read_dataset_files_populates_once_then_hits(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTOML_CACHE_DIR", str(tmp_path))
+    dataset = _dataset()
+    frame = pd.DataFrame({"y": [1, 2]})
+    registry_frame = pd.DataFrame({"name": ["y"], "dtype": ["int64"]})
+    downloads = []
+
+    def fake_download(uri, dest, **kwargs):
+        downloads.append(uri)
+        if str(uri).endswith("data.parquet"):
+            frame.to_parquet(dest, index=False)
+        else:
+            registry_frame.to_csv(dest, index=False)
+
+    monkeypatch.setattr(data_registry.gcs, "download_to_file", fake_download)
+
+    got_registry, got_frame = data_registry._read_dataset_files(dataset)
+    pd.testing.assert_frame_equal(got_frame, frame)
+    pd.testing.assert_frame_equal(got_registry, registry_frame)
+    assert len(downloads) == 2
+
+    data_registry._read_dataset_files(dataset)
+    assert len(downloads) == 2  # cache hit: no new downloads
+
+
+def test_read_dataset_files_wraps_failures_as_storage_error(tmp_path, monkeypatch):
+    from automl.errors import StorageError
+
+    monkeypatch.setenv("AUTOML_CACHE_DIR", str(tmp_path))
+
+    def explode(uri, dest, **kwargs):
+        raise ConnectionError("reset by peer")
+
+    monkeypatch.setattr(data_registry.gcs, "download_to_file", explode)
+    with pytest.raises(StorageError):
+        data_registry._read_dataset_files(_dataset())
+
+
+def test_evict_dataset_entry_removes_cached_files(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUTOML_CACHE_DIR", str(tmp_path))
+    dataset = _dataset()
+    frame = pd.DataFrame({"y": [1]})
+    registry_frame = pd.DataFrame({"name": ["y"], "dtype": ["int64"]})
+
+    def fake_download(uri, dest, **kwargs):
+        if str(uri).endswith("data.parquet"):
+            frame.to_parquet(dest, index=False)
+        else:
+            registry_frame.to_csv(dest, index=False)
+
+    monkeypatch.setattr(data_registry.gcs, "download_to_file", fake_download)
+    data_registry._read_dataset_files(dataset)
+    assert data_registry.evict_dataset_entry(dataset) is True
+    assert data_registry.evict_dataset_entry(dataset) is False

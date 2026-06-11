@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from automl.data.cache import cache_key, dataset_cache
 from automl.data.contract import (
     validate_loaded_dataset,
     validate_trial_data_contract,
@@ -13,12 +14,14 @@ from automl.data.contract import (
 from automl.data.dataset import Dataset, DatasetIndex, LoadedDataset, LoadedSlice
 from automl.data.features import FeatureRegistry
 from automl.data.selection import resolve_active_dataset
+from automl.errors import DataError, StorageError
 from automl.mlflow import client as mlflow_client
 from automl.mlflow import experiment as mlflow_experiment
 from automl.mlflow.trial import artifacts as trial_artifacts
 from automl.mlflow.experiment import artifacts as experiment_artifacts
 from automl.project import Predicate, Session
 from automl.project import session as active_project_session
+from automl.utils.io import gcs
 
 
 def list_datasets(*, session: Session | None = None) -> DatasetIndex:
@@ -63,11 +66,16 @@ def load_dataset_by_id(
     if record is None:
         raise KeyError(f"dataset {dataset_id!r} not found")
     dataset = Dataset.from_dict(record)
-    registry_frame = experiment_artifacts.read_registry(dataset.registry_gcs_uri)
+    registry_frame, df = _read_dataset_files(dataset)
     registry = FeatureRegistry.from_dataframe(registry_frame)
-    df = experiment_artifacts.read_dataset_frame(dataset.data_gcs_uri)
     loaded = LoadedDataset(dataset=dataset, df=df, registry=registry)
-    validate_loaded_dataset(loaded, dataset)
+    try:
+        validate_loaded_dataset(loaded, dataset)
+    except DataError:
+        # Defense in depth: the cached bytes failed the manifest check. Evict
+        # so the next read re-populates from GCS instead of re-failing forever.
+        evict_dataset_entry(dataset)
+        raise
 
     resolved = _resolve_predicate(active, split_name=split_name, predicate=predicate)
     if resolved is None:
@@ -143,6 +151,45 @@ def _resolve_predicate(
     if split_name is not None:
         return active.config.require_run_config().splits.resolve(split_name)
     return predicate
+
+
+def _read_dataset_files(dataset: Dataset):
+    """Read registry + frame through the local content-addressed cache.
+
+    Non-GCS URIs (and records without a content hash) bypass the cache and
+    use the direct artifact readers.
+    """
+    if not (
+        gcs.is_gcs_uri(dataset.data_gcs_uri)
+        and dataset.component_hashes.data_content
+    ):
+        return (
+            experiment_artifacts.read_registry(dataset.registry_gcs_uri),
+            experiment_artifacts.read_dataset_frame(dataset.data_gcs_uri),
+        )
+    import pandas as pd
+
+    cache = dataset_cache()
+    key = cache_key(dataset)
+    try:
+        data_path = cache.get_or_populate(
+            key,
+            "data.parquet",
+            lambda tmp: gcs.download_to_file(dataset.data_gcs_uri, tmp),
+        )
+        registry_path = cache.get_or_populate(
+            key,
+            "feature_registry.csv",
+            lambda tmp: gcs.download_to_file(dataset.registry_gcs_uri, tmp),
+        )
+        return pd.read_csv(registry_path), pd.read_parquet(data_path)
+    except Exception as exc:
+        raise StorageError(f"Failed to read dataset {dataset.id!r}") from exc
+
+
+def evict_dataset_entry(dataset: Dataset) -> bool:
+    """Drop a dataset's cached bytes (used on manifest-verification failure)."""
+    return dataset_cache().remove(cache_key(dataset))
 
 
 __all__ = ["list_datasets", "load_dataset", "load_dataset_by_id", "load_dataset_by_trial"]

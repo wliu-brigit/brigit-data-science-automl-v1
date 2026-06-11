@@ -357,7 +357,11 @@ def test_run_trial_rebinds_explicit_session_and_restores_prior_binding(tmp_path,
 
 def test_run_trial_logs_failure_report_and_traceback_artifacts(tmp_path, monkeypatch):
     repo_root = Path(__file__).resolve().parents[3]
+    fake_gcs = FakeGCSClient()
+    monkeypatch.setattr(gcs, "_gcs_client", lambda: fake_gcs)
     monkeypatch.setenv("MLFLOW_TRACKING_URI", (tmp_path / "mlruns").as_uri())
+    monkeypatch.setenv("GCS_BUCKET", "automl-test-bucket")
+    monkeypatch.setenv("GCS_PREFIX", "runner-local")
 
     # Unique route per run (like the sibling import-failure test): the dataset
     # record lives in this run's fresh MLflow, so re-using a fixed GCS route

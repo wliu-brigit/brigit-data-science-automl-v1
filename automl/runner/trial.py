@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import faulthandler
 import importlib
 import importlib.util
 import sys
@@ -27,17 +28,18 @@ from automl.trial.timing_summary import build_runner_timing_summary
 from automl.utils.hashing import dataframe_content_hash
 
 from .artifacts import (
-    TimingRecorder,
     log_agent_proposal,
     log_data_contract,
     log_failure_artifacts,
     log_feature_artifacts,
+    log_issue_artifacts,
     log_manifest,
     log_model,
     log_timing,
     log_validation_artifacts,
 )
 from .contract import require_validation_passed, validate_fitted_model
+from .context import TrialContext
 from .failures import ExceptionSnapshot, RunnerFailureReport
 
 
@@ -66,6 +68,7 @@ def run_trial(
     dataset_id: str | None = None,
 ) -> TrialResult:
     """Run one project model through the data->fit->eval->log chain."""
+    faulthandler.enable()
 
     # MLflow's HTTP retry budget is capped once, seam-wide, at import of
     # automl.mlflow.client (HTTP_MAX_RETRIES) — no runner-specific override.
@@ -82,18 +85,13 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
     run_config = active.config.require_run_config()
     eval_spec = active.config.require_eval_spec()
     target_col = active.config.target_column
-    run_id = ""
-    trial_number: int | None = None
-    trial_id = ""
-    slug = ""
-    strategy = ""
     model_cls: type[Any] | None = None
-    timing = TimingRecorder()
+    ctx = TrialContext(trial_dir=context.trial_dir)
 
     try:
-        with timing.phase("model_import"):
+        with ctx.phase("model_import"):
             model_cls = _load_model_class(context)
-        with timing.phase("data_load"):
+        with ctx.phase("data_load"):
             if context.dataset_id:
                 loaded_fit = data.load_dataset_by_id(
                     context.dataset_id,
@@ -103,7 +101,7 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
             else:
                 loaded_fit = data.load_dataset(split_name=run_config.train_split, session=active)
         sample = loaded_fit.df.head(200)
-        with timing.phase("pre_fit_validation"):
+        with ctx.phase("pre_fit_validation"):
             require_validation_passed(
                 validate_model(
                     model_cls,
@@ -114,24 +112,24 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
             )
             eval_spec.validate_columns(loaded_fit.df, target_col)
 
-        with timing.phase("mlflow_setup"):
+        with ctx.phase("mlflow_setup"):
             mlflow_experiment.ensure(experiment_id=active.active_experiment_id)
-            trial_number = mlflow_experiment.next_trial_number(
+            ctx.trial_number = mlflow_experiment.next_trial_number(
                 experiment_id=active.active_experiment_id
             )
-            slug = _trial_slug(context, model_cls)
-            strategy = _trial_strategy(context, slug)
-            trial_id = f"{trial_number}_{slug}"
+            ctx.slug = _trial_slug(context, model_cls)
+            ctx.strategy = _trial_strategy(context, ctx.slug)
+            ctx.trial_id = f"{ctx.trial_number}_{ctx.slug}"
 
         with mlflow_trial.active(
-            slug=slug,
-            strategy=strategy,
+            slug=ctx.slug,
+            strategy=ctx.strategy,
             experiment_id=active.active_experiment_id,
         ) as active_run_id:
-            run_id = active_run_id
+            ctx.run_id = active_run_id
             run_tags = {
-                mlflow_tags.TRIAL_NUMBER: trial_number,
-                mlflow_tags.TRIAL_ID: trial_id,
+                mlflow_tags.TRIAL_NUMBER: ctx.trial_number,
+                mlflow_tags.TRIAL_ID: ctx.trial_id,
             }
             if context.metadata is not None:
                 run_tags.update(
@@ -141,18 +139,18 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
                 )
             else:
                 run_tags[mlflow_tags.TRIAL_TRAINING_ORIGIN] = "project"
-            mlflow_trial.set_tags(run_id, run_tags)
+            mlflow_trial.set_tags(ctx.run_id, run_tags)
             mlflow_trial.log_param(
-                run_id,
+                ctx.run_id,
                 mlflow_tags.TRIAL_HYPOTHESIS,
-                _trial_hypothesis(context, slug),
+                _trial_hypothesis(context, ctx.slug),
             )
             model = model_cls()
-            with timing.phase("fit"):
+            with ctx.phase("fit"):
                 fitted = model.fit(loaded_fit.df, loaded_fit.registry, seed=0)
             if fitted is not None:
                 model = fitted
-            with timing.phase("contract_validation"):
+            with ctx.phase("contract_validation"):
                 validate_fitted_model(
                     model,
                     sample=sample.head(10),
@@ -161,26 +159,26 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
 
             model_registry = getattr(model, "feature_registry", loaded_fit.registry)
             has_agent_proposal = False
-            with timing.phase("local_artifacts"):
+            with ctx.phase("local_artifacts"):
                 has_agent_proposal = log_agent_proposal(
-                    run_id=run_id,
+                    run_id=ctx.run_id,
                     trial_dir=context.trial_dir,
                 )
                 log_feature_artifacts(
-                    run_id=run_id,
+                    run_id=ctx.run_id,
                     dataset_registry=loaded_fit.registry,
                     model_registry=model_registry,
                     model=model,
                 )
-            with timing.phase("mlflow_pyfunc_log"):
+            with ctx.phase("mlflow_pyfunc_log"):
                 model_ref = log_model(
-                    run_id=run_id,
+                    run_id=ctx.run_id,
                     active=active,
                     trial_dir=context.trial_dir,
                     model=model,
                     sample=sample,
                 )
-            with timing.phase("evaluation"):
+            with ctx.phase("evaluation"):
                 eval_dataset, _ = prepare_eval_dataset(
                     session=active,
                     dataset_id=loaded_fit.id,
@@ -188,7 +186,7 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
                 )
                 eval_result = evaluate(
                     session=active,
-                    model_run_id=run_id,
+                    model_run_id=ctx.run_id,
                     eval_dataset_id=eval_dataset.id,
                     label=run_config.eval_split,
                     set_as_primary_label=True,
@@ -196,7 +194,8 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
                     _model_feature_registry=model_registry,
                 )
                 _try_log_train_eval(
-                    run_id=run_id,
+                    ctx=ctx,
+                    run_id=ctx.run_id,
                     active=active,
                     model=model,
                     dataset_id=loaded_fit.id,
@@ -205,120 +204,105 @@ def _run_trial(context: TrialExecutionContext) -> TrialResult:
                 )
             contract = _trial_data_contract(
                 active=active,
-                run_id=run_id,
-                trial_id=trial_id,
+                run_id=ctx.run_id,
+                trial_id=ctx.trial_id,
                 loaded_fit=loaded_fit,
             )
-            log_data_contract(run_id, contract)
+            log_data_contract(ctx.run_id, contract)
             validation_report = log_validation_artifacts(
-                run_id=run_id,
+                run_id=ctx.run_id,
                 active=active,
                 model=model,
                 dataset_id=loaded_fit.id,
                 eval_split=run_config.eval_split,
                 model_registry=model_registry,
-                timing=timing,
+                timing=ctx.timing,
                 model_uri=model_ref.logged_uri,
+                context=ctx,
             )
-            timing_summary = build_runner_timing_summary(timing.snapshot())
-            log_timing(run_id, timing_summary)
+            timing_summary = build_runner_timing_summary(ctx.timing.snapshot())
+            log_timing(ctx.run_id, timing_summary)
             log_manifest(
-                run_id=run_id,
+                run_id=ctx.run_id,
                 active=active,
-                trial_id=trial_id,
-                trial_number=trial_number,
-                slug=slug,
-                strategy=strategy,
+                trial_id=ctx.trial_id,
+                trial_number=ctx.trial_number,
+                slug=ctx.slug,
+                strategy=ctx.strategy,
                 contract=contract,
                 eval_result=eval_result,
                 validation_report=validation_report,
                 timing=timing_summary,
                 has_agent_proposal=has_agent_proposal,
             )
+            log_issue_artifacts(ctx.run_id, ctx.issues)
             return TrialResult(
                 status="FINISHED",
-                run_id=run_id,
-                trial_id=trial_id,
-                trial_number=trial_number,
+                run_id=ctx.run_id,
+                trial_id=ctx.trial_id,
+                trial_number=ctx.trial_number,
                 metrics=scalar_metric_records(eval_result.to_dict()),
             )
     except Exception as exc:  # noqa: BLE001 - runner returns a typed failure result
-        if not run_id:
+        if not ctx.run_id:
             failure_run = _start_failure_run(
                 context,
                 active=active,
                 model_cls=model_cls,
-                slug=slug,
-                strategy=strategy,
-                trial_number=trial_number,
+                slug=ctx.slug,
+                strategy=ctx.strategy,
+                trial_number=ctx.trial_number,
             )
             if failure_run is not None:
-                run_id, trial_id, trial_number, slug, strategy = failure_run
+                ctx.run_id, ctx.trial_id, ctx.trial_number, ctx.slug, ctx.strategy = failure_run
                 try:
                     _publish_failure_artifacts(
-                        run_id=run_id,
+                        ctx=ctx,
                         active=active,
-                        trial_id=trial_id,
-                        trial_number=trial_number,
-                        slug=slug,
-                        strategy=strategy,
-                        timing=timing,
                         exc=exc,
-                        trial_dir=context.trial_dir,
                     )
                 finally:
-                    mlflow_trial.end(run_id, "FAILED")
+                    mlflow_trial.end(ctx.run_id, "FAILED")
         else:
             _publish_failure_artifacts(
-                run_id=run_id,
+                ctx=ctx,
                 active=active,
-                trial_id=trial_id,
-                trial_number=trial_number,
-                slug=slug,
-                strategy=strategy,
-                timing=timing,
                 exc=exc,
-                trial_dir=context.trial_dir,
             )
         return TrialResult(
             status="FAILED",
-            run_id=run_id,
-            trial_id=trial_id,
-            trial_number=trial_number,
+            run_id=ctx.run_id,
+            trial_id=ctx.trial_id,
+            trial_number=ctx.trial_number,
             error=format_error_chain(exc),
         )
 
 
 def _publish_failure_artifacts(
     *,
-    run_id: str,
+    ctx: TrialContext,
     active: Session,
-    trial_id: str,
-    trial_number: int | None,
-    slug: str,
-    strategy: str,
-    timing: TimingRecorder,
     exc: BaseException,
-    trial_dir: Path | None,
 ) -> None:
-    has_agent_proposal = log_agent_proposal(run_id=run_id, trial_dir=trial_dir)
+    has_agent_proposal = log_agent_proposal(run_id=ctx.run_id, trial_dir=ctx.trial_dir)
     log_failure_artifacts(
         failure=RunnerFailureReport(
             runner_kind="trial",
-            phase=timing.last_phase or "unknown",
+            phase=ctx.timing.last_phase or "unknown",
             exception=ExceptionSnapshot.from_exception(exc),
-            run_id=run_id,
+            run_id=ctx.run_id,
             project_name=active.project_name,
             experiment_id=active.active_experiment_id,
-            trial_id=trial_id,
-            trial_number=trial_number,
-            trial_slug=slug,
-            trial_strategy=strategy,
-            trial_dir=trial_dir,
-            timing=timing.snapshot(),
+            trial_id=ctx.trial_id,
+            trial_number=ctx.trial_number,
+            trial_slug=ctx.slug,
+            trial_strategy=ctx.strategy,
+            trial_dir=ctx.trial_dir,
+            timing=ctx.timing.snapshot(),
         ),
         has_agent_proposal=has_agent_proposal,
     )
+    log_issue_artifacts(ctx.run_id, ctx.issues)
 
 
 def _start_failure_run(
@@ -610,6 +594,7 @@ def _trial_data_contract(
 
 def _try_log_train_eval(
     *,
+    ctx: TrialContext,
     run_id: str,
     active: Session,
     model,
@@ -632,8 +617,8 @@ def _try_log_train_eval(
             _model=model,
             _model_feature_registry=feature_registry,
         )
-    except Exception:
-        return
+    except Exception as exc:  # noqa: BLE001 - diagnostic stays best-effort, but visibly so
+        ctx.record_issue(exc, phase="evaluation", severity="warning")
 
 
 __all__ = ["TrialResult", "run_trial"]

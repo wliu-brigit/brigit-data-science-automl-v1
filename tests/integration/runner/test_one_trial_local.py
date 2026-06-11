@@ -56,6 +56,16 @@ class FakeBlob:
     def download_as_bytes(self) -> bytes:
         return self._store[(self._bucket, self.name)]
 
+    def download_to_filename(
+        self,
+        filename: str,
+        *,
+        checksum: str | None = None,
+        retry: object = None,
+    ) -> None:
+        del checksum, retry
+        Path(filename).write_bytes(self._store[(self._bucket, self.name)])
+
     def exists(self) -> bool:
         return (self._bucket, self.name) in self._store
 
@@ -130,7 +140,7 @@ def test_run_trial_executes_homecredit_chain_and_logs_artifacts(tmp_path, monkey
         assert eval_loads == [
             (loaded.id, None, Where("SPLIT_PCT") >= 80),
             (loaded.id, None, Where("SPLIT_PCT") < 80),
-            (loaded.id, "test", None),
+            (loaded.id, None, None),
             (loaded.id, "test", None),
         ]
 
@@ -167,6 +177,7 @@ def test_run_trial_executes_homecredit_chain_and_logs_artifacts(tmp_path, monkey
             "features/feature_registry.csv",
             "manifest.json",
             "timing/summary.json",
+            "trial/issues.json",
             "validation/data/input.csv",
             "validation/data/input.parquet",
             "validation/data/expected.parquet",

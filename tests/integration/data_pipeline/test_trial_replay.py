@@ -70,6 +70,16 @@ class FakeBlob:
     def download_as_bytes(self) -> bytes:
         return self._store[(self._bucket, self.name)]
 
+    def download_to_filename(
+        self,
+        filename: str,
+        *,
+        checksum: str | None = None,
+        retry: object = None,
+    ) -> None:
+        del checksum, retry
+        Path(filename).write_bytes(self._store[(self._bucket, self.name)])
+
     def exists(self) -> bool:
         return (self._bucket, self.name) in self._store
 

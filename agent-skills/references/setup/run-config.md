@@ -29,6 +29,7 @@ RUN_CONFIG = RunConfig(
 | `splits` | Named row-criteria over the materialized dataset, as `Where(...)` predicates. Ops: `== != < <= > >= .isin([...]) .notin([...]) .is_null() .not_null()`, composed with `& \| ~`. See "Splits" below. |
 | `models` | Per-role model routing for the manager, proposer, and coder agents via `ModelsConfig` with `ModelRoute(model, effort)` for each. |
 | `per_trial_seconds` | Timeout budget for a single trial execution. |
+| `serving_validation_seconds` | Wall-clock budget (seconds, default 300) for the post-fit serving-validation subprocess. Raise for slow or VPN model loads. |
 
 ## Splits
 

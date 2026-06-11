@@ -129,6 +129,8 @@ EVAL = EvalSpec(primary=Auc())
 #                    coder implements it. Each is ModelRoute(model, effort);
 #                    effort is one of "low" / "medium" / "high".
 # per_trial_seconds  hard time budget for a single trial.
+# serving_validation_seconds  wall-clock budget (default 300) for the post-fit
+#                    serving-validation subprocess; raise for slow/VPN loads.
 # Deeper reference: agent-skills/references/setup/run-config.md
 
 RUN_CONFIG = RunConfig(

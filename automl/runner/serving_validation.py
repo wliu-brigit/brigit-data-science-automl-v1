@@ -648,6 +648,9 @@ def _validation_report_document(
     }
     if raw_report.get("error"):
         document["error"] = raw_report["error"]
+    for key in ("error_class", "signal", "signal_name", "stderr_tail"):
+        if raw_report.get(key) not in (None, ""):
+            document[key] = raw_report[key]
     return document
 
 

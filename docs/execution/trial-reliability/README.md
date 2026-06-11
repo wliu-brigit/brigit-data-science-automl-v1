@@ -44,16 +44,24 @@ three stacked ways:
 
 ## Status
 
-**Design ratified and plans written 2026-06-10** (working session with code
-verification — the design corrects several claims the predecessor docs got
-wrong; see `design.md` §"Corrections"). The three migrated findings in this
-folder are the evidence base.
+**Implemented 2026-06-10** on `core/dataset-read-reliability`: design ratified,
+plans written, and all five plans executed the same day (subagent-driven, each
+with spec + quality review; fixes folded in). The design corrects several
+claims the predecessor docs got wrong — see `design.md` §"Corrections". The
+three migrated findings in this folder are the evidence base; the executed
+[`plans/`](plans/) remain as the implementation record:
 
-Implementation: execute [`plans/`](plans/) in numbered order — each is
-independently landable:
+1. `plan-1-serving-validation-hardening.md`
+2. `plan-2-dataset-cache-and-robust-populate.md`
+3. `plan-3-read-once-contract-builder.md`
+4. `plan-4-trial-context-and-issue-ledger.md`
+5. `plan-5-skip-snowflake-live-check.md`
 
-1. `plan-1-serving-validation-hardening.md` — small, immediate value.
-2. `plan-2-dataset-cache-and-robust-populate.md` — the big win.
-3. `plan-3-read-once-contract-builder.md` — independent of plan 2; better after.
-4. `plan-4-trial-context-and-issue-ledger.md` — widest diff; land last.
-5. `plan-5-skip-snowflake-live-check.md` — companion, any time.
+Verification at completion: `tests/unit` + `tests/contracts` 646 passed /
+1 skipped; `tests/integration` 40 passed / 1 failed — the failure
+(`test_run_trial_logs_failure_report_and_traceback_artifacts`) pre-dates this
+branch (dry-run route + unset `GCS_BUCKET` builds an empty-bucket URI).
+Measured at plan 3: `dataframe_content_hash` ≈ 34s per full-scale neobank
+slice — with the network reads gone, hashing dominates the contract step
+(future optimization candidate, out of scope here). This effort moves to
+`archive/` once merged to `main`.

@@ -49,3 +49,26 @@ def test_decision_report_structure_and_naming():
         "swap_in_count", "swap_out_count", "day1_approval_rate",
     } == set(uw)
     assert uw["approval_rate_delta"] == (uw["candidate_approval_rate"] - uw["v3a_approval_rate"])
+
+
+def test_decision_metrics_and_spec():
+    from projects.neobank_ncm.eval import decision_eval_spec
+    from projects.neobank_ncm.eval.metrics import DecisionReport, Day2KnownAuc
+
+    daily = _scored_daily_with_ltv()
+    y_pred = daily["v3_score"]
+
+    auc_rec = Day2KnownAuc().evaluate(daily, y_pred, "went_dpd45")
+    assert auc_rec["name"] == "day2_known_auc"
+    assert isinstance(auc_rec["value"], float) and 0.0 <= auc_rec["value"] <= 1.0
+
+    rep_rec = DecisionReport().evaluate(daily, y_pred, "went_dpd45")
+    assert rep_rec["name"] == "decision_report"
+    assert "scenarios" in rep_rec["value"]            # structured (non-scalar) survives
+
+    spec = decision_eval_spec()
+    assert spec.primary_name == "day2_known_auc"      # scalar primary
+    out = spec.evaluate(daily, y_pred, "went_dpd45")
+    assert out["primary"] == "day2_known_auc"
+    names = {m["name"] for m in out["metrics"]}
+    assert names == {"day2_known_auc", "decision_report"}

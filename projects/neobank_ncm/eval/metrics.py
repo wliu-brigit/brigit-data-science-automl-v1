@@ -37,8 +37,9 @@ class DecisionReport(Metric):
         self._provenance = provenance
 
     def compute(self, df: pd.DataFrame, y_pred: Any, target_col: str) -> dict:
+        # target_col unused — the decision report always evaluates against went_dpd45
         scored = df.copy()
-        scored["v3_score"] = pd.Series(y_pred).to_numpy()
+        scored["v3_score"] = pd.Series(y_pred, index=df.index).to_numpy()
         return report.build_decision_report(
             scored, headline_scenario=self._headline, provenance=self._provenance
         )

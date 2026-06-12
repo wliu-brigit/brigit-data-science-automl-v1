@@ -263,6 +263,16 @@ def make_synthetic_ltv_table(user_ids, seed: int = 13) -> pd.DataFrame:
     return df
 
 
+def make_synthetic_daily(n_users: int = 400, seed: int = 11) -> pd.DataFrame:
+    """Thin wrapper returning a raw daily frame ready for v3_score assignment.
+
+    Equivalent to ``make_synthetic_daily_table`` without running the scorer,
+    so callers can attach their own ``v3_score`` column before passing the
+    frame to analysis helpers.
+    """
+    return make_synthetic_daily_table(n_users=n_users, seed=seed)
+
+
 class StubDailyModel:
     """Deterministic stand-in scorer: risk rises with balancesd."""
 

@@ -79,20 +79,24 @@ def _user_ltv_from_daily(daily: pd.DataFrame) -> pd.DataFrame:
 def _scenario_ltv(
     daily: pd.DataFrame,
     users: pd.DataFrame,
+    us: pd.DataFrame,
+    lkp: object,
+    ref: dict,
     thresholds: dict,
     scenario_id: int,
 ) -> dict:
-    """LTV-per-link at D90 and D120 for one scenario."""
-    us_raw = impact.merge_ltv(users, _user_ltv_from_daily(daily))
-    ref = impact.historical_reference(us_raw)
-    us, lkp = impact.build_lookup(us_raw)
+    """LTV-per-link at D90 and D120 for one scenario.
 
+    ``us``, ``lkp``, and ``ref`` are the scenario-independent precomputed
+    pieces (``build_lookup`` / ``historical_reference`` outputs) — callers
+    must compute them once and pass them in for all scenarios.
+    """
     _, thr_uw, thr_cle, ko_uw, ko_cle = policy.scenario_map(thresholds)[scenario_id]
     arr = policy.first_approval_days(daily, users["user_id"], thr_uw, thr_cle, ko_uw, ko_cle)
 
-    uw_mask = us["user_id"].isin(set(users["user_id"][arr["uw"] <= 30]))
+    uw_mask = us["user_id"].isin(set(users.loc[arr["uw"] <= 30, "user_id"]))
     cle_mask = (
-        us["user_id"].isin(set(users["user_id"][arr["cle"] <= 30]))
+        us["user_id"].isin(set(users.loc[arr["cle"] <= 30, "user_id"]))
         & ~uw_mask
     )
     lam = pd.Series(
@@ -139,6 +143,12 @@ def build_decision_report(
     -------
     dict
         Structured report per docs/to-do/decision-metric-vocabulary.md.
+
+    Notes
+    -----
+    Mutates ``daily`` in place: ``policy.add_policy_columns`` appends the
+    policy columns (e.g. ``v3a_approved``, ``cle_approved``) directly to the
+    caller's frame.
     """
     policy.add_policy_columns(daily)
     users = policy.collapse_to_users(daily)
@@ -147,10 +157,16 @@ def build_decision_report(
     tables = policy.all_threshold_tables(users, thresholds)
     auc = scoring.d2_known_auc(daily)
 
+    # Scenario-independent LTV setup — computed once, reused across all 7 scenarios.
+    ltv_user = _user_ltv_from_daily(daily)
+    us_raw = impact.merge_ltv(users, ltv_user)
+    ref = impact.historical_reference(us_raw)
+    us, lkp = impact.build_lookup(us_raw)
+
     scenarios: dict = {}
     for scenario_id, (key, ko_gate, objective, table_key) in _SCENARIOS.items():
         table = tables[table_key]
-        ltv = _scenario_ltv(daily, users, thresholds, scenario_id)
+        ltv = _scenario_ltv(daily, users, us, lkp, ref, thresholds, scenario_id)
         scenarios[key] = {
             "ko_gate": ko_gate,
             "objective": objective,

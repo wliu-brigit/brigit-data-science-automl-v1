@@ -50,21 +50,33 @@ def _edge_select(etype: str, col: str) -> str:
     return f"""
         SELECT DISTINCT {ADVANCE_ID} AS advance_id, {USER_ID} AS user_id,
                '{etype}' AS entity_type,
-               CAST({col} AS VARCHAR) AS entity_value, {TS} AS ts
+               CAST({col} AS VARCHAR) AS entity_value, {TS} AS ts,
+               'advance' AS source
         FROM advances
         WHERE {col} IS NOT NULL AND {value} NOT IN ({_sentinel_list()})
     """
+
+
+ICT = "identity_created_time"  # per-user; carried into `users` when available
 
 
 def build_store(
     source: Path | str | pd.DataFrame,
     out_path: Path | str,
     source_label: str = "",
+    links: Path | str | pd.DataFrame | None = None,
 ) -> dict[str, int]:
     """Derive the store from the base table; returns the count summary.
 
     `source` is a DataFrame or a parquet path. The output file is replaced
     (full-rebuild refresh model). Summary counts are also persisted to `meta`.
+
+    `links` is the OPTIONAL link-grain source (DataFrame or parquet): one row
+    per user<->entity link with columns user_id, entity_type, entity_value,
+    ts (when the link formed), and optionally identity_created_time. It may
+    include users with no advances — that is its purpose (the advance-grain
+    blind spot). Link rows get the same sentinel screen and land in `edges`
+    with source='link' (advance edges carry source='advance').
     """
     out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -86,12 +98,58 @@ def build_store(
         )
         con.execute(f"CREATE TABLE edges AS {edge_union}")
 
+        if links is not None:
+            if isinstance(links, pd.DataFrame):
+                con.register("link_src", links)
+            else:
+                con.execute(
+                    "CREATE TEMP VIEW link_src AS SELECT * FROM read_parquet(?)",
+                    [str(links)],
+                )
+            unknown = [
+                t for (t,) in con.execute(
+                    "SELECT DISTINCT entity_type FROM link_src").fetchall()
+                if t not in ENTITY_COLS
+            ]
+            if unknown:
+                raise ValueError(
+                    f"unknown link entity_type(s) {sorted(unknown)};"
+                    f" expected {sorted(ENTITY_COLS)}"
+                )
+            link_cols = {r[0] for r in con.execute("DESCRIBE link_src").fetchall()}
+            link_ict = (
+                f"min({ICT})" if ICT in link_cols else "CAST(NULL AS TIMESTAMP)"
+            )
+            con.execute(f"""
+                INSERT INTO edges (advance_id, user_id, entity_type, entity_value, ts, source)
+                SELECT DISTINCT NULL, CAST(user_id AS VARCHAR), entity_type,
+                       CAST(entity_value AS VARCHAR), ts, 'link'
+                FROM link_src
+                WHERE entity_value IS NOT NULL
+                  AND {_normalized("entity_value")} NOT IN ({_sentinel_list()})
+            """)
+
+        base_cols = {r[0] for r in con.execute("DESCRIBE advances").fetchall()}
+        base_ict = f"min({ICT})" if ICT in base_cols else "CAST(NULL AS TIMESTAMP)"
         con.execute(f"""
             CREATE TABLE users AS
             SELECT {USER_ID} AS user_id, count(DISTINCT {ADVANCE_ID}) AS n_advances,
-                   min({TS}) AS first_seen_ts, max({TS}) AS last_seen_ts
+                   min({TS}) AS first_seen_ts, max({TS}) AS last_seen_ts,
+                   {base_ict} AS identity_created_time
             FROM advances GROUP BY 1
         """)
+        if links is not None:
+            # link-only users: real nodes with zero advances (the ring members
+            # the advance-grain view cannot see)
+            con.execute(f"""
+                INSERT INTO users
+                SELECT e.user_id, 0, min(e.ts), max(e.ts), {link_ict.replace(ICT, f"l.{ICT}")}
+                FROM edges e
+                LEFT JOIN link_src l ON CAST(l.user_id AS VARCHAR) = e.user_id
+                WHERE e.source = 'link'
+                  AND e.user_id NOT IN (SELECT user_id FROM users)
+                GROUP BY 1
+            """)
         con.execute("""
             CREATE TABLE entities AS
             SELECT entity_type, entity_value,
@@ -105,6 +163,9 @@ def build_store(
         summary["n_advances"] = con.execute("SELECT count(*) FROM advances").fetchone()[0]
         summary["n_users"] = con.execute("SELECT count(*) FROM users").fetchone()[0]
         summary["n_edges"] = con.execute("SELECT count(*) FROM edges").fetchone()[0]
+        summary["n_link_edges"] = con.execute(
+            "SELECT count(*) FROM edges WHERE source = 'link'"
+        ).fetchone()[0]
         for etype, col in ENTITY_COLS.items():
             summary[f"edges_{etype}"] = con.execute(
                 "SELECT count(*) FROM edges WHERE entity_type = ?", [etype]

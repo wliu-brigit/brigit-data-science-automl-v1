@@ -10,6 +10,7 @@ from projects.fraud_anomaly_detection.graph.queries import (  # noqa: E402
     components,
     hub_report,
     near_flagged,
+    ppr_suspicion,
     project_users,
     ring,
 )
@@ -75,6 +76,23 @@ def test_hub_report_orders_and_annotates(toy_store):
     assert top["fraud_user_rate"] == 0.0
     d1 = out[out["entity_value"] == "d1"].iloc[0]
     assert d1["fraud_user_rate"] == 0.5  # u1 fraud, u2 not
+
+
+def test_ppr_suspicion_ranks_by_proximity_to_seeds(toy_store):
+    g = load_graph(toy_store, scenarios=False)
+    out = ppr_suspicion(g, flag="is_fraud")
+    s = out.set_index("user_id")["score"]
+    # u2 shares d1 with seed u1; u3 reaches u1 only through u2-b1; u4 sits in a
+    # disconnected component — suspicion must decay along that ordering
+    assert s["u2"] > s["u3"] > s["u4"]
+    assert bool(out.set_index("user_id")["seeded"]["u1"])
+    assert not bool(out.set_index("user_id")["seeded"]["u2"])
+
+
+def test_ppr_suspicion_no_seeds_returns_empty(toy_store):
+    g = load_graph(toy_store, scenarios=False)
+    out = ppr_suspicion(g, flag="is_neobank_high_risk_institution")  # all zero
+    assert len(out) == 0
 
 
 def test_project_users_counts_multi_entity_weights(tmp_path):

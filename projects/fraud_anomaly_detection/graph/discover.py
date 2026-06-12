@@ -26,6 +26,7 @@ from projects.fraud_anomaly_detection.graph.queries import (
     components,
     hub_report,
     near_flagged,
+    ppr_suspicion,
     project_users,
 )
 
@@ -86,6 +87,28 @@ def bad_neighbours(
     merged["closest"] = merged.min(axis=1)
     merged = merged.sort_values("closest", kind="stable").drop(columns="closest")
     return merged.rename_axis("user_id").reset_index()
+
+
+def suspicion_queue(
+    g: ig.Graph,
+    seed_flag: str = "is_fraud",
+    exclude_flags: tuple[str, ...] = ("scenario_any", "is_fraud"),
+    top_n: int = 100,
+) -> pd.DataFrame:
+    """Unflagged users ranked by diffused suspicion from the flagged seeds.
+
+    PPR generalizes bad_neighbours: instead of the nearest-hop count, every
+    path to every seed contributes, with principled decay. Seeds and users
+    matching ANY exclude flag are dropped — the queue is what is left to look
+    at, ordered by how much known-bad mass flows to them.
+    """
+    out = ppr_suspicion(g, flag=seed_flag)
+    if not len(out):
+        return out.drop(columns=["seeded"], errors="ignore")
+    flagged = {v["raw_id"] for v in g.vs if v["kind"] == "user"
+               and any(bool(v[flag]) for flag in exclude_flags)}
+    out = out[~out.seeded & ~out.user_id.isin(flagged)]
+    return out.drop(columns="seeded").head(top_n).reset_index(drop=True)
 
 
 def emerging_farms(

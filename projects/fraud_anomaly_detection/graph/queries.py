@@ -74,6 +74,29 @@ def near_flagged(g: ig.Graph, flag: str = "is_fraud", max_hops: int = 3) -> pd.D
     return pd.DataFrame(rows, columns=["user_id", "hops", "nearest_flagged"])
 
 
+def ppr_suspicion(g: ig.Graph, flag: str = "is_fraud", damping: float = 0.85) -> pd.DataFrame:
+    """Personalized-PageRank suspicion: seed mass diffuses along ALL paths.
+
+    The systematic generalization of hop-counting (near_flagged): every user
+    gets a score from random walks restarting at the flagged seeds, so two
+    weak paths beat one, and decay with distance is principled. Returns user
+    rows only (entities relay mass but are not suspects), sorted by score;
+    `seeded` marks the seeds themselves. Empty frame when nothing is flagged.
+    """
+    seeds = _flagged_indices(g, flag)
+    if not seeds:
+        return pd.DataFrame(columns=["user_id", "score", "seeded"])
+    scores = g.personalized_pagerank(damping=damping, reset_vertices=seeds)
+    seed_set = set(seeds)
+    rows = [
+        (v["raw_id"], scores[v.index], v.index in seed_set)
+        for v in g.vs
+        if v["kind"] == "user"
+    ]
+    out = pd.DataFrame(rows, columns=["user_id", "score", "seeded"])
+    return out.sort_values("score", ascending=False, kind="stable").reset_index(drop=True)
+
+
 def components(g: ig.Graph, flag: str = "is_fraud") -> pd.DataFrame:
     """Connected-component census with the multi-type density discriminator.
 

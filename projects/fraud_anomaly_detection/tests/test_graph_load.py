@@ -112,6 +112,26 @@ def test_degree_cap_is_per_view_not_global(toy_store):
     assert "dH" in {v["raw_id"] for v in g.vs if v["kind"] != "user"}
 
 
+def test_link_edges_included_by_default(toy_store_with_links):
+    g = load_graph(toy_store_with_links, scenarios=False)
+    assert g.ecount() == 14  # 11 advance + 3 link
+    uL = g.vs.find(name="user:uL")
+    nbrs = {g.vs[n]["name"] for n in g.neighbors(uL.index)}
+    assert {"device:dH", "bank:b1"} <= nbrs
+    assert {e["source"] for e in g.es} == {"advance", "link"}
+
+
+def test_sources_filter_advance_only(toy_store_with_links):
+    g = load_graph(toy_store_with_links, sources=("advance",), scenarios=False)
+    assert g.ecount() == 11
+    assert g.degree(g.vs.find(name="user:uL").index) == 0  # vertex stays, isolated
+
+
+def test_unknown_source_raises(toy_store_with_links):
+    with pytest.raises(ValueError, match="unknown source"):
+        load_graph(toy_store_with_links, sources=("telepathy",), scenarios=False)
+
+
 def test_custom_base_missing_users_get_falsy_flags(toy_store):
     import duckdb as _duckdb
 

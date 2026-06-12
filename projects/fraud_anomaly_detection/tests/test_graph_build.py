@@ -1,10 +1,13 @@
 """Store builder: lossless edges, sentinel screening, self-contained snapshot."""
 
+import pandas as pd
 import pytest
 
 duckdb = pytest.importorskip("duckdb")  # project deps: uv sync --group fraud
 
 from projects.fraud_anomaly_detection.graph.build import build_store  # noqa: E402
+
+_TS = pd.Timestamp
 
 pytestmark = pytest.mark.unit
 
@@ -75,3 +78,47 @@ def test_parquet_source_builds_identically(toy_df, tmp_path):
     from_df = build_store(toy_df, tmp_path / "a.duckdb", source_label="toy")
     from_pq = build_store(pq, tmp_path / "b.duckdb", source_label="toy")
     assert from_df == from_pq
+
+
+# ── link-grain edges (the advance-grain blind-spot fix) ──────────────────────
+
+
+def test_store_without_links_is_advance_source_only(toy_store):
+    assert _q(toy_store, "SELECT DISTINCT source FROM edges") == [("advance",)]
+
+
+def test_link_edges_tagged_screened_and_deduped(toy_store_with_links):
+    counts = dict(_q(toy_store_with_links,
+                     "SELECT source, count(*) FROM edges GROUP BY 1"))
+    # 11 advance edges (unchanged); 5 link rows -> sentinel screened,
+    # duplicate deduped -> 3 link edges
+    assert counts == {"advance": 11, "link": 3}
+    assert _q(toy_store_with_links,
+              "SELECT count(*) FROM edges WHERE source = 'link'"
+              " AND entity_value = 'none'") == [(0,)]
+
+
+def test_link_only_user_in_users_with_zero_advances(toy_store_with_links):
+    [(n_adv, ict)] = _q(toy_store_with_links,
+        "SELECT n_advances, identity_created_time FROM users WHERE user_id = 'uL'")
+    assert n_adv == 0
+    assert ict == _TS("2026-01-04 08:00")
+
+
+def test_borrower_identity_created_time_comes_from_advances(toy_store_with_links):
+    [(ict,)] = _q(toy_store_with_links,
+        "SELECT identity_created_time FROM users WHERE user_id = 'u2'")
+    assert ict == _TS("2025-12-15 00:00")
+
+
+def test_entities_count_link_users(toy_store_with_links):
+    [(n_users,)] = _q(toy_store_with_links,
+        "SELECT n_users FROM entities WHERE entity_value = 'dH'")
+    assert n_users == 6  # 5 borrowers + uL via link edge
+
+
+def test_unknown_link_entity_type_rejected(toy_df, toy_links, tmp_path):
+    bad = toy_links.copy()
+    bad.loc[0, "entity_type"] = "carrier_pigeon"
+    with pytest.raises(ValueError, match="carrier_pigeon"):
+        build_store(toy_df, tmp_path / "bad.duckdb", links=bad)

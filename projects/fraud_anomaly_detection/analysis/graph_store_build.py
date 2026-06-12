@@ -56,10 +56,16 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--dataset-id", default=DATASET_ID)
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--links-parquet", type=Path, default=None,
+                    help="link-grain rows (data/queries/link_table.sql export);"
+                         " closes the advance-grain blind spot — see TODO"
+                         " 'LINK-GRAIN EDGES'")
     args = ap.parse_args()
 
     _load_env()
     _preflight()
+    if args.links_parquet is not None and not args.links_parquet.exists():
+        raise SystemExit(f"links parquet not found: {args.links_parquet}")
 
     # heavy imports after preflight so a misconfigured machine fails helpfully
     from automl.data.registry import load_dataset_by_id
@@ -74,7 +80,11 @@ def main() -> None:
     df = loaded.df
     print(f"loaded {len(df):,} rows x {len(df.columns)} cols")
 
-    summary = build_store(df, args.out, source_label=f"dataset:{args.dataset_id}")
+    label = f"dataset:{args.dataset_id}"
+    if args.links_parquet is not None:
+        label += f"+links:{args.links_parquet.name}"
+    summary = build_store(df, args.out, source_label=label,
+                          links=args.links_parquet)
     for key, val in summary.items():
         print(f"  {key:<22}{val:>12,}")
     print(f"\nstore built: {args.out}")

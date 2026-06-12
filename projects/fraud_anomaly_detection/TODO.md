@@ -20,6 +20,16 @@ graph warm-up (no left-censoring) + full 45-day labels (no undefined-label
 dilution). `training_data.sql` feeds BOTH train and test; SPLIT_PCT divides them.
 
 **Focused next steps (wendao picks):**
+0. **⭐ LINK-GRAIN EDGES for the graph store (2026-06-10 — full section below).**
+   The graph today only sees users who TOOK AN ADVANCE; linked-but-never-
+   advanced users (the strongest ring evidence) never form edges. Measured on
+   the sample: the graph reproduces only ~73–75% of the scenario-trigger flags.
+   Needs a new Snowflake extraction (prod session) — do it before, or alongside,
+   the v3 graph readout, or interpret that readout knowing the blind spot.
+   **Status 2026-06-12 (wendao): LOWER PRIORITY.** Mechanical side is built and
+   committed; the extraction + final warehouse validation are parked until a
+   VPN session. Don't block other work on it — until it lands, interpret graph
+   readouts knowing the advance-grain blind spot.
 1. Re-baseline on v3 with the Aug-2025/mature pool — confirm locked scenarios
    fire (`validation --no-dry-run`), re-measure precision/volume on deeper
    history, establish the new residual.
@@ -40,6 +50,95 @@ dilution). `training_data.sql` feeds BOTH train and test; SPLIT_PCT divides them
 sharing-edge scenarios only; residual block-tier is exhausted (7 ways); the
 durable residual signal is review-tier (~5–7×); graph multi-hop is review-tier +
 low-coverage, best as a feature/queue (full verdict in LEARNINGS 2026-06-09).
+
+## ⭐ LINK-GRAIN EDGES — close the graph's advance-grain blind spot (2026-06-10)
+
+**The finding (second-eye validation on the sample store, 2026-06-10).** The
+setup itself validated clean — scenario engine vs hand-compiled DuckDB SQL
+matches EXACTLY (all 4 scenarios + union), labels/maturity coherent, window
+columns monotone, zero graph overcounts. The gap is structural, upstream of
+this repo: **the store's edges come only from advance rows**, so an edge means
+"this user took an advance and this was their latest device / funding account
+at that moment". Two populations are therefore invisible to the graph:
+(a) **linked-but-never-advanced users** — ring members who registered and
+linked the shared device/account but never drew (denied / warming up /
+abandoned); the warehouse `users_on_*_72h` columns DO count them (they read the
+link tables directly), which is precisely why they out-flag the graph; and
+(b) **secondary entities of borrowers** — older devices, non-funding accounts.
+Measured at the scenario thresholds on the sample: graph reproduces
+**867/1,187** device-burst flags and **766/1,021** identity-burst flags
+(~73–75%); hindsight barely helps (870/777) → structural, not timing. Also
+quantified: a naive "past 72h" on EDGE timestamps agrees with the scenarios'
+identity-creation window on only **4.4%** of rows — never replicate scenarios
+that way. Checks runner: `analysis/graph_store_crosscheck.py` (store-agnostic;
+rerun as the sanity gate on the v3 store and after this work lands).
+
+**The fix — mechanical side BUILT 2026-06-10 (TDD, suite green); what remains
+needs Snowflake/VPN (a prod session; this dev box is mechanical testing only):**
+
+1. ✅ **Store/views/replay support** — `build_store(..., links=)` unions link
+   rows into `edges` with a `source` column (`'advance'` | `'link'`), screens
+   sentinels, adds link-only users to `users` (n_advances=0) along with
+   per-user `identity_created_time`; `load_graph(..., sources=)` filters by
+   provenance (default: both); `asof.leakfree_features` pins to advance edges
+   (snapshot-only pass — link-event replay is future work);
+   `graph_store_crosscheck.py` reads identity timestamps from `users` and
+   recounts over all sources. Sample store rebuilt on the new schema.
+2. ✅ **Extraction SQL written** — `data/queries/link_table.sql` (device from
+   `user_client_metadata`, bank+persistent from `base_prod__plaid_accounts`,
+   phone/email/address hashed keys from `base_prod__identities`; byte-identical
+   normalization to base_table.sql so node keys collide; includes zero-advance
+   users). **NOT yet warehouse-validated** — needs the usual EXPLAIN + fan-out
+   value scan before first use.
+3. ⏳ **Prod steps (parked 2026-06-12 — lower priority; final validation
+   waits for a VPN session):** run/export link_table.sql to parquet → 
+   `graph_store_build --links-parquet <file>` (flag already wired) → rerun
+   `graph_store_crosscheck.py`: check 3's graph<stored gap should collapse to
+   ~0 (sample baseline: graph sees only 73-75% at the triggers). Any
+   graph>stored stays a bug.
+4. **Edge/node "quality" stays analysis-time, not build-time** (lossless store,
+   opinionated views). The direction cuts both ways: for ring/burst DISCOVERY
+   an advance-less fresh-identity cluster is HIGH signal (it IS the burst); for
+   outcome-measured PRECISION those users carry no label (denominators stay
+   advance-grain). The `source` column + user metadata make both readable;
+   don't bake a weighting into the store.
+
+**Hygiene to batch with the next SQL touch (found in the same review, none
+urgent):** (a) `base_table.sql` picks the EMITTED `device_id` (step 12C) by a
+different rule than the device used for `users_on_device_id_72h`
+(`anchor_device`: non-null filter + tie-break differ) — align them; (b)
+`ring_account_reuse`'s hours bullet admits negative ages (identity created
+after the advance — 1 row in sample) — add a `>= 0` guard bullet; (c) v3 store
+validation: expect 115 advances columns (the local sample has 110).
+
+**Discovery-methodology backlog — items 1–3 IMPLEMENTED 2026-06-10 (TDD, run
+on the sample as workflow evidence; real readouts await v3 + link edges):**
+1. ✅ **Subgroup discovery over the graph feature space** —
+   `analysis/graph_subgroup_sweep.py` (beam-search machinery extracted to
+   `analysis/subgroup_core.py`, shared with the pinned-dataset lens). Sample
+   readout: 11 of the top 12 held-out rules use a graph-positional feature
+   (`comp_users`/`nb_comp`/`nb_d1` × freshness), 40–55% never-paid at 8–10x,
+   p ≈ 1e-20 — independently re-confirms the v1 "review-tier, not block-tier"
+   verdict from the persisted stack.
+2. ✅ **Guilt-by-association ranking** — `queries.ppr_suspicion` +
+   `discover.suspicion_queue`, wired as QUEUE 6 in `graph_discovery_queues.py`.
+   Sample readout: top-8 unflagged users run 87.5% DPD45 vs ~6% residual base;
+   the full top-100 dilutes to 16% — the queue head is where the signal is.
+3. ✅ **Dense-block mining (Fraudar-style)** — `graph/dense.py` (greedy peeling,
+   log-degree camouflage resistance), QUEUE 7 in the queues runner. Sample
+   readout: cleanly separates known-ring blocks (83.5% DPD45, fully flagged)
+   from a 78-member unflagged review region (39.5% DPD45) — and the
+   top-SCORING block was 0% fraud (shared-infrastructure shape), so the
+   outcome annotation per block is load-bearing, not decoration.
+4. **Community census** — Leiden over the link graph, score every community by
+   size / type-diversity / freshness-burst / outcome rate; ranked review queue.
+   (Not built; components census covers the coarse version today.)
+5. **GNNs (GraphSAGE etc.) — deliberately LAST (wendao 2026-06-10: explicitly
+   out of scope for now).** Binding constraints today: label scarcity +
+   circularity (is_fraud = heuristic band; DPD45 = mostly credit), leak-free
+   temporal sampling cost (TGN-class engineering), and block-tier needs a
+   tellable story. Revisit only if 1–4 plateau on v3; if used, use as a LENS
+   (rank top-k → backtrace → scenario), like the supervised lens today.
 
 ## ⭐ CONSOLIDATED FEATURE-ADD PLAN (2026-06-08)
 

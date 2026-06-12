@@ -1,4 +1,4 @@
-"""Run the five snapshot discovery queues against a built store.
+"""Run the seven snapshot discovery queues against a built store.
 
 The actionable counterpart to graph_question_battery: where the battery
 measures, THIS produces review queues — ranked unflagged users/entities with
@@ -21,6 +21,7 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
+from projects.fraud_anomaly_detection.graph.dense import dense_blocks
 from projects.fraud_anomaly_detection.graph.discover import (
     RING_CAP,
     bad_neighbours,
@@ -28,6 +29,7 @@ from projects.fraud_anomaly_detection.graph.discover import (
     fresh_rings,
     multi_witness_pairs,
     residual_ring_members,
+    suspicion_queue,
 )
 from projects.fraud_anomaly_detection.graph.load import load_graph
 from projects.fraud_anomaly_detection.scenarios import assign
@@ -103,6 +105,28 @@ def main() -> None:
     cols = ["comp_id", "n_users", "n_types", "entity_types", "n_flagged"]
     print(q5.head(args.top)[cols].to_string(index=False) if len(q5)
           else "  none in window")
+
+    banner("QUEUE 6 — PPR suspicion (diffused guilt-by-association, unflagged)")
+    q6 = suspicion_queue(g_union, seed_flag="is_fraud",
+                         exclude_flags=("scenario_any", "is_fraud"))
+    if len(q6):
+        print(q6.head(args.top).to_string(index=False))
+        outcome_check(q6.user_id, truth, "all queue members")
+        outcome_check(q6.head(args.top).user_id, truth, f"top {args.top}")
+    else:
+        print("  no seeds or nothing unflagged in reach")
+
+    banner("QUEUE 7 — dense blocks (Fraudar-style peeling, camouflage-resistant)")
+    q7 = dense_blocks(args.store, top_k=args.top)
+    if len(q7):
+        print(q7.drop(columns="user_ids").to_string(index=False))
+        for block in q7.head(3).itertuples(index=False):
+            members = pd.Series(block.user_ids.split(","))
+            unflagged = members[~members.isin(user_flags[user_flags].index)]
+            outcome_check(members, truth, f"block {block.block_id} members")
+            print(f"    unflagged members: {len(unflagged)}/{len(members)}")
+    else:
+        print("  none")
 
     print("\nDone. Queues are snapshot-semantics review lists; precision-grade"
           " measurement of any rule derived from them goes through asof.leakfree_features.")

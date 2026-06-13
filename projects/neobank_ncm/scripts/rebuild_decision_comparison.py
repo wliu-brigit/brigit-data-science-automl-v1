@@ -23,7 +23,11 @@ def _load_env() -> None:
                 os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
-# trial -> run_id (from docs/HANDOFF.md; trial 7 excluded — not deployable)
+# trial -> run_id (from docs/HANDOFF.md; trial 7 excluded — not deployable, 114 leaky)
+# Trials 12 (GAM) + 13 (MLP) were scored via the chunked fallback
+# (score_trial_decision_chunked.py) because the native evaluate() full-frame
+# predict thrashes swap for non-tree models; all five report.json land in the
+# same eval-artifact format, so load_eval reads them uniformly.
 TRIALS = {
     1: "51bd38d4bcb845cbbad52dcacd637e1e",
     3: "2f39e0ead13d4a588e4a385f272dc38f",

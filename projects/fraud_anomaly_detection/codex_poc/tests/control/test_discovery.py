@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from projects.fraud_anomaly_detection.codex_poc.control.discovery import DiscoveryMethod
+from projects.fraud_anomaly_detection.codex_poc.control.discovery.catalog import default_methods
 from projects.fraud_anomaly_detection.codex_poc.control.discovery.graph_method import (
     ResidualRingMethod,
 )
@@ -11,6 +12,16 @@ from projects.fraud_anomaly_detection.codex_poc.control.discovery.scenario_metho
 )
 
 SAMPLE = Path("projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb")
+
+
+def test_default_method_catalog_is_the_extension_point():
+    methods = default_methods()
+
+    assert [method.name for method in methods] == [
+        "scenario:ring_account_reuse",
+        "graph:residual_ring_members",
+    ]
+    assert all(isinstance(method, DiscoveryMethod) for method in methods)
 
 
 def test_scenario_method_is_a_discovery_method():

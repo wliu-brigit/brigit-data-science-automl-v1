@@ -1,0 +1,11 @@
+from pathlib import Path
+
+
+def test_codex_poc_readme_documents_control_extension_workflow():
+    text = Path("projects/fraud_anomaly_detection/codex_poc/README.md").read_text()
+
+    assert "control/discovery/catalog.py" in text
+    assert "ScenarioMethod(\"ring_account_reuse\")" in text
+    assert "ResidualRingMethod" in text
+    assert "run_skeleton" in text
+    assert "discovery" in text and "finding_store" in text and "plug" in text and "holdout" in text

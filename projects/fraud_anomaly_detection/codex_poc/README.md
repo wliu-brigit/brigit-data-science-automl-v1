@@ -19,10 +19,72 @@ task enforces this). The goal is freedom to try the cleanest design.
   The durable guiding principles live one level up in
   [`../PRINCIPLES.md`](../PRINCIPLES.md) (kept project-level on purpose — the
   always-here doc; flag if you'd rather it move in here).
-- **`control/`** — the system code (built by the plan; not yet created).
+- **`control/`** — the walking-skeleton system code: discovery adapters,
+  finding snapshots, plug derivation, two-state holdout, monitoring, and the
+  orchestrator.
 - **`archived/`** — the prior Neo4j-mirror POC, **reference only**. No
   obligation to use or maintain it; copy snippets out if useful. See
   `archived/README.md`.
+
+## Control-loop workflow
+
+The built skeleton is intentionally small but end-to-end. The entry point is
+`run_skeleton`:
+
+```bash
+uv run --group fraud python - <<'PY'
+from pathlib import Path
+from pprint import pprint
+
+from projects.fraud_anomaly_detection.codex_poc.control.config import ControlConfig
+from projects.fraud_anomaly_detection.codex_poc.control.run import run_skeleton
+
+report = run_skeleton(
+    Path("projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb"),
+    findings_db=Path("/tmp/fraud_control_findings.duckdb"),
+    config=ControlConfig(min_support=2, min_coverage=1, block_tier_precision=0.5),
+)
+pprint(report)
+PY
+```
+
+The report is the holistic view of the loop:
+
+- `discovery` — which discovery methods ran, their versions, and finding
+  counts.
+- `finding_store` — refresh key, data version, stored row count, and distinct
+  users.
+- `plug` — candidate count, burned-key count, and the qualified key list.
+- `holdout` — prevented bad, leaked bad, and innocents blocked in the held-out
+  delta.
+
+The default method list lives in `control/discovery/catalog.py`. It currently
+wires `ScenarioMethod("ring_account_reuse")` and `ResidualRingMethod` as the
+representative scenario + graph pair. This catalog is the reviewed extension
+point for methods that are live in the skeleton.
+
+### Adding a scenario discovery method
+
+1. Add or update the scenario definition in
+   `../scenarios/register.yaml`. That file remains canonical; do not fork
+   scenario logic into `control/`.
+2. Validate the scenario register with the existing scenario tests/validation.
+3. Add `ScenarioMethod("<scenario_name>")` to `default_methods()` in
+   `control/discovery/catalog.py`.
+4. Add or extend tests under `tests/control/` so the method emits a
+   `FindingSet` and appears in the catalog/report.
+
+### Adding a graph / Neo4j discovery pattern
+
+1. Implement an adapter under `control/discovery/` with:
+   - `name` such as `graph:<method_name>`.
+   - `run(store) -> FindingSet`.
+   - evidence fields needed to explain why each user surfaced.
+2. The adapter may call the live project graph package (`graph.load`,
+   `graph.discover`, `analysis`, or later Neo4j/GDS wrappers). It must not
+   import from `codex_poc.archived`.
+3. Add the adapter to `default_methods()` in `control/discovery/catalog.py`.
+4. Add tests for the adapter, the catalog, and the end-to-end report.
 
 ## Build posture
 

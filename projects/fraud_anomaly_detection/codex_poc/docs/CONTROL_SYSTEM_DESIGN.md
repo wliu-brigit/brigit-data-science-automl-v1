@@ -99,8 +99,11 @@ Split by what changes how often:
 
 **Definitions** (slow, reviewed, version-controlled, in-repo): the
 discovery-method catalog (scenarios = `register.yaml`; graph methods = which
-GDS/Neo4j queries are "live" + params) and plug-derivation rules. The single
-tunable config (§6) lives here too. Editing one is a deliberate reviewed act.
+GDS/Neo4j queries are "live" + params) and plug-derivation rules. In the
+walking skeleton, the live method catalog is `control/discovery/catalog.py`;
+the production/v3 graph-method catalog may grow a richer parameter format once
+the real method set is known. The single tunable config (§6) lives here too.
+Editing one is a deliberate reviewed act.
 
 **Accumulated data** (regenerated each run, grows over time) — and findings vs
 plugs persist *differently*:
@@ -195,8 +198,9 @@ Design-now, build-staged behind data:
 
 - Finding-store record schema (exact columns of the shared discovery output
   contract) — detail at build time.
-- Graph-method catalog format (how a Neo4j/GDS method is registered "live" +
-  params) — lighter than the scenario register; shape TBD.
+- Graph-method catalog format beyond the skeleton's
+  `control/discovery/catalog.py` list (how a Neo4j/GDS method is registered
+  "live" + params) — lighter than the scenario register; v3 shape still TBD.
 - Plug expiry policy specifics (cold/age/precision thresholds) — tune on v3.
 - Whether the production-facing list is value-keyed only or also carries
   precomputed per-entity flags — depends on the production consumption seam

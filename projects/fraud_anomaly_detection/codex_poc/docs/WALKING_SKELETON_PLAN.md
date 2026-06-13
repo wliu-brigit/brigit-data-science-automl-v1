@@ -940,8 +940,63 @@ git commit -m "fraud control: end-to-end walking-skeleton orchestrator + smoke t
 
 ---
 
+## Task 9: Sever the archived dependency (final cleanup)
+
+**Files:**
+- Modify: any `codex_poc/control/*.py` that imports from `codex_poc.archived`
+- Test: `codex_poc/tests/control/test_no_archived_dep.py`
+
+Policy (see `codex_poc/README.md`): borrowing from `archived/` *during*
+development is fine, but the finished unit must carry **no dependency on
+`archived/`** — copy any reused logic into `control/` and drop the import.
+(Importing the live repo packages `scenarios` / `graph` / `analysis` is fine
+and expected; this guard is only about `archived/`.)
+
+- [ ] **Step 1: Copy out any reused archived logic**
+
+If any module under `control/` imports from `...codex_poc.archived`, inline the
+borrowed function/snippet into the appropriate `control/` module and remove the
+import. If nothing was borrowed, this is a no-op — the guard below still locks it in.
+
+- [ ] **Step 2: Write the guard test**
+
+```python
+# codex_poc/tests/control/test_no_archived_dep.py
+import re
+from pathlib import Path
+
+CONTROL = Path("projects/fraud_anomaly_detection/codex_poc/control")
+
+
+def test_control_has_no_archived_dependency():
+    offenders = []
+    for py in CONTROL.rglob("*.py"):
+        if re.search(r"(from|import)\s+.*codex_poc\.archived", py.read_text()):
+            offenders.append(str(py))
+    assert not offenders, f"control/ must not depend on archived/: {offenders}"
+```
+
+- [ ] **Step 3: Run the guard, verify it passes**
+
+Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/codex_poc/tests/control/test_no_archived_dep.py -v`
+Expected: PASS (no `control/` module imports `archived/`).
+
+- [ ] **Step 4: Run the full control suite, verify green**
+
+Run: `uv run --group fraud pytest projects/fraud_anomaly_detection/codex_poc/tests/control/ -v`
+Expected: PASS (all control tests).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add projects/fraud_anomaly_detection/codex_poc/control/ projects/fraud_anomaly_detection/codex_poc/tests/control/test_no_archived_dep.py
+git commit -m "fraud control: sever archived dependency + guard test"
+```
+
+---
+
 ## Done — what the skeleton proves and what plugs in next
 
-When all 8 tasks are green, the loop runs end-to-end on the sample: two real discovery methods (one scenario, one graph) emit findings through one contract → versioned finding store → plug extract/validate/qualify with config-driven thresholds → two-state leak-free holdout → monitoring stats. The contract and seams are proven.
+When all 9 tasks are green, the loop runs end-to-end on the sample: two real discovery methods (one scenario, one graph) emit findings through one contract → versioned finding store → plug extract/validate/qualify with config-driven thresholds → two-state leak-free holdout → monitoring stats. The contract and seams are proven.
 
 **Plugs in later (no rebuild):** more discovery methods (one adapter each in `discovery/`, appended to `METHODS`); v3-tuned thresholds (edit `ControlConfig`); the plug lifecycle/expiry and the finding-snapshot trim history (extend `finding_store.py`/`plug.py`); the warehouse-facing burned-key table and live daily monitoring (swap the holdout set for "yesterday"). All gated on v3 data / VPN per `CONTROL_SYSTEM_DESIGN.md` §8.

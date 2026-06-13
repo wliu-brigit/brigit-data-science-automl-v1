@@ -1,11 +1,12 @@
 # codex_poc — Neo4j-graph fraud-control unit
 
 A self-contained unit for the fraud **discovery → plug-the-hole → monitor**
-control system. Treat it as standalone: development stays inside this folder,
-and it is deliberately **not obligated** to import the rest of the repo's
-evolving code. If something in `scenarios/`, `graph/`, or `analysis/` is
-useful, copy what you need in here rather than coupling to it — the goal is
-freedom to try the cleanest design, not reuse for its own sake.
+control system. Development stays inside this folder. Importing the live repo
+packages (`scenarios`, `graph`, `analysis`) is fine and expected. The one hard
+rule is about `archived/`: borrow from it freely *while developing*, but the
+finished unit must carry **no dependency on `archived/`** — copy anything
+useful into `control/` and drop the import (a guard test in the plan's final
+task enforces this). The goal is freedom to try the cleanest design.
 
 ## Layout
 
@@ -29,6 +30,9 @@ freedom to try the cleanest design, not reuse for its own sake.
   `../data/graph/fraud_graph.duckdb` (the local sample). Full v3 / warehouse
   work is out of scope here — it needs VPN; see the design's build-staging
   section.
-- **Freedom over reuse.** Reuse of existing repo code is opt-in (copy in),
-  never an obligation. Start fresh where that gives a cleaner system.
+- **No `archived/` dependency at the end.** Borrow from `archived/` during
+  development if useful, but the finished `control/` copies what it needs in —
+  the plan's final guard test asserts nothing in `control/` imports
+  `archived/`. Repo packages (`scenarios`/`graph`/`analysis`) may be imported
+  freely.
 - **TDD on the sample**, per the plan.

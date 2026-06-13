@@ -9,3 +9,7 @@ def test_codex_poc_readme_documents_control_extension_workflow():
     assert "ResidualRingMethod" in text
     assert "run_skeleton" in text
     assert "discovery" in text and "finding_store" in text and "plug" in text and "holdout" in text
+    assert "state_a_backtest" in text
+    assert "holdout_backtest" in text
+    assert "outside_discovery" in text
+    assert "reports_db" in text

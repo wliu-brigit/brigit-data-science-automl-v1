@@ -4,6 +4,7 @@ import pytest
 
 from projects.fraud_anomaly_detection.codex_poc.control.contract import Finding, FindingSet
 from projects.fraud_anomaly_detection.codex_poc.control.config import ControlConfig
+from projects.fraud_anomaly_detection.codex_poc.control.report_store import ReportStore
 from projects.fraud_anomaly_detection.codex_poc.control.run import run_skeleton
 
 SAMPLE = Path("projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb")
@@ -24,13 +25,14 @@ def test_run_skeleton_accepts_methods_and_returns_holistic_stage_report(tiny_sto
     report = run_skeleton(
         tiny_store,
         findings_db=tmp_path / "findings.duckdb",
+        reports_db=tmp_path / "reports.duckdb",
         config=ControlConfig(min_support=2, min_coverage=1, block_tier_precision=0.5),
         methods=[StaticMethod()],
     )
 
-    assert report["discovery"]["methods"] == [
-        {"method": "test:static", "method_version": "v1", "findings": 3}
-    ]
+    assert report["discovery"]["methods"][0]["method"] == "test:static"
+    assert report["discovery"]["methods"][0]["findings"] == 3
+    assert report["discovery"]["union"]["n_users"] == 3
     assert report["finding_store"] == {
         "refresh_key": "skeleton",
         "data_version": "sample",
@@ -39,7 +41,17 @@ def test_run_skeleton_accepts_methods_and_returns_holistic_stage_report(tiny_sto
     }
     assert report["plug"]["candidate_count"] >= 1
     assert report["plug"]["burned_key_count"] >= 1
+    assert report["state_a_backtest"]["discovery"]["union"]["n_users"] == 2
+    assert report["state_a_backtest"]["plug"]["covered_discovery"]["n_users"] == 2
+    assert report["state_a_backtest"]["plug"]["outside_discovery"]["n_users"] == 0
+    assert report["holdout_backtest"]["discovery"]["union"]["n_users"] == 1
+    assert report["holdout_backtest"]["plug"]["covered_discovery"]["n_users"] == 1
+    assert report["holdout_backtest"]["plug"]["outside_discovery"]["n_users"] == 0
     assert report["holdout"]["prevented_bad"] == 1
+
+    latest = ReportStore(tmp_path / "reports.duckdb").read_latest()
+    assert latest["refresh_key"] == "skeleton"
+    assert latest["report"]["holdout_backtest"] == report["holdout_backtest"]
 
 
 @pytest.mark.skipif(not SAMPLE.exists(), reason="sample store not built")

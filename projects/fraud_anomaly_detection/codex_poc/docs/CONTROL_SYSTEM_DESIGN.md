@@ -172,6 +172,14 @@ next holes), **precision drift** per active plug (drives expiry), **residual
 shift**. Feeds the flywheel: leakage → new findings → new plugs; drift → expiry.
 Monitoring is what keeps the accumulating plug list honest.
 
+Walking-skeleton status: `control/outcomes.py`, `discovery_report.py`,
+`plug_report.py`, and `report_store.py` implement the daily report shape over
+the sample store. `run_skeleton` now emits the full discovery union, per-method
+DPD45 outcomes, scenario/graph attribution, State A plug validation, holdout
+plug validation, and `outside_discovery` coverage buckets. This is still a
+skeleton: real thresholds, expiry policy, and production warehouse writes remain
+v3 / VPN work, but the extension and validation surfaces now exist.
+
 ## 8. Build staging & dependencies
 
 Design-now, build-staged behind data:

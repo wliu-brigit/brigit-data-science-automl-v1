@@ -9,7 +9,7 @@ import pandas as pd
 
 def candidate_stats(
     store: Path | str,
-    discovered_users: pd.Series,
+    discovered_users: list[str] | pd.Series,
     eligible_users: list[str] | pd.Series | None = None,
 ) -> pd.DataFrame:
     """Compute per-entity plug facts for discovered users.
@@ -17,7 +17,7 @@ def candidate_stats(
     This is the expensive extract+validate pass. Its output is factual: support,
     DPD45 precision, discovered-user coverage, and mature innocent count.
     """
-    discovered = set(discovered_users.astype(str))
+    discovered = set(pd.Series(discovered_users).astype(str))
     eligible = None if eligible_users is None else set(pd.Series(eligible_users).astype(str))
     with duckdb.connect(str(store), read_only=True) as con:
         edge_users = con.execute(
@@ -40,6 +40,13 @@ def candidate_stats(
 
     if eligible is not None:
         edge_users = edge_users[edge_users["user_id"].isin(eligible)]
+
+    candidate_keys = edge_users.loc[
+        edge_users["user_id"].isin(discovered), ["entity_type", "entity_value"]
+    ].drop_duplicates()
+    if candidate_keys.empty:
+        return _empty_stats()
+    edge_users = edge_users.merge(candidate_keys, on=["entity_type", "entity_value"], how="inner")
 
     frame = edge_users.merge(outcomes, on="user_id", how="left").fillna(
         {"mature": 0, "bad": 0}
@@ -75,4 +82,19 @@ def qualify(stats: pd.DataFrame, config) -> pd.DataFrame:
             ["dpd45_precision", "coverage", "support"], ascending=False, kind="stable"
         )
         .reset_index(drop=True)
+    )
+
+
+def _empty_stats() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "entity_type",
+            "entity_value",
+            "support",
+            "mature_users",
+            "bad_users",
+            "coverage",
+            "dpd45_precision",
+            "innocents",
+        ]
     )

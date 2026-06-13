@@ -98,19 +98,49 @@ climbing swap — kill it and chunk instead).
 
 ## Next steps
 
-### A. Train more model families (the main ask)
-Continue the human-in-loop loop, but explore **new family *types*, not just seeds**.
+### A. Explore new directions — *not just seeds, and not just architectures* (the main ask)
 Tried so far: trees (XGB), linear (WoE scorecard), additive (spline GAM), neural
-(compact MLP). Candidate next families, all constrained to the **168 deployable
-features** (`projects/neobank_ncm/data/deployable_features.json`),
-`--max-budget-usd 5` per run, **OFF-VPN**:
-- other GBMs: **LightGBM / CatBoost** (different tree inductive bias than XGB)
-- **random forest / extra-trees** (bagged vs boosted)
-- a **wider/deeper or attention-style tabular net** (vs the compact MLP)
-- an **ensemble / stacking** of the existing deployable models
-Read each on **ΔAR + swap-in BR** (via the chunked decision script), not just AUC —
-that's the whole point of the validated finding. Loop command pattern:
+(compact MLP) — all hit the ~0.70 AUC ceiling. The directions below are **things to
+LEARN whether they apply, not a checklist to apply blindly** — each has a
+precondition or a data dependency that must be checked first; some may not be
+feasible here. All work stays within the **168 deployable features**
+(`projects/neobank_ncm/data/deployable_features.json`), `--max-budget-usd 5` per
+run, **OFF-VPN**, and is read on **ΔAR + swap-in BR via the chunked decision
+script**, not just AUC. Loop pattern:
 `automl --project neobank_ncm experiment run --max-iter 1 --max-budget-usd 5 --instruction "..."`.
+
+**Evidence framing (Home Credit + tabular-credit literature):** GBMs won that
+competition; fancy nets (TabNet, FT-Transformer, DAE) did *not* reliably beat GBMs
+and cost more compute — NN mostly added value inside **blends/stacks**, and the real
+lever was **feature engineering over the relational/temporal tables**, not the model.
+So the high-value bets here are **features + framing + blend**, *not* a deeper net.
+Sources: [DAE+GBDT HC writeup](https://github.com/pklauke/Kaggle-HomeCreditDefaultRisk),
+[2024 tabular ML/DL benchmark](https://arxiv.org/html/2408.14817v1),
+[TabNet-stacking credit paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11506879/).
+
+1. **Temporal / trajectory features over the D1–D30 window — IF the data supports it
+   (verify FIRST).** We collapse the daily sequence to a min-score and discard the
+   trajectory. Our analog of HC's aggregations would be slope/volatility/range/
+   recent-vs-early deltas over the 30 days. **Precondition / may not apply:** the
+   production daily *scoring* path must be able to compute cross-day features at score
+   time — we may **not have** the per-user daily history available in production (some
+   168 features are already lookback-windowed like `inflowsum14d`, but cross-*day*
+   evolution is new). **Check deployability before investing**; if production only sees
+   the current day, this is out.
+2. **Blend / stack the existing deployable XGB + MLP — applies regardless (data is in
+   hand).** This is where NN paid off in HC. Our MLP is decorrelated from XGB (ties
+   trees on ΔAR at lower AUC = recovers different signal), so a simple stack may beat
+   either *and* lift ΔAR. Cheap. The most reliable near-term bet.
+3. **Reframe toward the decision, not global AUC — explore if the labels support it.**
+   ΔAR rewards ranking the marginal *swap-in* cohort. Options: model the swap-in
+   population's risk directly, a residual-vs-v3a framing (learn where to disagree with
+   the incumbent), or a rank-at-threshold loss. **May not apply:** the swap-in cohort
+   is small and partly *unlabeled* (rejects) — confirm there's enough labeled signal
+   before framing the target this way.
+4. **If touching the NN, keep it proven + light (don't go deep).** Skip TabNet/FT-T
+   (underperform + compute). Cheap evidence-backed tweaks: RankGauss/quantile input
+   normalization + categorical embeddings on the existing MLP; or a tiny 1D-CNN / small
+   GRU over D1–D30 (only if direction #1's data check passes). No deep stacks.
 
 ### B. Harden the divergence finding before promoting it
 One OOT snapshot, scenario 2 only. Confirm the MLP's parity-with-trees with a

@@ -117,6 +117,30 @@ def _scenario_user_flags(base: pd.DataFrame) -> pd.DataFrame:
     return per_user
 
 
+def _outcome_counts(base: pd.DataFrame) -> pd.DataFrame:
+    # Outcome truth is advance-grain; the user-level booleans are a roll-up.
+    # Counts ride along so rates and stricter definitions (never-paid-style)
+    # stay computable: immature advances count toward nothing (unknown != good).
+    mature = (
+        base["label_mature_d45"].fillna(False).astype(bool)
+        if "label_mature_d45" in base.columns
+        else pd.Series(False, index=base.index)
+    )
+    bad = (
+        base["label_gross_dpd45"].fillna(False).astype(bool)
+        if "label_gross_dpd45" in base.columns
+        else pd.Series(False, index=base.index)
+    )
+    counts = pd.DataFrame(
+        {
+            "user_id": base["user_id"].astype(str),
+            "n_mature_advances": mature.astype(int),
+            "n_bad_advances": (mature & bad).astype(int),
+        }
+    )
+    return counts.groupby("user_id", as_index=False).sum()
+
+
 def _user_nodes(store: Path | str) -> tuple[pd.DataFrame, pd.DataFrame]:
     users = _read_store(store, "SELECT * FROM users ORDER BY user_id")
     base = _read_store(store, "SELECT * FROM advances")
@@ -130,6 +154,15 @@ def _user_nodes(store: Path | str) -> tuple[pd.DataFrame, pd.DataFrame]:
     scenario_flags = _scenario_user_flags(base)
     merged = users.assign(user_id=lambda df: df["user_id"].astype(str))
     merged = merged.merge(labels, on="user_id", how="left")
+    merged = merged.merge(_outcome_counts(base), on="user_id", how="left")
+    for col in ("n_mature_advances", "n_bad_advances"):
+        merged[col] = merged[col].fillna(0).astype(int)
+    # Rate stays a fact; strictness thresholds live at query time (empty when
+    # the user has no mature advance — unknown, not zero).
+    mature = merged["n_mature_advances"]
+    merged["bad_advance_rate"] = (
+        merged["n_bad_advances"] / mature.where(mature > 0)
+    ).round(6)
     merged = merged.merge(scenario_flags, on="user_id", how="left")
     scenario_cols = [s.name for s in SCENARIOS]
     _bool_columns(merged, [*label_cols, *scenario_cols, "scenario_any"])
@@ -149,6 +182,9 @@ def _user_nodes(store: Path | str) -> tuple[pd.DataFrame, pd.DataFrame]:
     )
     rename = {
         "n_advances": "n_advances:int",
+        "n_mature_advances": "n_mature_advances:int",
+        "n_bad_advances": "n_bad_advances:int",
+        "bad_advance_rate": "bad_advance_rate:float",
         "is_fraud": "is_fraud:boolean",
         "label_gross_dpd45": "label_gross_dpd45:boolean",
         "label_mature_d45": "label_mature_d45:boolean",
@@ -162,6 +198,9 @@ def _user_nodes(store: Path | str) -> tuple[pd.DataFrame, pd.DataFrame]:
         ":LABEL",
         "user_id",
         "n_advances:int",
+        "n_mature_advances:int",
+        "n_bad_advances:int",
+        "bad_advance_rate:float",
         "first_seen_ts",
         "last_seen_ts",
         "identity_created_time",
@@ -308,8 +347,24 @@ def _review_cluster_artifacts(
     layers: tuple[str, ...],
     sources: tuple[str, ...],
     degree_cap: int = DEFAULT_CLUSTER_DEGREE_CAP,
+    strict_bad_rate_threshold: float = 0.8,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     g = load_graph(store, layers=layers, sources=sources, degree_cap=degree_cap)
+    counts = _outcome_counts(
+        _read_store(
+            store,
+            "SELECT user_id, label_mature_d45, label_gross_dpd45 FROM advances",
+        )
+    )
+    outcome_by_user = {
+        row.user_id: (int(row.n_mature_advances), int(row.n_bad_advances))
+        for row in counts.itertuples(index=False)
+    }
+
+    def _is_strict_bad(raw_id: object) -> bool:
+        n_mature_u, n_bad_u = outcome_by_user.get(str(raw_id), (0, 0))
+        return n_mature_u > 0 and n_bad_u / n_mature_u >= strict_bad_rate_threshold
+
     cluster_rows = []
     member_rows = []
     for component_id, members in enumerate(g.connected_components()):
@@ -321,6 +376,7 @@ def _review_cluster_artifacts(
 
         n_mature = sum(bool(v["label_mature_d45"]) for v in users)
         dpd45_users = sum(bool(v["label_gross_dpd45"]) for v in users)
+        strict_dpd45_users = sum(_is_strict_bad(v["raw_id"]) for v in users)
         fraud_users = sum(bool(v["is_fraud"]) for v in users)
         scenario_users = sum(bool(v["scenario_any"]) for v in users)
         entity_types = sorted({str(v["kind"]) for v in entities})
@@ -352,6 +408,11 @@ def _review_cluster_artifacts(
                 "n_mature_users:int": n_mature,
                 "dpd45_users:int": dpd45_users,
                 "dpd45_user_rate:float": round(dpd45_rate, 6),
+                "strict_dpd45_users:int": strict_dpd45_users,
+                "strict_dpd45_user_rate:float": round(
+                    strict_dpd45_users / n_mature if n_mature else 0.0, 6
+                ),
+                "strict_threshold:float": strict_bad_rate_threshold,
                 "fraud_users:int": fraud_users,
                 "scenario_users:int": scenario_users,
                 "scenario_user_rate:float": round(scenario_rate, 6),
@@ -398,6 +459,9 @@ RETURN c.cluster_id AS cluster_id,
        c.n_mature_users AS n_mature_users,
        c.dpd45_users AS dpd45_users,
        c.dpd45_user_rate AS dpd45_user_rate,
+       c.strict_dpd45_users AS strict_dpd45_users,
+       c.strict_dpd45_user_rate AS strict_dpd45_user_rate,
+       c.strict_threshold AS strict_threshold,
        c.fraud_users AS fraud_users,
        c.scenario_users AS scenario_users,
        c.entity_types AS entity_types
@@ -615,6 +679,7 @@ def export_bundle(
     layers: tuple[str, ...] = DEFAULT_LAYERS,
     sources: tuple[str, ...] = ("advance", "link"),
     max_edges: int | None = None,
+    strict_bad_rate_threshold: float = 0.8,
 ) -> ExportResult:
     store = Path(store)
     out = Path(out_dir)
@@ -625,7 +690,9 @@ def export_bundle(
     users, scenario_flags = _user_nodes(store)
     entities = _entity_nodes(store)
     typed_rels = _typed_entity_relationships(store, layers, sources, max_edges)
-    clusters, cluster_members = _review_cluster_artifacts(store, layers, sources)
+    clusters, cluster_members = _review_cluster_artifacts(
+        store, layers, sources, strict_bad_rate_threshold=strict_bad_rate_threshold
+    )
     scenarios = _scenario_nodes()
     scenario_rels = _scenario_relationships(scenario_flags)
 

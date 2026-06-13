@@ -109,7 +109,11 @@ different rule than the device used for `users_on_device_id_72h`
 (`anchor_device`: non-null filter + tie-break differ) — align them; (b)
 `ring_account_reuse`'s hours bullet admits negative ages (identity created
 after the advance — 1 row in sample) — add a `>= 0` guard bullet; (c) v3 store
-validation: expect 115 advances columns (the local sample has 110).
+validation: expect 115 advances columns (the local sample has 110); (d) v3
+store validation: rerun the user↔advance roll-up profile (advances/user
+distribution, mixed-outcome cohort, bad⇒mature check — the Neo4j mirror's
+user outcome counts assume it) — the 20k sample is advance-sampled (97.9%
+single-advance users), so roll-up safety is unverified at full scale.
 
 **Discovery-methodology backlog — items 1–3 IMPLEMENTED 2026-06-10 (TDD, run
 on the sample as workflow evidence; real readouts await v3 + link edges):**

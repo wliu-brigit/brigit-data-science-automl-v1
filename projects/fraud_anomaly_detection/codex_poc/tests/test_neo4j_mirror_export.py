@@ -70,6 +70,83 @@ def test_sample_export_bundle_contains_graph_scenarios_and_user_story(tmp_path: 
     assert "Performance Gate" in summary
 
 
+def test_user_nodes_carry_advance_outcome_counts(tmp_path: Path) -> None:
+    """Outcome truth is advance-grain; user nodes carry counts, not just booleans.
+
+    Schema discussion 2026-06-12: ever-bad alone cannot separate 1-of-6-bad
+    (credit-stress shape) from 1-of-1-bad (never-pay shape). Counts keep both
+    rates and stricter definitions computable without a schema change.
+    """
+    pd = pytest.importorskip("pandas")
+    mirror.export_bundle(SAMPLE_STORE, tmp_path, max_edges=250)
+
+    users = pd.read_csv(tmp_path / "users.csv")
+    assert "n_mature_advances:int" in users.columns
+    assert "n_bad_advances:int" in users.columns
+
+    with duckdb.connect(str(SAMPLE_STORE), read_only=True) as con:
+        n_mature, n_bad = con.execute(
+            """
+            SELECT count(*) FILTER (WHERE label_mature_d45),
+                   count(*) FILTER (WHERE label_mature_d45 AND label_gross_dpd45)
+            FROM advances
+            """
+        ).fetchone()
+    assert users["n_mature_advances:int"].sum() == n_mature
+    assert users["n_bad_advances:int"].sum() == n_bad
+
+    # per-user coherence: bad <= mature <= advances
+    assert (users["n_bad_advances:int"] <= users["n_mature_advances:int"]).all()
+    assert (users["n_mature_advances:int"] <= users["n_advances:int"]).all()
+
+    # the cheap boolean stays and must agree with the counts
+    # (pandas parses the csv's lowercase true/false into bool dtype)
+    bad_flag = users["label_gross_dpd45:boolean"].astype(str).str.lower() == "true"
+    assert (bad_flag == (users["n_bad_advances:int"] > 0)).all()
+
+
+def test_user_rate_and_cluster_strict_metrics_with_adjustable_threshold(tmp_path: Path) -> None:
+    """Dual outcome semantics (agreed 2026-06-12): ever-bad stays the sensitive
+    evidence marker; strictness is a query-time threshold over the poured
+    bad_advance_rate (default 0.8), never a baked definition. Cluster
+    artifacts report both and self-document their threshold.
+    """
+    pd = pytest.importorskip("pandas")
+    mirror.export_bundle(SAMPLE_STORE, tmp_path, max_edges=250)
+
+    users = pd.read_csv(tmp_path / "users.csv")
+    assert "bad_advance_rate:float" in users.columns
+    observable = users[users["n_mature_advances:int"] > 0]
+    expected = observable["n_bad_advances:int"] / observable["n_mature_advances:int"]
+    assert (observable["bad_advance_rate:float"] - expected).abs().max() < 1e-5
+
+    clusters = pd.read_csv(tmp_path / "clusters.csv")
+    for col in (
+        "strict_dpd45_users:int",
+        "strict_dpd45_user_rate:float",
+        "strict_threshold:float",
+    ):
+        assert col in clusters.columns
+    assert (clusters["strict_threshold:float"] == 0.8).all()
+    # strict definition can only shrink the sensitive (ever-bad) count
+    assert (clusters["strict_dpd45_users:int"] <= clusters["dpd45_users:int"]).all()
+
+    cypher = (tmp_path / "cypher" / "00_top_suspicious_clusters.cypher").read_text()
+    assert "strict_dpd45_user_rate" in cypher
+
+    # the threshold adjusts without re-pouring the facts
+    loose_dir = tmp_path / "loose"
+    mirror.export_bundle(
+        SAMPLE_STORE, loose_dir, max_edges=250, strict_bad_rate_threshold=0.5
+    )
+    loose = pd.read_csv(loose_dir / "clusters.csv")
+    assert (loose["strict_threshold:float"] == 0.5).all()
+    assert (
+        loose["strict_dpd45_users:int"].sum()
+        >= clusters["strict_dpd45_users:int"].sum()
+    )
+
+
 def test_cypher_playbook_covers_cluster_scenario_ego_and_gds_workflows(tmp_path: Path) -> None:
     mirror.write_cypher_playbook(tmp_path)
 

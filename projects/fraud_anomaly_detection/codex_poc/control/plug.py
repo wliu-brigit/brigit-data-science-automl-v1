@@ -7,13 +7,18 @@ import duckdb
 import pandas as pd
 
 
-def candidate_stats(store: Path | str, discovered_users: pd.Series) -> pd.DataFrame:
+def candidate_stats(
+    store: Path | str,
+    discovered_users: pd.Series,
+    eligible_users: list[str] | pd.Series | None = None,
+) -> pd.DataFrame:
     """Compute per-entity plug facts for discovered users.
 
     This is the expensive extract+validate pass. Its output is factual: support,
     DPD45 precision, discovered-user coverage, and mature innocent count.
     """
     discovered = set(discovered_users.astype(str))
+    eligible = None if eligible_users is None else set(pd.Series(eligible_users).astype(str))
     with duckdb.connect(str(store), read_only=True) as con:
         edge_users = con.execute(
             """
@@ -32,6 +37,9 @@ def candidate_stats(store: Path | str, discovered_users: pd.Series) -> pd.DataFr
             GROUP BY 1
             """
         ).df()
+
+    if eligible is not None:
+        edge_users = edge_users[edge_users["user_id"].isin(eligible)]
 
     frame = edge_users.merge(outcomes, on="user_id", how="left").fillna(
         {"mature": 0, "bad": 0}

@@ -27,3 +27,13 @@ def test_qualify_filters_by_config_over_stats(tiny_store):
     assert ("bank", "acctA") in set(zip(keys.entity_type, keys.entity_value))
     none = plug.qualify(stats, ControlConfig(block_tier_precision=1.01))
     assert len(none) == 0
+
+
+def test_candidate_stats_can_be_restricted_to_state_a_users(tiny_store):
+    discovered = pd.Series(["u1", "u2"])
+
+    stats = plug.candidate_stats(tiny_store, discovered, eligible_users=["u1", "u2", "u5"])
+
+    acct_a = stats[(stats.entity_type == "bank") & (stats.entity_value == "acctA")].iloc[0]
+    assert acct_a.support == 2
+    assert acct_a.coverage == 2

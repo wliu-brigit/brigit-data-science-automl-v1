@@ -8,11 +8,11 @@ import pytest
 
 duckdb = pytest.importorskip("duckdb")
 
-from projects.fraud_anomaly_detection.codex_poc import export_neo4j_mirror as mirror
+from projects.fraud_anomaly_detection.codex_poc.archived import export_neo4j_mirror as mirror
 
 
 SAMPLE_STORE = Path("projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb")
-POC_DIR = Path("projects/fraud_anomaly_detection/codex_poc")
+POC_DIR = Path("projects/fraud_anomaly_detection/codex_poc/archived")
 
 
 def test_ids_are_namespaced_for_neo4j_import() -> None:

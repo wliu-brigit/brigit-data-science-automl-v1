@@ -121,9 +121,10 @@ Rebuilds happen only with the explicit `--refresh-source` flag.
 Everything above is about using the generic AutoML harness on this problem.
 The graph/fraud work (`graph/`, `analysis/`, and especially `codex_poc/`) is a
 separate track building a holistic **discovery → plug-the-hole → monitor**
-control system. Start with [`PRINCIPLES.md`](PRINCIPLES.md); the design lives
-in [`codex_poc/CONTROL_SYSTEM_DESIGN.md`](codex_poc/CONTROL_SYSTEM_DESIGN.md)
-and [`codex_poc/SCHEMA_DESIGN.md`](codex_poc/SCHEMA_DESIGN.md).
+control system. Start with [`PRINCIPLES.md`](PRINCIPLES.md); the design and build plan live
+under [`codex_poc/docs/`](codex_poc/docs/) (`CONTROL_SYSTEM_DESIGN.md`,
+`SCHEMA_DESIGN.md`, `WALKING_SKELETON_PLAN.md`), and `codex_poc/` is the
+self-contained home for the build.
 
 **This track does not use MLflow.** MLflow is the AutoML package's experiment
 record; this work is operational and inherently different — its durable state

@@ -87,3 +87,43 @@ bust-out shape) and a **strict definition** as a query-time threshold over a
 poured rate (default 0.8, adjustable without re-import) — used where
 credit-stress pollution hurts: concentration metrics, queue ranking. Artifacts
 that apply a threshold self-document which one produced them.
+
+## P7 — Discovery looks back on full state; deployment is leak-free
+
+Discovery runs on the **full accumulated as-of state**, not point-in-time at
+each decision: a user who looked innocent early is correctly pulled into a ring
+once it forms later. Hindsight is legitimate for *finding* fraud — the job is
+to learn where it is. But every control we **promote to deployment** is
+re-validated **leak-free** via a two-state holdout — derive on the state before
+a held-out period (the holdout window; ~1 month to start, tunable), measure on
+the new activity in it — so a precision or coverage claim never uses an outcome
+the derivation could not have known.
+**Discovery may look back; promotion may not.** (This is distinct from P4: the
+*scenario windows* are as-of anchored per advance; this principle governs
+graph/ring *discovery* and the validation boundary. The project has been burned
+by leakage-inflated screens before — that is why the line sits at promotion.)
+
+## P8 — This is an operational system, not an AutoML experiment
+
+The fraud-control system's durable state — discovery findings, the burned-key
+plug list, monitoring history — is **operational**, and lives in
+warehouse / DuckDB / GCS. It does **not** use MLflow: MLflow is the AutoML
+package's experiment record, and this system is inherently different. (Slow,
+reviewed definitions stay version-controlled in-repo; thresholds are
+parameters, P6.)
+
+## P9 — Discovery and enforcement are separate mechanisms, validated differently
+
+P1's two control types are kept structurally separate. **Finding** fraud
+(scenarios, graph methods) and **blocking** it cheaply (a plug — a shared,
+production-checkable key) are different mechanisms with different validation:
+
+- discovery is validated against outcomes (DPD45);
+- a plug is validated **twice** — against outcomes (precision: would it block
+  innocents?) *and* against the discovery set (coverage: does it catch the
+  fraud we found?) — because the deployable projection is blunter than the
+  discovery that motivated it.
+
+Monitoring is the ongoing flywheel: it re-validates active plugs, drives their
+expiry, and turns leakage (discovered fraud no plug caught) into the next holes
+to plug. We produce and validate; production consumes.

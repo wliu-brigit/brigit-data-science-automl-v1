@@ -32,7 +32,9 @@ def tiny_store(tmp_path):
             "source": ["advance"] * 5,
         }
     )
-    con.execute("CREATE TABLE advances AS SELECT * FROM advances")
-    con.execute("CREATE TABLE edges AS SELECT * FROM edges")
+    con.register("advances_df", advances)
+    con.register("edges_df", edges)
+    con.execute("CREATE TABLE advances AS SELECT * FROM advances_df")
+    con.execute("CREATE TABLE edges AS SELECT * FROM edges_df")
     con.close()
     return path

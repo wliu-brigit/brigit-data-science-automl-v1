@@ -176,12 +176,18 @@ Design-now, build-staged behind data:
   the bar, which graph methods earn cataloging, `SHARES_RESOURCES` size.
 - **Needs VPN/prod**: warehouse read for the v3 store rebuild; warehouse write
   for the production-facing plug table; the link-grain + IP-key SQL.
-- **The skeleton — build now (the priority).** The end-to-end pipeline in
-  skeleton form: the stable discovery-method contract + finding-store +
-  snapshot/trim machinery, the extract→validate→qualify shape with the
-  cheap-filter seam, the two-state holdout harness, the config scaffold. Built
-  once, it's what lets new discovery methods and v3 tuning plug in rather than
-  trigger a rebuild — so it's worth building before the tuning data exists.
+- **The skeleton — build now (the priority).** A *walking* skeleton: the
+  end-to-end pipeline with the stable discovery-method contract + finding-store
+  + snapshot/trim machinery, the extract→validate→qualify shape with the
+  cheap-filter seam, the two-state holdout harness, the config scaffold — **plus
+  a representative few real discovery methods wired through the contract**
+  (≥1 scenario adapted from the register, ≥1 graph method from the
+  `analysis/`/`codex_poc` runners), deliberately **not exhaustive**. Enough to
+  prove the loop runs on real findings and that new methods plug in — you can't
+  validate a plug-in contract with zero plug-ins. All on the sample; v3 is
+  needed only later for tuning and the full method set. Built once, the
+  skeleton is what lets new methods and v3 tuning plug in rather than trigger a
+  rebuild — so it's worth building before the tuning data exists.
 - **Depends on** the `SCHEMA_DESIGN.md` edge model (itself design-only) for the
   graph methods + corroboration keys.
 

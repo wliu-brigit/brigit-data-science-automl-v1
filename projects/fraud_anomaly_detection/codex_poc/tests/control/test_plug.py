@@ -1,0 +1,29 @@
+import pandas as pd
+
+from projects.fraud_anomaly_detection.codex_poc.control import plug
+from projects.fraud_anomaly_detection.codex_poc.control.config import ControlConfig
+
+
+def test_candidate_stats_compute_precision_and_coverage(tiny_store):
+    discovered = pd.Series(["u1", "u2", "u3"])
+
+    stats = plug.candidate_stats(tiny_store, discovered)
+
+    acct_a = stats[(stats.entity_type == "bank") & (stats.entity_value == "acctA")].iloc[0]
+    assert acct_a.support == 3
+    assert acct_a.dpd45_precision == 1.0
+    assert acct_a.coverage == 3
+    assert acct_a.innocents == 0
+
+
+def test_qualify_filters_by_config_over_stats(tiny_store):
+    discovered = pd.Series(["u1", "u2", "u3"])
+    stats = plug.candidate_stats(tiny_store, discovered)
+
+    keys = plug.qualify(
+        stats, ControlConfig(min_support=3, min_coverage=2, block_tier_precision=0.8)
+    )
+
+    assert ("bank", "acctA") in set(zip(keys.entity_type, keys.entity_value))
+    none = plug.qualify(stats, ControlConfig(block_tier_precision=1.01))
+    assert len(none) == 0

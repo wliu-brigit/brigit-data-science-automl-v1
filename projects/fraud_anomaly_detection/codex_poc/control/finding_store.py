@@ -150,6 +150,7 @@ class FindingStore:
                        method_version, user_id, score, evidence
                 FROM findings
                 WHERE snapshot_id = ?
+                ORDER BY method, method_version, user_id, score, evidence
                 """,
                 [latest["snapshot_id"]],
             ).df()

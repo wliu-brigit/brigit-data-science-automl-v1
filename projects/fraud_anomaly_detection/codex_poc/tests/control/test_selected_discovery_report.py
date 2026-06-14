@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import duckdb
+import pandas as pd
 import pytest
 
 from projects.fraud_anomaly_detection.codex_poc.control.selected_discovery_report import (
@@ -74,6 +76,65 @@ def test_selected_discovery_report_runs_on_tiny_store(tiny_store, tmp_path):
     assert report["scenario_rows"][0]["method version"] == report["scenario_version"]
     assert report["selected_graph_rows"] == []
     assert any(row["reason"] == "promotion_tier" for row in report["excluded_graph_rows"])
+
+
+def test_selected_discovery_report_state_a_uses_asof_discovery(tmp_path):
+    store = tmp_path / "leak.duckdb"
+    advances = pd.DataFrame(
+        {
+            "advance_id": ["a1", "a2", "a3", "a4"],
+            "user_id": ["u1", "u2", "u_future", "u_future"],
+            "is_fraud": [False, False, False, False],
+            "label_gross_dpd45": [True, True, False, True],
+            "label_mature_d45": [True, True, True, True],
+            "feature_as_of_ts": pd.to_datetime(
+                ["2026-01-01", "2026-01-02", "2026-01-05", "2026-03-01"]
+            ),
+            "identity_created_time": pd.to_datetime(
+                ["2026-01-01", "2026-01-02", "2025-12-01", "2026-03-01"]
+            ),
+            "loan_amount": [150.0, 120.0, 50.0, 200.0],
+            "prior_advances_on_bank_account_7d": [1, 1, 0, 1],
+            "users_on_bank_account_72h": [2, 2, 0, 0],
+            "users_on_persistent_account_id_72h": [2, 2, 0, 0],
+            "is_joint": [0, 0, 0, 0],
+            "users_on_device_id_72h": [0, 0, 0, 0],
+        }
+    )
+    edges = pd.DataFrame(
+        {
+            "advance_id": ["a1", "a2", "a3", "a4"],
+            "user_id": ["u1", "u2", "u_future", "u_future"],
+            "entity_type": ["bank", "bank", "bank", "bank"],
+            "entity_value": ["acctA", "acctA", "acctB", "acctB"],
+            "ts": advances["feature_as_of_ts"],
+            "source": ["advance"] * 4,
+        }
+    )
+    with duckdb.connect(str(store)) as con:
+        con.register("advances_df", advances)
+        con.register("edges_df", edges)
+        con.execute("CREATE TABLE advances AS SELECT * FROM advances_df")
+        con.execute("CREATE TABLE edges AS SELECT * FROM edges_df")
+        con.execute(
+            """
+            CREATE TABLE users AS
+            SELECT DISTINCT CAST(user_id AS VARCHAR) AS user_id
+            FROM advances_df
+            """
+        )
+
+    report = generate_selected_discovery_report(
+        SelectedReportConfig(
+            store=store,
+            out_dir=tmp_path,
+            refresh_key="leak_report",
+            graph_min_marginal_users=1,
+        )
+    )
+
+    assert report["final_discovery"]["final_union_users"] == 3
+    assert report["final_discovery"]["state_a_final_union_users"] == 2
 
 
 @pytest.mark.skipif(not SAMPLE.exists(), reason="sample store not built")

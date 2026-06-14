@@ -88,21 +88,54 @@ def generate_selected_discovery_report(config: SelectedReportConfig) -> dict:
     final_discovery = scenario_union | selected_graph_union
 
     split = two_state_split(config.store, config.plug_config)
+    state_advances, state_edges = _asof_inputs(advances, edges, split.cutoff)
+    state_truth = _user_truth(state_advances)
+    state_scenarios = _scenario_sets(state_truth)
+    state_scenario_union = (
+        set().union(*state_scenarios.values()) if state_scenarios else set()
+    )
+    state_graph_methods = _graph_method_sets(
+        config.store,
+        state_advances,
+        state_edges,
+        state_truth,
+        state_scenarios,
+        as_of=split.cutoff,
+    )
+    selected_state_graphs, _ = _select_graph_methods(
+        state_graph_methods,
+        scenario_union=state_scenario_union,
+        truth=state_truth,
+        min_marginal_users=config.graph_min_marginal_users,
+        min_marginal_dpd45_user_rate=config.graph_min_marginal_dpd45_user_rate,
+    )
+    selected_state_graph_union = (
+        set().union(*(method.users for method in selected_state_graphs))
+        if selected_state_graphs
+        else set()
+    )
+    state_final_discovery = state_scenario_union | selected_state_graph_union
     state_discovery = pd.Series(
-        sorted(final_discovery & set(split.state_a_users)),
+        sorted(state_final_discovery & set(split.state_a_users)),
         dtype="string",
     )
     holdout_discovery = pd.Series(
         sorted(final_discovery & set(split.holdout_users)),
         dtype="string",
     )
-    stats = plug.candidate_stats(config.store, state_discovery, eligible_users=split.state_a_users)
+    stats = plug.candidate_stats(
+        config.store,
+        state_discovery,
+        eligible_users=split.state_a_users,
+        end_ts=split.cutoff,
+    )
     burned = plug.qualify(stats, config.plug_config)
     state_plug = summarize_plugs(
         config.store,
         burned,
         discovery_users=state_discovery,
         eligible_users=split.state_a_users,
+        end_ts=split.cutoff,
     )
     holdout_plug = summarize_plugs(
         config.store,
@@ -153,6 +186,7 @@ def generate_selected_discovery_report(config: SelectedReportConfig) -> dict:
             "final_union_dpd45_advance_rate": _outcome(final_discovery, truth)[
                 "dpd45_advance_rate"
             ],
+            "state_a_final_union_users": int(len(state_discovery)),
         },
         "plug": {
             "candidate_keys": int(len(stats)),
@@ -200,11 +234,24 @@ def _load_inputs(store: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
             SELECT DISTINCT
                 CAST(user_id AS VARCHAR) AS user_id,
                 CAST(entity_type AS VARCHAR) AS entity_type,
-                CAST(entity_value AS VARCHAR) AS entity_value
+                CAST(entity_value AS VARCHAR) AS entity_value,
+                ts
             FROM edges
             """
         ).df()
     return advances, edges
+
+
+def _asof_inputs(
+    advances: pd.DataFrame,
+    edges: pd.DataFrame,
+    cutoff: pd.Timestamp,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    state_advances = advances[
+        pd.to_datetime(advances["feature_as_of_ts"]) <= pd.Timestamp(cutoff)
+    ].copy()
+    state_edges = edges[pd.to_datetime(edges["ts"]) <= pd.Timestamp(cutoff)].copy()
+    return state_advances, state_edges
 
 
 def _user_truth(advances: pd.DataFrame) -> pd.DataFrame:
@@ -268,10 +315,23 @@ def _graph_method_sets(
     edges: pd.DataFrame,
     truth: pd.DataFrame,
     scenarios: dict[str, set[str]],
+    as_of: pd.Timestamp | None = None,
 ) -> list[DiscoveryCandidate]:
     residual_users = set(truth.index[~truth.scenario_any & ~truth.is_fraud])
-    g_scen = load_graph(store, base=advances, node_attrs=("is_fraud",), scenarios=True)
-    g_no_scen = load_graph(store, base=advances, node_attrs=("is_fraud",), scenarios=False)
+    g_scen = load_graph(
+        store,
+        base=advances,
+        node_attrs=("is_fraud",),
+        scenarios=True,
+        as_of=as_of,
+    )
+    g_no_scen = load_graph(
+        store,
+        base=advances,
+        node_attrs=("is_fraud",),
+        scenarios=False,
+        as_of=as_of,
+    )
     specs = {
         spec.name: spec
         for spec in default_graph_screen_specs(sorted(scenarios))
@@ -524,7 +584,7 @@ def _render_markdown(
 
 This report uses the requested structure: scenarios first, then graph screens, then only selected graph methods are unioned with the scenarios. All unions are deduped by `user_id`.
 
-Graph selection rule for this run: include a graph method only when its marginal net-new contribution after scenario union and already-selected graph methods has at least `{config.graph_min_marginal_users}` users and DPD45 user rate at or above `{_pct(config.graph_min_marginal_dpd45_user_rate)}`. Low-precision or duplicate graph methods are shown for auditability but excluded from final discovery and plug derivation.
+Graph selection rule for this run: include a graph method only when its metadata is plug-eligible (`promotion_tier=plug_candidate`, `time_semantics` is `leakfree_asof` or `production_safe`, and `enforcement_projection` is not `none`) and its marginal net-new contribution after scenario union and already-selected graph methods has at least `{config.graph_min_marginal_users}` users and DPD45 user rate at or above `{_pct(config.graph_min_marginal_dpd45_user_rate)}`. Snapshot-review, low-precision, or duplicate graph methods are shown for auditability but excluded from final discovery and plug derivation.
 
 ## Scenario Performance
 

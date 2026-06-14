@@ -24,8 +24,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from projects.fraud_anomaly_detection.scenarios import SCENARIOS_VERSION
-
 # ─────────────────────────────────────────────────────────────────────────
 # PARAMETERS — edit these, then run. The SQL below is assembled from them.
 # ─────────────────────────────────────────────────────────────────────────
@@ -61,7 +59,7 @@ USER_CLIENT_METADATA = "pc_fivetran_db.wal_brigit_production_public.user_client_
 # Each entry: (scenario_name, SQL boolean expression over the `flagged` rows).
 # ─────────────────────────────────────────────────────────────────────────
 
-REGISTER_VERSION = SCENARIOS_VERSION
+REGISTER_VERSION = "2026-06-08.2"
 
 SCENARIOS: list[tuple[str, str]] = [
     # ring_account_reuse: fresh identity (<=24h) + sizable advance + the account
@@ -262,9 +260,7 @@ bank_account_links AS (
         pa.routing_number,
         pa.account_number,
         CONCAT(pa.routing_number, '-', pa.account_number) AS bank_account_key,
-        MAX(pa.persistent_account_id) OVER (
-            PARTITION BY pa.user_id, pa.routing_number, pa.account_number
-        ) AS persistent_account_id,
+        pa.persistent_account_id,
         pa.created_at::TIMESTAMP_NTZ AS plaid_account_created_at,
         pa.is_joint,
         i.identity_created_time
@@ -392,17 +388,6 @@ client_metadata AS (
     WHERE cm._fivetran_deleted = FALSE
       AND cm.device_id IS NOT NULL
 ),
-device_links AS (
-    SELECT
-        cm.user_id,
-        cm.device_id,
-        MIN(cm.valid_from) AS device_valid_from,
-        MAX(i.identity_created_time) AS identity_created_time
-    FROM client_metadata cm
-    JOIN identities_one_per_user i
-        ON cm.user_id = i.user_id
-    GROUP BY cm.user_id, cm.device_id
-),
 anchor_device AS (
     SELECT advance_id, user_id, feature_as_of_ts, device_id
     FROM (
@@ -421,6 +406,41 @@ anchor_device AS (
            AND cm.valid_from <= a.feature_as_of_ts
     )
     WHERE rn = 1
+),
+relevant_device_ids AS (
+    SELECT DISTINCT device_id
+    FROM anchor_device
+    WHERE device_id IS NOT NULL
+),
+device_identities_one_per_user AS (
+    SELECT
+        i.user_id::VARCHAR AS user_id,
+        i.created_time::TIMESTAMP_NTZ AS identity_created_time
+    FROM {IDENTITIES} i
+    JOIN (
+        SELECT DISTINCT cm.user_id
+        FROM client_metadata cm
+        JOIN relevant_device_ids d
+            ON cm.device_id = d.device_id
+    ) u
+        ON i.user_id::VARCHAR = u.user_id
+    QUALIFY ROW_NUMBER() OVER (
+        PARTITION BY i.user_id
+        ORDER BY i.is_deleted ASC, i.created_time DESC
+    ) = 1
+),
+device_links AS (
+    SELECT
+        cm.user_id,
+        cm.device_id,
+        MIN(cm.valid_from) AS device_valid_from,
+        MAX(i.identity_created_time) AS identity_created_time
+    FROM client_metadata cm
+    JOIN relevant_device_ids d
+        ON cm.device_id = d.device_id
+    JOIN device_identities_one_per_user i
+        ON cm.user_id = i.user_id
+    GROUP BY cm.user_id, cm.device_id
 ),
 device_user_features AS (
     SELECT

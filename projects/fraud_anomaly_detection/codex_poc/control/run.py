@@ -158,12 +158,17 @@ def _validate_finding_sets(
     finding_sets: Sequence[FindingSet],
     methods: Sequence[DiscoveryMethod],
 ) -> None:
-    metadata_by_method = {method.name: method.metadata for method in methods}
-    for finding_set in finding_sets:
-        metadata = metadata_by_method.get(finding_set.method)
-        if metadata is None:
+    if len(finding_sets) != len(methods):
+        raise ValueError(
+            f"Expected one FindingSet per method; got {len(finding_sets)} "
+            f"finding sets for {len(methods)} methods"
+        )
+    for method, finding_set in zip(methods, finding_sets, strict=True):
+        metadata = method.metadata
+        if finding_set.method != metadata.name:
             raise ValueError(
-                f"FindingSet method {finding_set.method!r} does not match registered method"
+                f"FindingSet method {finding_set.method!r} does not match method order "
+                f"{metadata.name!r}"
             )
         if finding_set.method_version != metadata.version:
             raise ValueError(

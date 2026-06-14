@@ -93,6 +93,25 @@ class MismatchedVersionMethod:
         )
 
 
+class ShadowedFindingSetMethod:
+    name = "test:shadow"
+    metadata = MethodMetadata(
+        name="test:shadow",
+        version="v1",
+        method_type="model",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
+
+    def run(self, store):
+        return FindingSet(
+            method=StaticMethod.name,
+            method_version=StaticMethod.metadata.version,
+            findings=[Finding("u1")],
+        )
+
+
 class ReviewQueueMethod:
     name = "test:review"
     metadata = MethodMetadata(
@@ -169,7 +188,7 @@ def test_run_skeleton_rejects_non_method_metadata(tiny_store, tmp_path):
 
 
 def test_run_skeleton_rejects_finding_set_that_does_not_match_metadata(tiny_store, tmp_path):
-    with pytest.raises(ValueError, match="does not match registered method"):
+    with pytest.raises(ValueError, match="does not match method order"):
         run_skeleton(
             tiny_store,
             findings_db=tmp_path / "findings.duckdb",
@@ -186,6 +205,18 @@ def test_run_skeleton_rejects_finding_set_version_that_does_not_match_metadata(
             tiny_store,
             findings_db=tmp_path / "findings.duckdb",
             methods=[MismatchedVersionMethod()],
+        )
+
+
+def test_run_skeleton_rejects_finding_set_that_shadows_registered_method(
+    tiny_store,
+    tmp_path,
+):
+    with pytest.raises(ValueError, match="does not match method order"):
+        run_skeleton(
+            tiny_store,
+            findings_db=tmp_path / "findings.duckdb",
+            methods=[ShadowedFindingSetMethod(), StaticMethod()],
         )
 
 

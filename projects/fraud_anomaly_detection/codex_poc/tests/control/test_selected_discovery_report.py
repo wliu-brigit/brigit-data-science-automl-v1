@@ -27,4 +27,27 @@ def test_selected_discovery_report_is_repeatable(tmp_path):
     assert report["plug"]["candidate_keys"] > 0
     assert report["plug"]["burned_keys"] > 0
     assert report["selected_graph_rows"][0]["selected?"] == "yes"
+    assert report["selected_graph_rows"] == [
+        {
+            "graph method": "graph:high_risk_entity_members_scenario_fraud_seed",
+            "display name": "high_risk_entity_members_scenario_fraud_seed",
+            "method type": "graph",
+            "time semantics": "snapshot_review",
+            "promotion tier": "plug_candidate",
+            "enforcement projection": "entity_key",
+            "total users / DPD45": "15 / 86.7%",
+            "net-new beyond scenarios / DPD45": "15 / 86.7%",
+            "marginal after dedupe / DPD45": "15 / 86.7%",
+            "selected?": "yes",
+            "reason": "selected",
+        }
+    ]
     assert "reason" in report["excluded_graph_rows"][0]
+    assert all(
+        row["promotion tier"] != "review_queue"
+        for row in report["selected_graph_rows"]
+    )
+    assert any(
+        row["reason"] == "promotion_tier"
+        for row in report["excluded_graph_rows"]
+    )

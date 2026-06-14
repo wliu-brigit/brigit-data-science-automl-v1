@@ -1,7 +1,9 @@
 """Semantic metadata for discovery methods in the fraud-control loop."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Literal
 
 MethodType = Literal["scenario", "graph", "model", "subgroup"]
@@ -21,4 +23,7 @@ class MethodMetadata:
     promotion_tier: PromotionTier
     enforcement_projection: EnforcementProjection
     enabled: bool = True
-    params: dict[str, object] = field(default_factory=dict)
+    params: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "params", MappingProxyType(dict(self.params)))

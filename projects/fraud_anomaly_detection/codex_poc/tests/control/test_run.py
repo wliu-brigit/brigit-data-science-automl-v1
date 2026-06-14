@@ -43,6 +43,56 @@ class LegacyMethodWithoutMetadata:
         )
 
 
+class FakeMetadataMethod:
+    name = "test:fake"
+    metadata = object()
+
+    def run(self, store):
+        return FindingSet(
+            method=self.name,
+            method_version="fake",
+            findings=[Finding("u1")],
+        )
+
+
+class MismatchedFindingSetMethod:
+    name = "test:mismatch"
+    metadata = MethodMetadata(
+        name="test:mismatch",
+        version="v1",
+        method_type="model",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
+
+    def run(self, store):
+        return FindingSet(
+            method="test:other",
+            method_version="v1",
+            findings=[Finding("u1")],
+        )
+
+
+class ReviewQueueMethod:
+    name = "test:review"
+    metadata = MethodMetadata(
+        name="test:review",
+        version="v1",
+        method_type="graph",
+        time_semantics="snapshot_review",
+        promotion_tier="review_queue",
+        enforcement_projection="entity_key",
+    )
+
+    def run(self, store):
+        return FindingSet(
+            method=self.name,
+            method_version=self.metadata.version,
+            findings=[Finding("u1"), Finding("u2")],
+        )
+
+
 def test_run_skeleton_rejects_methods_without_metadata(tiny_store, tmp_path):
     with pytest.raises(TypeError, match="metadata"):
         run_skeleton(
@@ -50,6 +100,38 @@ def test_run_skeleton_rejects_methods_without_metadata(tiny_store, tmp_path):
             findings_db=tmp_path / "findings.duckdb",
             methods=[LegacyMethodWithoutMetadata()],
         )
+
+
+def test_run_skeleton_rejects_non_method_metadata(tiny_store, tmp_path):
+    with pytest.raises(TypeError, match="MethodMetadata"):
+        run_skeleton(
+            tiny_store,
+            findings_db=tmp_path / "findings.duckdb",
+            methods=[FakeMetadataMethod()],
+        )
+
+
+def test_run_skeleton_rejects_finding_set_that_does_not_match_metadata(tiny_store, tmp_path):
+    with pytest.raises(ValueError, match="does not match registered method"):
+        run_skeleton(
+            tiny_store,
+            findings_db=tmp_path / "findings.duckdb",
+            methods=[MismatchedFindingSetMethod()],
+        )
+
+
+def test_run_skeleton_does_not_derive_plugs_from_review_queue_methods(tiny_store, tmp_path):
+    report = run_skeleton(
+        tiny_store,
+        findings_db=tmp_path / "findings.duckdb",
+        config=ControlConfig(min_support=2, min_coverage=1, block_tier_precision=0.5),
+        methods=[ReviewQueueMethod()],
+    )
+
+    assert report["discovery"]["union"]["n_users"] == 2
+    assert report["plug"]["candidate_count"] == 0
+    assert report["plug"]["burned_key_count"] == 0
+    assert report["state_a_backtest"]["plug"]["covered_discovery"]["n_users"] == 0
 
 
 def test_run_skeleton_accepts_methods_and_returns_holistic_stage_report(tiny_store, tmp_path):

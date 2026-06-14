@@ -7,6 +7,9 @@ from projects.fraud_anomaly_detection.codex_poc.control.discovery.catalog import
 from projects.fraud_anomaly_detection.codex_poc.control.discovery.graph_method import (
     ResidualRingMethod,
 )
+from projects.fraud_anomaly_detection.codex_poc.control.discovery.metadata import (
+    MethodMetadata,
+)
 from projects.fraud_anomaly_detection.codex_poc.control.discovery.scenario_method import (
     ScenarioMethod,
 )
@@ -45,6 +48,21 @@ def test_method_catalog_can_filter_enabled_methods():
         "scenario:ring_account_reuse",
         "graph:residual_ring_members",
     ]
+
+
+def test_method_metadata_params_are_immutable():
+    metadata = MethodMetadata(
+        name="graph:test",
+        version="v1",
+        method_type="graph",
+        time_semantics="snapshot_review",
+        promotion_tier="review_queue",
+        enforcement_projection="entity_key",
+        params={"source": "test"},
+    )
+
+    with pytest.raises(TypeError):
+        metadata.params["source"] = "changed"
 
 
 def test_scenario_method_is_a_discovery_method():

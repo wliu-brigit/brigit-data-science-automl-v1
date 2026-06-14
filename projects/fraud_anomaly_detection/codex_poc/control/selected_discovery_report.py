@@ -13,6 +13,7 @@ from projects.fraud_anomaly_detection.codex_poc.control import plug
 from projects.fraud_anomaly_detection.codex_poc.control.config import ControlConfig
 from projects.fraud_anomaly_detection.codex_poc.control.discovery.metadata import (
     MethodMetadata,
+    PromotionTier,
 )
 from projects.fraud_anomaly_detection.codex_poc.control.discovery.selection import (
     DiscoveryCandidate,
@@ -255,12 +256,12 @@ def _graph_method_sets(
     g_no_scen = load_graph(store, base=advances, node_attrs=("is_fraud",), scenarios=False)
 
     methods = [
-        DiscoveryCandidate(
+        _graph_candidate(
             name="residual_ring_members",
             users=set(residual_ring_members(g_scen, flag="scenario_any").user_id.astype(str)),
-            metadata=_graph_metadata("residual_ring_members", promotion_tier="review_queue"),
+            promotion_tier="review_queue",
         ),
-        DiscoveryCandidate(
+        _graph_candidate(
             name="suspicion_queue_top200",
             users=set(
                 suspicion_queue(
@@ -270,57 +271,56 @@ def _graph_method_sets(
                     top_n=200,
                 ).user_id.astype(str)
             ),
-            metadata=_graph_metadata("suspicion_queue_top200", promotion_tier="review_queue"),
+            promotion_tier="review_queue",
         ),
-        DiscoveryCandidate(
+        _graph_candidate(
             name="fraud_neighbours_hops2",
             users=set(bad_neighbours(g_no_scen, flags=("is_fraud",), max_hops=2).user_id.astype(str)),
-            metadata=_graph_metadata("fraud_neighbours_hops2", promotion_tier="review_queue"),
+            promotion_tier="review_queue",
         ),
-        DiscoveryCandidate(
+        _graph_candidate(
             name="high_risk_entity_members_scenario_fraud_seed",
             users=_high_risk_entity_members(edges, truth, residual_users),
-            metadata=_graph_metadata(
-                "high_risk_entity_members_scenario_fraud_seed",
-                promotion_tier="plug_candidate",
-            ),
+            promotion_tier="plug_candidate",
         ),
-        DiscoveryCandidate(
+        _graph_candidate(
             name="multi_witness_neighbors_scenario_fraud_seed",
             users=_multi_witness_neighbors(edges, truth, residual_users),
-            metadata=_graph_metadata(
-                "multi_witness_neighbors_scenario_fraud_seed",
-                promotion_tier="review_queue",
-            ),
+            promotion_tier="review_queue",
         ),
     ]
     for scenario_name, scenario_users in scenarios.items():
         methods.append(
-            DiscoveryCandidate(
+            _graph_candidate(
                 name=f"scenario_neighborhood:{scenario_name}",
                 users=_scenario_neighborhood(edges, residual_users, scenario_users),
-                metadata=_graph_metadata(
-                    f"scenario_neighborhood:{scenario_name}",
-                    promotion_tier="review_queue",
-                    params={"scenario_name": scenario_name},
-                ),
+                promotion_tier="review_queue",
+                params={"scenario_name": scenario_name},
             )
         )
 
-    return [
-        DiscoveryCandidate(
-            name=method.name,
-            users={str(user_id) for user_id in method.users},
-            metadata=method.metadata,
-        )
-        for method in methods
-    ]
+    return methods
+
+
+def _graph_candidate(
+    name: str,
+    users: set[str],
+    *,
+    promotion_tier: PromotionTier,
+    params: dict[str, object] | None = None,
+) -> DiscoveryCandidate:
+    metadata = _graph_metadata(name, promotion_tier=promotion_tier, params=params)
+    return DiscoveryCandidate(
+        name=metadata.name,
+        users={str(user_id) for user_id in users},
+        metadata=metadata,
+    )
 
 
 def _graph_metadata(
     name: str,
     *,
-    promotion_tier: str,
+    promotion_tier: PromotionTier,
     params: dict[str, object] | None = None,
 ) -> MethodMetadata:
     return MethodMetadata(
@@ -328,9 +328,13 @@ def _graph_metadata(
         version="selected-report-1",
         method_type="graph",
         time_semantics="snapshot_review",
-        promotion_tier=promotion_tier,  # type: ignore[arg-type]
+        promotion_tier=promotion_tier,
         enforcement_projection="entity_key",
-        params={"source": "selected_discovery_report", **(params or {})},
+        params={
+            "display_name": name,
+            "source": "selected_discovery_report",
+            **(params or {}),
+        },
     )
 
 
@@ -475,6 +479,11 @@ def _scenario_rows(
 def _graph_row(method: SelectionRow) -> dict:
     return {
         "graph method": method.name,
+        "display name": str(method.metadata.params["display_name"]),
+        "method type": method.metadata.method_type,
+        "time semantics": method.metadata.time_semantics,
+        "promotion tier": method.metadata.promotion_tier,
+        "enforcement projection": method.metadata.enforcement_projection,
         "total users / DPD45": (
             f"{method.total['users']:,} / {_pct(method.total['dpd45_user_rate'])}"
         ),
@@ -532,11 +541,11 @@ Graph selection rule for this run: include a graph method only when its marginal
 
 ### Selected Graph Methods
 
-{_table(selected_rows, ["graph method", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?", "reason"]) if selected_rows else "No graph methods passed the marginal selection rule."}
+{_table(selected_rows, ["graph method", "display name", "method type", "time semantics", "promotion tier", "enforcement projection", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?", "reason"]) if selected_rows else "No graph methods passed the marginal selection rule."}
 
 ### Screened But Excluded Graph Methods
 
-{_table(excluded_rows, ["graph method", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?", "reason"]) if excluded_rows else "No graph methods were excluded."}
+{_table(excluded_rows, ["graph method", "display name", "method type", "time semantics", "promotion tier", "enforcement projection", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?", "reason"]) if excluded_rows else "No graph methods were excluded."}
 
 ## Final Deduped Discovery Union
 

@@ -1,21 +1,39 @@
 """Reusable discovery-candidate selection for promotion into plug derivation."""
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from types import MappingProxyType
 
 from projects.fraud_anomaly_detection.codex_poc.control.discovery.metadata import (
     MethodMetadata,
 )
 
-OutcomeFn = Callable[[set[str]], dict]
+Outcome = Mapping[str, int | float]
+OutcomeFn = Callable[[frozenset[str]], Outcome]
+_REQUIRED_OUTCOME_KEYS = ("users", "dpd45_user_rate")
 
 
 @dataclass(frozen=True)
 class DiscoveryCandidate:
     name: str
-    users: set[str]
+    users: frozenset[str]
     metadata: MethodMetadata
+
+    def __init__(
+        self,
+        name: str,
+        users: set[str] | frozenset[str],
+        metadata: MethodMetadata,
+    ):
+        if name != metadata.name:
+            raise ValueError(
+                f"DiscoveryCandidate name {name!r} must match metadata.name "
+                f"{metadata.name!r}"
+            )
+        object.__setattr__(self, "name", name)
+        object.__setattr__(self, "users", frozenset(str(user_id) for user_id in users))
+        object.__setattr__(self, "metadata", metadata)
 
 
 @dataclass(frozen=True)
@@ -28,12 +46,12 @@ class SelectionRule:
 @dataclass(frozen=True)
 class SelectionRow:
     name: str
-    users: set[str]
-    total: dict
-    net_new_users: set[str]
-    net: dict
-    marginal_users: set[str]
-    marginal: dict
+    users: frozenset[str]
+    total: Outcome
+    net_new_users: frozenset[str]
+    net: Outcome
+    marginal_users: frozenset[str]
+    marginal: Outcome
     selected: bool
     reason: str
     metadata: MethodMetadata
@@ -43,7 +61,7 @@ class SelectionRow:
 class SelectionResult:
     selected: list[SelectionRow]
     excluded: list[SelectionRow]
-    final_users: set[str]
+    final_users: frozenset[str]
 
 
 def select_candidates(
@@ -54,28 +72,28 @@ def select_candidates(
     rule: SelectionRule,
 ) -> SelectionResult:
     """Select candidates by marginal contribution after baseline and prior selections."""
-    baseline = {str(user_id) for user_id in baseline_users}
+    baseline = frozenset(str(user_id) for user_id in baseline_users)
     enriched = []
-    for candidate in candidates:
-        users = {str(user_id) for user_id in candidate.users}
-        net_new_users = users - baseline
+    for order, candidate in enumerate(candidates):
+        users = frozenset(str(user_id) for user_id in candidate.users)
+        net_new_users = frozenset(users - baseline)
         enriched.append(
             {
                 "candidate": candidate,
                 "users": users,
-                "total": outcome_fn(users),
+                "total": _freeze_outcome(outcome_fn(users)),
                 "net_new_users": net_new_users,
-                "net": outcome_fn(net_new_users),
+                "net": _freeze_outcome(outcome_fn(net_new_users)),
+                "order": order,
             }
         )
 
     enriched.sort(
         key=lambda item: (
-            item["net"].get("dpd45_user_rate", 0.0),
-            item["net"].get("users", 0),
-            item["candidate"].name,
-        ),
-        reverse=True,
+            -_metric(item["net"], "dpd45_user_rate"),
+            -_metric(item["net"], "users"),
+            item["order"],
+        )
     )
 
     selected: list[SelectionRow] = []
@@ -84,8 +102,8 @@ def select_candidates(
     for item in enriched:
         candidate = item["candidate"]
         users = item["users"]
-        marginal_users = users - covered
-        marginal = outcome_fn(marginal_users)
+        marginal_users = frozenset(users - covered)
+        marginal = _freeze_outcome(outcome_fn(marginal_users))
         reason = _exclusion_reason(candidate, marginal, rule)
         include = reason == "selected"
         row = SelectionRow(
@@ -105,7 +123,7 @@ def select_candidates(
             covered |= users
         else:
             excluded.append(row)
-    return SelectionResult(selected=selected, excluded=excluded, final_users=covered)
+    return SelectionResult(selected=selected, excluded=excluded, final_users=frozenset(covered))
 
 
 def _exclusion_reason(
@@ -115,8 +133,19 @@ def _exclusion_reason(
 ) -> str:
     if candidate.metadata.promotion_tier not in rule.promotable_tiers:
         return "promotion_tier"
-    if marginal.get("users", 0) < rule.min_marginal_users:
+    if _metric(marginal, "users") < rule.min_marginal_users:
         return "min_marginal_users"
-    if marginal.get("dpd45_user_rate", 0.0) < rule.min_marginal_dpd45_user_rate:
+    if _metric(marginal, "dpd45_user_rate") < rule.min_marginal_dpd45_user_rate:
         return "min_marginal_dpd45_user_rate"
     return "selected"
+
+
+def _freeze_outcome(outcome: Outcome) -> Outcome:
+    missing = [key for key in _REQUIRED_OUTCOME_KEYS if key not in outcome]
+    if missing:
+        raise KeyError(f"Outcome is missing required keys: {', '.join(missing)}")
+    return MappingProxyType(dict(outcome))
+
+
+def _metric(outcome: Outcome, key: str) -> int | float:
+    return outcome[key]

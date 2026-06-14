@@ -80,3 +80,99 @@ def test_select_candidates_excludes_non_promotable_tiers():
     assert result.excluded[0].name == "graph:review"
     assert result.excluded[0].reason == "promotion_tier"
     assert result.final_users == set()
+
+
+def test_discovery_candidate_requires_canonical_metadata_name():
+    metadata = MethodMetadata(
+        name="graph:canonical",
+        version="v1",
+        method_type="graph",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
+
+    try:
+        DiscoveryCandidate("display-only", {"u1"}, metadata)
+    except ValueError as exc:
+        assert "metadata.name" in str(exc)
+    else:
+        raise AssertionError("expected mismatched candidate name to fail")
+
+
+def test_select_candidates_preserves_input_order_for_metric_ties():
+    outcome = _outcome_factory({"u1", "u2", "u3", "u4"})
+    first = MethodMetadata(
+        name="graph:first",
+        version="v1",
+        method_type="graph",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
+    second = MethodMetadata(
+        name="graph:second",
+        version="v1",
+        method_type="graph",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
+
+    result = select_candidates(
+        [
+            DiscoveryCandidate("graph:first", {"u1", "u2"}, first),
+            DiscoveryCandidate("graph:second", {"u3", "u4"}, second),
+        ],
+        baseline_users=set(),
+        outcome_fn=outcome,
+        rule=SelectionRule(min_marginal_users=1, min_marginal_dpd45_user_rate=0.5),
+    )
+
+    assert [row.name for row in result.selected] == ["graph:first", "graph:second"]
+
+
+def test_select_candidates_fails_when_outcome_contract_is_missing_required_keys():
+    metadata = MethodMetadata(
+        name="graph:bad_outcome",
+        version="v1",
+        method_type="graph",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
+
+    try:
+        select_candidates(
+            [DiscoveryCandidate("graph:bad_outcome", {"u1"}, metadata)],
+            baseline_users=set(),
+            outcome_fn=lambda users: {"users": len(users)},
+            rule=SelectionRule(min_marginal_users=1, min_marginal_dpd45_user_rate=0.5),
+        )
+    except KeyError as exc:
+        assert "dpd45_user_rate" in str(exc)
+    else:
+        raise AssertionError("expected malformed outcome data to fail")
+
+
+def test_selection_results_do_not_expose_mutable_user_sets():
+    outcome = _outcome_factory({"u1"})
+    metadata = MethodMetadata(
+        name="graph:immutable",
+        version="v1",
+        method_type="graph",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
+
+    result = select_candidates(
+        [DiscoveryCandidate("graph:immutable", {"u1"}, metadata)],
+        baseline_users=set(),
+        outcome_fn=outcome,
+        rule=SelectionRule(min_marginal_users=1, min_marginal_dpd45_user_rate=0.5),
+    )
+
+    assert isinstance(result.final_users, frozenset)
+    assert isinstance(result.selected[0].users, frozenset)
+    assert isinstance(result.selected[0].marginal_users, frozenset)

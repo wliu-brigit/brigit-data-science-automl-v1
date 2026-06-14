@@ -596,7 +596,7 @@ def _table(rows: list[dict], headers: list[str]) -> str:
         "| " + " | ".join(["---"] * len(headers)) + " |",
     ]
     for row in rows:
-        lines.append("| " + " | ".join(str(row.get(header, "")) for header in headers) + " |")
+        lines.append("| " + " | ".join(str(row[header]) for header in headers) + " |")
     return "\n".join(lines)
 
 

@@ -516,8 +516,8 @@ def select_candidates(
 
     enriched.sort(
         key=lambda item: (
-            item["net"].get("dpd45_user_rate", 0.0),
-            item["net"].get("users", 0),
+            item["net"]["dpd45_user_rate"],
+            item["net"]["users"],
             item["candidate"].name,
         ),
         reverse=True,
@@ -560,9 +560,9 @@ def _exclusion_reason(
 ) -> str:
     if candidate.metadata.promotion_tier not in rule.promotable_tiers:
         return "promotion_tier"
-    if marginal.get("users", 0) < rule.min_marginal_users:
+    if marginal["users"] < rule.min_marginal_users:
         return "min_marginal_users"
-    if marginal.get("dpd45_user_rate", 0.0) < rule.min_marginal_dpd45_user_rate:
+    if marginal["dpd45_user_rate"] < rule.min_marginal_dpd45_user_rate:
         return "min_marginal_dpd45_user_rate"
     return "selected"
 ```

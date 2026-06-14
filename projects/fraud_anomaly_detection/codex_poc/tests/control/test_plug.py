@@ -39,6 +39,22 @@ def test_candidate_stats_can_be_restricted_to_state_a_users(tiny_store):
     assert acct_a.coverage == 2
 
 
+def test_candidate_stats_respects_end_ts_for_state_a_derivation(tiny_store):
+    discovered = pd.Series(["u1", "u2", "u3"])
+
+    stats = plug.candidate_stats(
+        tiny_store,
+        discovered,
+        eligible_users=["u1", "u2", "u3"],
+        end_ts=pd.Timestamp("2026-01-31"),
+    )
+
+    acct_a = stats[(stats.entity_type == "bank") & (stats.entity_value == "acctA")].iloc[0]
+    assert acct_a.support == 2
+    assert acct_a.coverage == 2
+    assert acct_a.dpd45_precision == 1.0
+
+
 def test_candidate_stats_extracts_only_keys_touched_by_discovery(tiny_store):
     discovered = pd.Series(["u1", "u2"])
 

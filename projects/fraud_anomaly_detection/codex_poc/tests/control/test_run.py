@@ -1,9 +1,14 @@
 from pathlib import Path
+from datetime import datetime
 
 import pytest
+import duckdb
 
 from projects.fraud_anomaly_detection.codex_poc.control.contract import Finding, FindingSet
 from projects.fraud_anomaly_detection.codex_poc.control.config import ControlConfig
+from projects.fraud_anomaly_detection.codex_poc.control.plug_fact_store import (
+    PlugFactStore,
+)
 from projects.fraud_anomaly_detection.codex_poc.control.report_store import ReportStore
 from projects.fraud_anomaly_detection.codex_poc.control.discovery.metadata import (
     MethodMetadata,
@@ -131,6 +136,28 @@ class ReviewQueueMethod:
         )
 
 
+class FutureSensitiveMethod:
+    name = "test:future_sensitive"
+    metadata = MethodMetadata(
+        name="test:future_sensitive",
+        version="v1",
+        method_type="model",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
+
+    def run(self, store):
+        with duckdb.connect(str(store), read_only=True) as con:
+            newest = con.execute("SELECT max(feature_as_of_ts) FROM advances").fetchone()[0]
+        findings = [Finding("u1")] if newest >= datetime(2026, 2, 1) else []
+        return FindingSet(
+            method=self.name,
+            method_version=self.metadata.version,
+            findings=findings,
+        )
+
+
 class DuplicateNamePlugMethod:
     name = "test:duplicate"
     metadata = MethodMetadata(
@@ -243,10 +270,24 @@ def test_run_skeleton_does_not_derive_plugs_from_review_queue_methods(tiny_store
     assert report["state_a_backtest"]["plug"]["covered_discovery"]["n_users"] == 0
 
 
-def test_run_skeleton_accepts_methods_and_returns_holistic_stage_report(tiny_store, tmp_path):
+def test_run_skeleton_runs_state_a_discovery_on_asof_store(tiny_store, tmp_path):
     report = run_skeleton(
         tiny_store,
         findings_db=tmp_path / "findings.duckdb",
+        config=ControlConfig(min_support=1, min_coverage=1, block_tier_precision=0.5),
+        methods=[FutureSensitiveMethod()],
+    )
+
+    assert report["discovery"]["union"]["n_users"] == 1
+    assert report["state_a_backtest"]["discovery"]["union"]["n_users"] == 0
+    assert report["plug"]["candidate_count"] == 0
+
+
+def test_run_skeleton_accepts_methods_and_returns_holistic_stage_report(tiny_store, tmp_path):
+    findings_db = tmp_path / "findings.duckdb"
+    report = run_skeleton(
+        tiny_store,
+        findings_db=findings_db,
         reports_db=tmp_path / "reports.duckdb",
         config=ControlConfig(min_support=2, min_coverage=1, block_tier_precision=0.5),
         methods=[StaticMethod()],
@@ -258,10 +299,14 @@ def test_run_skeleton_accepts_methods_and_returns_holistic_stage_report(tiny_sto
     assert report["finding_store"] == {
         "refresh_key": "skeleton",
         "data_version": "sample",
+        "snapshot_written": True,
+        "snapshot_refresh_key": "skeleton",
+        "snapshot_id": report["finding_store"]["snapshot_id"],
         "n_rows": 3,
         "n_users": 3,
     }
     assert report["plug"]["candidate_count"] >= 1
+    assert report["plug"]["candidate_fact_snapshot_id"]
     assert report["plug"]["burned_key_count"] >= 1
     assert report["state_a_backtest"]["discovery"]["union"]["n_users"] == 2
     assert report["state_a_backtest"]["plug"]["covered_discovery"]["n_users"] == 2
@@ -273,6 +318,8 @@ def test_run_skeleton_accepts_methods_and_returns_holistic_stage_report(tiny_sto
     latest = ReportStore(tmp_path / "reports.duckdb").read_latest()
     assert latest["refresh_key"] == "skeleton"
     assert latest["report"]["holdout_backtest"] == report["holdout_backtest"]
+    plug_facts = PlugFactStore(findings_db).read_latest()
+    assert len(plug_facts) == report["plug"]["candidate_count"]
 
 
 @pytest.mark.skipif(not SAMPLE.exists(), reason="sample store not built")

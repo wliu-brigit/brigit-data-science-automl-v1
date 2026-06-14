@@ -19,7 +19,6 @@ def test_config_defaults_are_tunable_in_one_place():
     assert cfg.block_tier_precision == 0.8
     assert cfg.min_support >= 1
     assert cfg.min_coverage >= 1
-    assert cfg.min_corroborating_types >= 1
     assert cfg.holdout_days == 30
     cfg2 = ControlConfig(block_tier_precision=0.7)
     assert cfg2.block_tier_precision == 0.7

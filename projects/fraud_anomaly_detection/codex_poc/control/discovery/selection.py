@@ -71,6 +71,7 @@ def select_candidates(
     rule: SelectionRule,
 ) -> SelectionResult:
     """Select candidates by marginal contribution after baseline and prior selections."""
+    _require_unique_candidate_names(candidates)
     baseline = frozenset(str(user_id) for user_id in baseline_users)
     enriched = []
     for order, candidate in enumerate(candidates):
@@ -141,6 +142,14 @@ def _exclusion_reason(
     if _metric(marginal, "dpd45_user_rate") < rule.min_marginal_dpd45_user_rate:
         return "min_marginal_dpd45_user_rate"
     return "selected"
+
+
+def _require_unique_candidate_names(candidates: Sequence[DiscoveryCandidate]) -> None:
+    seen: set[str] = set()
+    for candidate in candidates:
+        if candidate.name in seen:
+            raise ValueError(f"Duplicate discovery candidate name: {candidate.name!r}")
+        seen.add(candidate.name)
 
 
 def _freeze_outcome(outcome: Outcome) -> Outcome:

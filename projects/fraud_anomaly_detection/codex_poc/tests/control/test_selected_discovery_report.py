@@ -45,6 +45,7 @@ def test_graph_row_exposes_metadata_without_sample_store():
     assert row == {
         "graph method": "graph:test",
         "display name": "test",
+        "method version": "v1",
         "method type": "graph",
         "time semantics": "snapshot_review",
         "promotion tier": "review_queue",
@@ -55,6 +56,24 @@ def test_graph_row_exposes_metadata_without_sample_store():
         "selected?": "no",
         "reason": "promotion_tier",
     }
+
+
+def test_selected_discovery_report_runs_on_tiny_store(tiny_store, tmp_path):
+    report = generate_selected_discovery_report(
+        SelectedReportConfig(
+            store=tiny_store,
+            out_dir=tmp_path,
+            refresh_key="tiny_selected_report",
+            graph_min_marginal_users=1,
+        )
+    )
+
+    assert Path(report["paths"]["markdown"]).exists()
+    assert Path(report["paths"]["json"]).exists()
+    assert report["scenario_rows"][0]["scenario method"].startswith("scenario:")
+    assert report["scenario_rows"][0]["method version"] == report["scenario_version"]
+    assert report["selected_graph_rows"] == []
+    assert any(row["reason"] == "promotion_tier" for row in report["excluded_graph_rows"])
 
 
 @pytest.mark.skipif(not SAMPLE.exists(), reason="sample store not built")
@@ -70,30 +89,15 @@ def test_selected_discovery_report_is_repeatable(tmp_path):
     assert Path(report["paths"]["markdown"]).exists()
     assert Path(report["paths"]["json"]).exists()
     assert report["final_discovery"]["scenario_union_users"] == 1024
-    assert report["final_discovery"]["final_union_users"] >= 1024
+    assert report["final_discovery"]["final_union_users"] == 1024
     assert report["plug"]["candidate_keys"] > 0
     assert report["plug"]["burned_keys"] > 0
-    assert report["selected_graph_rows"][0]["selected?"] == "yes"
-    assert report["selected_graph_rows"] == [
-        {
-            "graph method": "graph:high_risk_entity_members_scenario_fraud_seed",
-            "display name": "high_risk_entity_members_scenario_fraud_seed",
-            "method type": "graph",
-            "time semantics": "snapshot_review",
-            "promotion tier": "plug_candidate",
-            "enforcement projection": "entity_key",
-            "total users / DPD45": "15 / 86.7%",
-            "net-new beyond scenarios / DPD45": "15 / 86.7%",
-            "marginal after dedupe / DPD45": "15 / 86.7%",
-            "selected?": "yes",
-            "reason": "selected",
-        }
-    ]
+    assert report["selected_graph_rows"] == []
+    assert report["scenario_rows"][0]["scenario method"].startswith("scenario:")
+    assert report["scenario_rows"][0]["method version"] == report["scenario_version"]
+    assert report["scenario_rows"][0]["time semantics"] == "production_safe"
+    assert "candidate_facts" in report["plug"]
     assert "reason" in report["excluded_graph_rows"][0]
-    assert all(
-        row["promotion tier"] != "review_queue"
-        for row in report["selected_graph_rows"]
-    )
     assert any(
         row["reason"] == "promotion_tier"
         for row in report["excluded_graph_rows"]

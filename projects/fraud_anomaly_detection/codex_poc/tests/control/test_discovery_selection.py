@@ -132,6 +132,33 @@ def test_select_candidates_preserves_input_order_for_metric_ties():
     assert [row.name for row in result.selected] == ["graph:first", "graph:second"]
 
 
+def test_select_candidates_rejects_duplicate_candidate_names():
+    outcome = _outcome_factory({"u1"})
+    metadata = MethodMetadata(
+        name="graph:duplicate",
+        version="v1",
+        method_type="graph",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
+
+    try:
+        select_candidates(
+            [
+                DiscoveryCandidate("graph:duplicate", {"u1"}, metadata),
+                DiscoveryCandidate("graph:duplicate", {"u2"}, metadata),
+            ],
+            baseline_users=set(),
+            outcome_fn=outcome,
+            rule=SelectionRule(min_marginal_users=1, min_marginal_dpd45_user_rate=0.5),
+        )
+    except ValueError as exc:
+        assert "Duplicate discovery candidate name" in str(exc)
+    else:
+        raise AssertionError("expected duplicate candidate names to fail")
+
+
 def test_select_candidates_fails_when_outcome_contract_is_missing_required_keys():
     metadata = MethodMetadata(
         name="graph:bad_outcome",

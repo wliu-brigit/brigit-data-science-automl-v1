@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
@@ -65,6 +66,44 @@ def test_method_metadata_params_are_immutable():
         metadata.params["source"] = "changed"
 
 
+def test_method_metadata_nested_params_are_immutable():
+    metadata = MethodMetadata(
+        name="graph:test",
+        version="v1",
+        method_type="graph",
+        time_semantics="snapshot_review",
+        promotion_tier="review_queue",
+        enforcement_projection="entity_key",
+        params={"thresholds": {"min_users": 10}, "tags": ["review"]},
+    )
+
+    assert metadata.params["tags"] == ("review",)
+    thresholds = cast(Any, metadata.params["thresholds"])
+    with pytest.raises(TypeError):
+        thresholds["min_users"] = 20
+
+
+def test_method_metadata_rejects_empty_identity_fields():
+    with pytest.raises(ValueError, match="name"):
+        MethodMetadata(
+            name=" ",
+            version="v1",
+            method_type="graph",
+            time_semantics="snapshot_review",
+            promotion_tier="review_queue",
+            enforcement_projection="entity_key",
+        )
+    with pytest.raises(ValueError, match="version"):
+        MethodMetadata(
+            name="graph:test",
+            version=" ",
+            method_type="graph",
+            time_semantics="snapshot_review",
+            promotion_tier="review_queue",
+            enforcement_projection="entity_key",
+        )
+
+
 def test_method_metadata_rejects_invalid_runtime_values():
     with pytest.raises(ValueError, match="promotion_tier"):
         MethodMetadata(
@@ -86,6 +125,18 @@ def test_method_metadata_rejects_plug_candidate_without_projection():
             time_semantics="leakfree_asof",
             promotion_tier="plug_candidate",
             enforcement_projection="none",
+        )
+
+
+def test_method_metadata_rejects_snapshot_review_plug_candidate():
+    with pytest.raises(ValueError, match="leakfree_asof or production_safe"):
+        MethodMetadata(
+            name="graph:test",
+            version="v1",
+            method_type="graph",
+            time_semantics="snapshot_review",
+            promotion_tier="plug_candidate",
+            enforcement_projection="entity_key",
         )
 
 

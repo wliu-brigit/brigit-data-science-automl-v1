@@ -53,17 +53,17 @@ The report is the holistic view of the loop, with discovery and plug validation
 kept as separate layers:
 
 - `discovery` — which discovery methods ran, their versions, finding counts,
-  method-level DPD45 rollups, the deduped union, and scenario-vs-graph
-  attribution (`scenario_only_users`, `graph_only_users`,
-  `scenario_and_graph_users`).
-- `finding_store` — refresh key, data version, stored row count, and distinct
-  users.
+  method metadata, method-level DPD45 rollups, the deduped union, and
+  attribution grouped by `method_type`.
+- `finding_store` — refresh key, data version, snapshot id, whether a new
+  snapshot was written, stored row count, distinct users, and a persisted method
+  metadata snapshot.
 - `state_a_backtest` — the leak-free derivation state: scenario/graph discovery
   outcomes, candidate plug validation, and plug coverage for discovered users.
 - `holdout_backtest` — the held-out A→B delta: the same discovery and plug
   validation measured only on new holdout activity after the cutoff.
-- `plug` — candidate count, burned-key count, the qualified key list, and the
-  State A plug validation panel.
+- `plug` — candidate count, persisted candidate-fact snapshot id, burned-key
+  count, the qualified key list, and the State A plug validation panel.
 
 Plug validation buckets are intentionally named from the operator perspective:
 
@@ -94,8 +94,9 @@ That report:
 - evaluates every scenario in the canonical scenario register;
 - screens graph methods by total users, net-new users beyond the scenario union,
   and marginal net-new users after dedupe;
-- includes only graph methods that clear the marginal selection rule in the
-  final discovery union;
+- reports snapshot-review graph screens for audit/review, but excludes them
+  from plug derivation until they have `leakfree_asof` or `production_safe`
+  metadata;
 - derives plug candidates from the final State A discovery union;
 - reports State A and holdout buckets for `covered_discovery`,
   `uncovered_discovery`, and `outside_discovery`.
@@ -116,12 +117,15 @@ Each discovery method exposes method metadata:
 - `enforcement_projection`: entity_key, scenario_rule, or none.
 
 This keeps broad discovery safe: a method can be useful for review without
-being eligible for plug derivation. Disable a method by removing it from
+being eligible for plug derivation. `plug_candidate` is accepted only when
+`time_semantics` is `leakfree_asof` or `production_safe`, and when
+`enforcement_projection` is not `none`. Disable a method by removing it from
 `default_methods()` or by setting `enabled=False` in its metadata.
 
 The selected-discovery report uses reusable selection logic. It screens graph
 methods by marginal net-new contribution after the scenario baseline and records
-why each graph method was selected or excluded.
+why each graph method was selected or excluded. Snapshot-review graph screens
+remain excluded with reason `promotion_tier`.
 
 ### Adding a scenario discovery method
 
@@ -147,8 +151,9 @@ why each graph method was selected or excluded.
    import from `codex_poc.archived`.
 3. Add the adapter to `default_methods()` in `control/discovery/catalog.py`.
 4. Add tests under `codex_poc/tests/control/` for the adapter, the catalog, and
-   the end-to-end report. The graph method will then contribute to `graph_only_users` or
-   `scenario_and_graph_users`, depending on overlap with scenario findings.
+   the end-to-end report. If the method is still `snapshot_review`, keep it in
+   `review_queue`; only leak-free/as-of or production-safe graph adapters may be
+   promoted to `plug_candidate`.
 
 ## Build posture
 

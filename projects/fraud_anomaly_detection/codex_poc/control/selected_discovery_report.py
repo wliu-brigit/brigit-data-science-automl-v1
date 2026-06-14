@@ -14,6 +14,9 @@ from projects.fraud_anomaly_detection.codex_poc.control.config import ControlCon
 from projects.fraud_anomaly_detection.codex_poc.control.discovery.graph_screen_catalog import (
     default_graph_screen_specs,
 )
+from projects.fraud_anomaly_detection.codex_poc.control.discovery.scenario_method import (
+    ScenarioMethod,
+)
 from projects.fraud_anomaly_detection.codex_poc.control.discovery.selection import (
     DiscoveryCandidate,
     SelectionRule,
@@ -67,6 +70,7 @@ def generate_selected_discovery_report(config: SelectedReportConfig) -> dict:
     advances, edges = _load_inputs(config.store)
     truth = _user_truth(advances)
     scenarios = _scenario_sets(truth)
+    scenario_candidates = _scenario_candidates(scenarios)
     scenario_union = set().union(*scenarios.values()) if scenarios else set()
     graph_methods = _graph_method_sets(config.store, advances, edges, truth, scenarios)
     selected_graphs, excluded_graphs = _select_graph_methods(
@@ -108,7 +112,7 @@ def generate_selected_discovery_report(config: SelectedReportConfig) -> dict:
         start_ts=split.cutoff,
     )
 
-    scenario_rows = _scenario_rows(scenarios, scenario_union, truth)
+    scenario_rows = _scenario_rows(scenario_candidates, scenario_union, truth)
     selected_rows = [_graph_row(method) for method in selected_graphs]
     excluded_rows = [_graph_row(method) for method in excluded_graphs]
     state_rows = [
@@ -152,6 +156,7 @@ def generate_selected_discovery_report(config: SelectedReportConfig) -> dict:
         },
         "plug": {
             "candidate_keys": int(len(stats)),
+            "candidate_facts": stats.to_dict("records"),
             "burned_keys": int(len(burned)),
             "state_a": state_plug,
             "holdout": holdout_plug,
@@ -241,6 +246,20 @@ def _scenario_sets(truth: pd.DataFrame) -> dict[str, set[str]]:
         scenario.name: set(truth.index[truth[f"scenario_{scenario.name}"]])
         for scenario in SCENARIOS
     }
+
+
+def _scenario_candidates(scenarios: dict[str, set[str]]) -> list[DiscoveryCandidate]:
+    candidates = []
+    for scenario in SCENARIOS:
+        metadata = ScenarioMethod(scenario.name).metadata
+        candidates.append(
+            DiscoveryCandidate(
+                name=metadata.name,
+                users=scenarios[scenario.name],
+                metadata=metadata,
+            )
+        )
+    return candidates
 
 
 def _graph_method_sets(
@@ -372,8 +391,14 @@ def _select_graph_methods(
     return result.selected, result.excluded
 
 
-def _outcome(users: set[str], truth: pd.DataFrame) -> dict:
+def _outcome(users: frozenset[str] | set[str], truth: pd.DataFrame) -> dict:
     user_ids = {str(user_id) for user_id in users}
+    unknown_users = user_ids - {str(user_id) for user_id in truth.index}
+    if unknown_users:
+        raise ValueError(
+            "Outcome users are missing from truth frame: "
+            + ", ".join(sorted(unknown_users)[:10])
+        )
     if not user_ids:
         return {
             "users": 0,
@@ -401,16 +426,23 @@ def _outcome(users: set[str], truth: pd.DataFrame) -> dict:
 
 
 def _scenario_rows(
-    scenarios: dict[str, set[str]],
+    scenarios: list[DiscoveryCandidate],
     scenario_union: set[str],
     truth: pd.DataFrame,
 ) -> list[dict]:
     rows = []
-    for scenario in SCENARIOS:
-        outcomes = _outcome(scenarios[scenario.name], truth)
+    for scenario in scenarios:
+        scenario_name = str(scenario.metadata.params["scenario_name"])
+        outcomes = _outcome(scenario.users, truth)
         rows.append(
             {
-                "scenario": scenario.name,
+                "scenario": scenario_name,
+                "scenario method": scenario.name,
+                "method version": scenario.metadata.version,
+                "method type": scenario.metadata.method_type,
+                "time semantics": scenario.metadata.time_semantics,
+                "promotion tier": scenario.metadata.promotion_tier,
+                "enforcement projection": scenario.metadata.enforcement_projection,
                 "users found": f"{outcomes['users']:,}",
                 "DPD45 user rate": _pct(outcomes["dpd45_user_rate"]),
                 "DPD45 advances": f"{outcomes['dpd45_advances']:,}/{outcomes['mature_advances']:,}",
@@ -421,6 +453,12 @@ def _scenario_rows(
     rows.append(
         {
             "scenario": "scenario union (deduped)",
+            "scenario method": "scenario:union",
+            "method version": SCENARIOS_VERSION,
+            "method type": "scenario",
+            "time semantics": "production_safe",
+            "promotion tier": "plug_candidate",
+            "enforcement projection": "scenario_rule",
             "users found": f"{outcomes['users']:,}",
             "DPD45 user rate": _pct(outcomes["dpd45_user_rate"]),
             "DPD45 advances": f"{outcomes['dpd45_advances']:,}/{outcomes['mature_advances']:,}",
@@ -434,6 +472,7 @@ def _graph_row(method: SelectionRow) -> dict:
     return {
         "graph method": method.name,
         "display name": str(method.metadata.params["display_name"]),
+        "method version": method.metadata.version,
         "method type": method.metadata.method_type,
         "time semantics": method.metadata.time_semantics,
         "promotion tier": method.metadata.promotion_tier,
@@ -489,17 +528,17 @@ Graph selection rule for this run: include a graph method only when its marginal
 
 ## Scenario Performance
 
-{_table(scenario_rows, ["scenario", "users found", "DPD45 user rate", "DPD45 advances", "DPD45 advance rate"])}
+{_table(scenario_rows, ["scenario", "scenario method", "method version", "method type", "time semantics", "promotion tier", "enforcement projection", "users found", "DPD45 user rate", "DPD45 advances", "DPD45 advance rate"])}
 
 ## Graph Method Screen
 
 ### Selected Graph Methods
 
-{_table(selected_rows, ["graph method", "display name", "method type", "time semantics", "promotion tier", "enforcement projection", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?", "reason"]) if selected_rows else "No graph methods passed the marginal selection rule."}
+{_table(selected_rows, ["graph method", "display name", "method version", "method type", "time semantics", "promotion tier", "enforcement projection", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?", "reason"]) if selected_rows else "No graph methods passed the marginal selection rule."}
 
 ### Screened But Excluded Graph Methods
 
-{_table(excluded_rows, ["graph method", "display name", "method type", "time semantics", "promotion tier", "enforcement projection", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?", "reason"]) if excluded_rows else "No graph methods were excluded."}
+{_table(excluded_rows, ["graph method", "display name", "method version", "method type", "time semantics", "promotion tier", "enforcement projection", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?", "reason"]) if excluded_rows else "No graph methods were excluded."}
 
 ## Final Deduped Discovery Union
 

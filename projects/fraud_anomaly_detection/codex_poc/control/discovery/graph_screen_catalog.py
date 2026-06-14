@@ -43,7 +43,7 @@ class GraphScreenSpec:
             },
         )
 
-    def candidate(self, users: set[str]) -> DiscoveryCandidate:
+    def candidate(self, users: Iterable[str]) -> DiscoveryCandidate:
         metadata = self.metadata
         return DiscoveryCandidate(
             name=metadata.name,
@@ -60,7 +60,7 @@ def default_graph_screen_specs(scenario_names: Iterable[str]) -> list[GraphScree
         GraphScreenSpec("fraud_neighbours_hops2", promotion_tier="review_queue"),
         GraphScreenSpec(
             "high_risk_entity_members_scenario_fraud_seed",
-            promotion_tier="plug_candidate",
+            promotion_tier="review_queue",
         ),
         GraphScreenSpec(
             "multi_witness_neighbors_scenario_fraud_seed",
@@ -75,4 +75,18 @@ def default_graph_screen_specs(scenario_names: Iterable[str]) -> list[GraphScree
         )
         for scenario_name in scenario_names
     )
+    _require_unique_specs(specs)
     return specs
+
+
+def _require_unique_specs(specs: Iterable[GraphScreenSpec]) -> None:
+    seen_names: set[str] = set()
+    seen_metadata_names: set[str] = set()
+    for spec in specs:
+        if spec.name in seen_names:
+            raise ValueError(f"Duplicate graph screen name: {spec.name!r}")
+        seen_names.add(spec.name)
+        metadata_name = spec.metadata.name
+        if metadata_name in seen_metadata_names:
+            raise ValueError(f"Duplicate graph screen metadata name: {metadata_name!r}")
+        seen_metadata_names.add(metadata_name)

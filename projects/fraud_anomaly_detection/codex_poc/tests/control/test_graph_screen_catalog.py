@@ -5,14 +5,17 @@ from projects.fraud_anomaly_detection.codex_poc.control.discovery.graph_screen_c
 )
 
 
-def test_default_graph_screen_specs_include_review_and_plug_candidate_screens():
+def test_default_graph_screen_specs_are_snapshot_review_only():
     specs = default_graph_screen_specs(["ring_account_reuse"])
     by_name = {spec.name: spec for spec in specs}
 
-    assert by_name[
+    assert not by_name[
         "high_risk_entity_members_scenario_fraud_seed"
     ].metadata.plug_eligible
     assert not by_name["residual_ring_members"].metadata.plug_eligible
+    assert {
+        spec.metadata.promotion_tier for spec in specs
+    } == {"review_queue"}
     assert (
         by_name["scenario_neighborhood:ring_account_reuse"].metadata.params["scenario_name"]
         == "ring_account_reuse"

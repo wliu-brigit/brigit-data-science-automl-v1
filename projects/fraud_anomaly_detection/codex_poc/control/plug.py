@@ -11,6 +11,7 @@ def candidate_stats(
     store: Path | str,
     discovered_users: list[str] | pd.Series,
     eligible_users: list[str] | pd.Series | None = None,
+    end_ts: pd.Timestamp | None = None,
 ) -> pd.DataFrame:
     """Compute per-entity plug facts for discovered users.
 
@@ -22,24 +23,37 @@ def candidate_stats(
     with duckdb.connect(str(store), read_only=True) as con:
         edge_users = con.execute(
             """
-            SELECT entity_type, entity_value, CAST(user_id AS VARCHAR) AS user_id
+            SELECT DISTINCT entity_type, entity_value, CAST(user_id AS VARCHAR) AS user_id, ts
             FROM edges
-            GROUP BY 1, 2, 3
             """
         ).df()
         outcomes = con.execute(
             """
             SELECT
                 CAST(user_id AS VARCHAR) AS user_id,
+                feature_as_of_ts,
                 max(CASE WHEN label_mature_d45 THEN 1 ELSE 0 END) AS mature,
                 max(CASE WHEN label_mature_d45 AND label_gross_dpd45 THEN 1 ELSE 0 END) AS bad
             FROM advances
-            GROUP BY 1
+            GROUP BY 1, 2
             """
         ).df()
 
     if eligible is not None:
         edge_users = edge_users[edge_users["user_id"].isin(eligible)]
+        outcomes = outcomes[outcomes["user_id"].isin(eligible)]
+    if end_ts is not None:
+        edge_users = edge_users[pd.to_datetime(edge_users["ts"]) <= pd.Timestamp(end_ts)]
+        outcomes = outcomes[
+            pd.to_datetime(outcomes["feature_as_of_ts"]) <= pd.Timestamp(end_ts)
+        ]
+    edge_users = edge_users.drop_duplicates(["entity_type", "entity_value", "user_id"])
+    outcomes = (
+        outcomes.groupby("user_id", as_index=False)
+        .agg(mature=("mature", "max"), bad=("bad", "max"))
+        if not outcomes.empty
+        else pd.DataFrame(columns=["user_id", "mature", "bad"])
+    )
 
     candidate_keys = edge_users.loc[
         edge_users["user_id"].isin(discovered), ["entity_type", "entity_value"]
@@ -52,6 +66,7 @@ def candidate_stats(
         {"mature": 0, "bad": 0}
     )
     frame["discovered"] = frame["user_id"].isin(discovered)
+    frame["discovered_user_id"] = frame["user_id"].where(frame["discovered"])
 
     stats = (
         frame.groupby(["entity_type", "entity_value"])
@@ -59,7 +74,7 @@ def candidate_stats(
             support=("user_id", "nunique"),
             mature_users=("mature", "sum"),
             bad_users=("bad", "sum"),
-            coverage=("discovered", "sum"),
+            coverage=("discovered_user_id", "nunique"),
         )
         .reset_index()
     )

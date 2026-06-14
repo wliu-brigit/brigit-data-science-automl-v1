@@ -13,3 +13,7 @@ def test_codex_poc_readme_documents_control_extension_workflow():
     assert "holdout_backtest" in text
     assert "outside_discovery" in text
     assert "reports_db" in text
+    assert "method metadata" in text
+    assert "promotion_tier" in text
+    assert "Disable a method" in text
+    assert "selected-discovery report uses reusable selection" in text

@@ -111,6 +111,21 @@ wires `ScenarioMethod("ring_account_reuse")` and `ResidualRingMethod` as the
 representative scenario + graph pair. This catalog is the reviewed extension
 point for methods that are live in the skeleton.
 
+Each discovery method exposes method metadata:
+
+- `method_type`: scenario, graph, model, or subgroup.
+- `time_semantics`: snapshot_review, leakfree_asof, or production_safe.
+- `promotion_tier`: evidence_only, review_queue, or plug_candidate.
+- `enforcement_projection`: entity_key, scenario_rule, or none.
+
+This keeps broad discovery safe: a method can be useful for review without
+being eligible for plug derivation. Disable a method by removing it from
+`default_methods()` or by setting `enabled=False` in its metadata.
+
+The selected-discovery report uses reusable selection logic. It screens graph
+methods by marginal net-new contribution after the scenario baseline and records
+why each graph method was selected or excluded.
+
 ### Adding a scenario discovery method
 
 1. Add or update the scenario definition in

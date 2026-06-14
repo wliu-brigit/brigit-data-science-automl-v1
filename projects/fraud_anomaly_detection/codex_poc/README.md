@@ -64,9 +64,6 @@ kept as separate layers:
   validation measured only on new holdout activity after the cutoff.
 - `plug` — candidate count, burned-key count, the qualified key list, and the
   State A plug validation panel.
-- `holdout` — the legacy smoke-test summary (`prevented_bad`, `leaked_bad`,
-  and historical compatibility fields). New review should use
-  `holdout_backtest`.
 
 Plug validation buckets are intentionally named from the operator perspective:
 

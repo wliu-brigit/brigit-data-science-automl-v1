@@ -869,10 +869,12 @@ def test_run_skeleton_end_to_end(tmp_path):
     report = run_skeleton(SAMPLE, findings_db=tmp_path / "f.duckdb",
                           config=ControlConfig(min_support=2, min_coverage=1,
                                                block_tier_precision=0.5))
-    assert report["n_findings"] > 0           # discovery produced findings
-    assert "burned_keys" in report            # plug derivation ran
-    assert "holdout" in report                # monitoring ran
-    assert set(report["holdout"]).issuperset({"prevented_bad", "leaked_bad"})
+    assert report["discovery"]["union"]["n_users"] > 0
+    assert "burned_keys" in report["plug"]
+    assert "holdout_backtest" in report
+    assert set(report["holdout_backtest"]["plug"]).issuperset(
+        {"covered_discovery", "uncovered_discovery", "outside_discovery"}
+    )
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -917,12 +919,23 @@ def run_skeleton(store: Path | str, findings_db: Path | str,
     discovered_a = findings.loc[findings.user_id.isin(split.state_a_users), "user_id"]
     stats = plug.candidate_stats(store, discovered_a)
     burned = plug.qualify(stats, config)
-    holdout_report = monitoring.holdout_effect(store, burned, split.holdout_users)
     return {
-        "n_findings": int(findings.user_id.nunique()),
-        "burned_keys": burned[["entity_type", "entity_value", "dpd45_precision",
-                               "coverage", "support"]].to_dict("records"),
-        "holdout": holdout_report,
+        "discovery": full_discovery_report,
+        "state_a_backtest": {
+            "discovery": state_a_discovery_report,
+            "plug": state_a_plug_report,
+        },
+        "holdout_backtest": {
+            "discovery": holdout_discovery_report,
+            "plug": holdout_plug_report,
+        },
+        "plug": {
+            "candidate_count": int(len(stats)),
+            "burned_key_count": int(len(burned)),
+            "burned_keys": burned[["entity_type", "entity_value", "dpd45_precision",
+                                   "coverage", "support"]].to_dict("records"),
+            "validation": state_a_plug_report,
+        },
     }
 ```
 

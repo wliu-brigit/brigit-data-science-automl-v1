@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from projects.fraud_anomaly_detection.codex_poc.control import holdout, monitoring, plug
+from projects.fraud_anomaly_detection.codex_poc.control import holdout, plug
 from projects.fraud_anomaly_detection.codex_poc.control.config import ControlConfig
 from projects.fraud_anomaly_detection.codex_poc.control.contract import FindingSet
 from projects.fraud_anomaly_detection.codex_poc.control.discovery import DiscoveryMethod
@@ -64,7 +64,6 @@ def run_skeleton(
         eligible_users=split.holdout_users,
         start_ts=split.cutoff,
     )
-    holdout_report = monitoring.holdout_effect(store, burned, split.holdout_users)
     burned_keys = burned[
         ["entity_type", "entity_value", "dpd45_precision", "coverage", "support"]
     ].to_dict("records")
@@ -104,10 +103,6 @@ def run_skeleton(
             "burned_keys": burned_keys,
             "validation": state_a_plug_report,
         },
-        "holdout": holdout_report,
-        # Backward-compatible top-level summary for the original smoke test.
-        "n_findings": int(findings["user_id"].nunique()),
-        "burned_keys": burned_keys,
     }
     if reports_db is not None:
         ReportStore(reports_db).write_report(refresh_key, data_version=data_version, report=report)

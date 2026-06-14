@@ -78,7 +78,6 @@ def test_run_skeleton_accepts_methods_and_returns_holistic_stage_report(tiny_sto
     assert report["holdout_backtest"]["discovery"]["union"]["n_users"] == 1
     assert report["holdout_backtest"]["plug"]["covered_discovery"]["n_users"] == 1
     assert report["holdout_backtest"]["plug"]["outside_discovery"]["n_users"] == 0
-    assert report["holdout"]["prevented_bad"] == 1
 
     latest = ReportStore(tmp_path / "reports.duckdb").read_latest()
     assert latest["refresh_key"] == "skeleton"
@@ -93,7 +92,9 @@ def test_run_skeleton_end_to_end(tmp_path):
         config=ControlConfig(min_support=2, min_coverage=1, block_tier_precision=0.5),
     )
 
-    assert report["n_findings"] > 0
-    assert "burned_keys" in report
-    assert "holdout" in report
-    assert set(report["holdout"]).issuperset({"prevented_bad", "leaked_bad"})
+    assert report["discovery"]["union"]["n_users"] > 0
+    assert "burned_keys" in report["plug"]
+    assert "holdout_backtest" in report
+    assert set(report["holdout_backtest"]["plug"]).issuperset(
+        {"covered_discovery", "uncovered_discovery", "outside_discovery"}
+    )

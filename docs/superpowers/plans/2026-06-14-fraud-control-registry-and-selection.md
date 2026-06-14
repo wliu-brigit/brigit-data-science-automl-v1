@@ -467,7 +467,6 @@ class DiscoveryCandidate:
 class SelectionRule:
     min_marginal_users: int = 10
     min_marginal_dpd45_user_rate: float = 0.50
-    promotable_tiers: tuple[str, ...] = ("plug_candidate",)
 
 
 @dataclass(frozen=True)
@@ -486,8 +485,8 @@ class SelectionRow:
 
 @dataclass(frozen=True)
 class SelectionResult:
-    selected: list[SelectionRow]
-    excluded: list[SelectionRow]
+    selected: tuple[SelectionRow, ...]
+    excluded: tuple[SelectionRow, ...]
     final_users: set[str]
 
 
@@ -516,11 +515,10 @@ def select_candidates(
 
     enriched.sort(
         key=lambda item: (
-            item["net"]["dpd45_user_rate"],
-            item["net"]["users"],
-            item["candidate"].name,
-        ),
-        reverse=True,
+            -item["net"]["dpd45_user_rate"],
+            -item["net"]["users"],
+            item["order"],
+        )
     )
 
     selected: list[SelectionRow] = []
@@ -558,7 +556,7 @@ def _exclusion_reason(
     marginal: dict,
     rule: SelectionRule,
 ) -> str:
-    if candidate.metadata.promotion_tier not in rule.promotable_tiers:
+    if not candidate.metadata.plug_eligible:
         return "promotion_tier"
     if marginal["users"] < rule.min_marginal_users:
         return "min_marginal_users"

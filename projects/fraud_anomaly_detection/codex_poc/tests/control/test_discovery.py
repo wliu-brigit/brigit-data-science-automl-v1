@@ -65,6 +65,30 @@ def test_method_metadata_params_are_immutable():
         metadata.params["source"] = "changed"
 
 
+def test_method_metadata_rejects_invalid_runtime_values():
+    with pytest.raises(ValueError, match="promotion_tier"):
+        MethodMetadata(
+            name="graph:test",
+            version="v1",
+            method_type="graph",
+            time_semantics="snapshot_review",
+            promotion_tier="plug-candidate",  # type: ignore[arg-type]
+            enforcement_projection="entity_key",
+        )
+
+
+def test_method_metadata_rejects_plug_candidate_without_projection():
+    with pytest.raises(ValueError, match="enforcement projection"):
+        MethodMetadata(
+            name="graph:test",
+            version="v1",
+            method_type="graph",
+            time_semantics="leakfree_asof",
+            promotion_tier="plug_candidate",
+            enforcement_projection="none",
+        )
+
+
 def test_scenario_method_is_a_discovery_method():
     method = ScenarioMethod(scenario_name="ring_account_reuse")
 

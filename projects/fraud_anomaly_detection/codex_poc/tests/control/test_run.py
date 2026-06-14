@@ -74,6 +74,25 @@ class MismatchedFindingSetMethod:
         )
 
 
+class MismatchedVersionMethod:
+    name = "test:version"
+    metadata = MethodMetadata(
+        name="test:version",
+        version="v2",
+        method_type="model",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
+
+    def run(self, store):
+        return FindingSet(
+            method=self.name,
+            method_version="v1",
+            findings=[Finding("u1")],
+        )
+
+
 class ReviewQueueMethod:
     name = "test:review"
     metadata = MethodMetadata(
@@ -90,6 +109,44 @@ class ReviewQueueMethod:
             method=self.name,
             method_version=self.metadata.version,
             findings=[Finding("u1"), Finding("u2")],
+        )
+
+
+class DuplicateNamePlugMethod:
+    name = "test:duplicate"
+    metadata = MethodMetadata(
+        name="test:duplicate",
+        version="plug",
+        method_type="model",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
+
+    def run(self, store):
+        return FindingSet(
+            method=self.name,
+            method_version=self.metadata.version,
+            findings=[Finding("u1")],
+        )
+
+
+class DuplicateNameReviewMethod:
+    name = "test:duplicate"
+    metadata = MethodMetadata(
+        name="test:duplicate",
+        version="review",
+        method_type="graph",
+        time_semantics="snapshot_review",
+        promotion_tier="review_queue",
+        enforcement_projection="entity_key",
+    )
+
+    def run(self, store):
+        return FindingSet(
+            method=self.name,
+            method_version=self.metadata.version,
+            findings=[Finding("u1")],
         )
 
 
@@ -117,6 +174,27 @@ def test_run_skeleton_rejects_finding_set_that_does_not_match_metadata(tiny_stor
             tiny_store,
             findings_db=tmp_path / "findings.duckdb",
             methods=[MismatchedFindingSetMethod()],
+        )
+
+
+def test_run_skeleton_rejects_finding_set_version_that_does_not_match_metadata(
+    tiny_store,
+    tmp_path,
+):
+    with pytest.raises(ValueError, match="does not match metadata version"):
+        run_skeleton(
+            tiny_store,
+            findings_db=tmp_path / "findings.duckdb",
+            methods=[MismatchedVersionMethod()],
+        )
+
+
+def test_run_skeleton_rejects_duplicate_method_names(tiny_store, tmp_path):
+    with pytest.raises(ValueError, match="Duplicate discovery method name"):
+        run_skeleton(
+            tiny_store,
+            findings_db=tmp_path / "findings.duckdb",
+            methods=[DuplicateNamePlugMethod(), DuplicateNameReviewMethod()],
         )
 
 
@@ -177,6 +255,9 @@ def test_run_skeleton_end_to_end(tmp_path):
     assert report["discovery"]["union"]["n_users"] > 0
     assert "burned_keys" in report["plug"]
     assert "holdout_backtest" in report
+    assert "n_findings" not in report
+    assert "burned_keys" not in report
+    assert "holdout" not in report
     assert set(report["holdout_backtest"]["plug"]).issuperset(
         {"covered_discovery", "uncovered_discovery", "outside_discovery"}
     )

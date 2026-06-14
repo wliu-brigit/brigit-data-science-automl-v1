@@ -11,9 +11,8 @@ import pandas as pd
 
 from projects.fraud_anomaly_detection.codex_poc.control import plug
 from projects.fraud_anomaly_detection.codex_poc.control.config import ControlConfig
-from projects.fraud_anomaly_detection.codex_poc.control.discovery.metadata import (
-    MethodMetadata,
-    PromotionTier,
+from projects.fraud_anomaly_detection.codex_poc.control.discovery.graph_screen_catalog import (
+    default_graph_screen_specs,
 )
 from projects.fraud_anomaly_detection.codex_poc.control.discovery.selection import (
     DiscoveryCandidate,
@@ -254,15 +253,16 @@ def _graph_method_sets(
     residual_users = set(truth.index[~truth.scenario_any & ~truth.is_fraud])
     g_scen = load_graph(store, base=advances, node_attrs=("is_fraud",), scenarios=True)
     g_no_scen = load_graph(store, base=advances, node_attrs=("is_fraud",), scenarios=False)
+    specs = {
+        spec.name: spec
+        for spec in default_graph_screen_specs(sorted(scenarios))
+    }
 
     methods = [
-        _graph_candidate(
-            name="residual_ring_members",
+        specs["residual_ring_members"].candidate(
             users=set(residual_ring_members(g_scen, flag="scenario_any").user_id.astype(str)),
-            promotion_tier="review_queue",
         ),
-        _graph_candidate(
-            name="suspicion_queue_top200",
+        specs["suspicion_queue_top200"].candidate(
             users=set(
                 suspicion_queue(
                     g_scen,
@@ -271,71 +271,25 @@ def _graph_method_sets(
                     top_n=200,
                 ).user_id.astype(str)
             ),
-            promotion_tier="review_queue",
         ),
-        _graph_candidate(
-            name="fraud_neighbours_hops2",
+        specs["fraud_neighbours_hops2"].candidate(
             users=set(bad_neighbours(g_no_scen, flags=("is_fraud",), max_hops=2).user_id.astype(str)),
-            promotion_tier="review_queue",
         ),
-        _graph_candidate(
-            name="high_risk_entity_members_scenario_fraud_seed",
+        specs["high_risk_entity_members_scenario_fraud_seed"].candidate(
             users=_high_risk_entity_members(edges, truth, residual_users),
-            promotion_tier="plug_candidate",
         ),
-        _graph_candidate(
-            name="multi_witness_neighbors_scenario_fraud_seed",
+        specs["multi_witness_neighbors_scenario_fraud_seed"].candidate(
             users=_multi_witness_neighbors(edges, truth, residual_users),
-            promotion_tier="review_queue",
         ),
     ]
     for scenario_name, scenario_users in scenarios.items():
         methods.append(
-            _graph_candidate(
-                name=f"scenario_neighborhood:{scenario_name}",
+            specs[f"scenario_neighborhood:{scenario_name}"].candidate(
                 users=_scenario_neighborhood(edges, residual_users, scenario_users),
-                promotion_tier="review_queue",
-                params={"scenario_name": scenario_name},
             )
         )
 
     return methods
-
-
-def _graph_candidate(
-    name: str,
-    users: set[str],
-    *,
-    promotion_tier: PromotionTier,
-    params: dict[str, object] | None = None,
-) -> DiscoveryCandidate:
-    metadata = _graph_metadata(name, promotion_tier=promotion_tier, params=params)
-    return DiscoveryCandidate(
-        name=metadata.name,
-        users={str(user_id) for user_id in users},
-        metadata=metadata,
-    )
-
-
-def _graph_metadata(
-    name: str,
-    *,
-    promotion_tier: PromotionTier,
-    params: dict[str, object] | None = None,
-) -> MethodMetadata:
-    return MethodMetadata(
-        name=f"graph:{name}",
-        version="selected-report-1",
-        method_type="graph",
-        time_semantics="snapshot_review",
-        promotion_tier=promotion_tier,
-        enforcement_projection="entity_key",
-        params={
-            "display_name": name,
-            "source": "selected_discovery_report",
-            **(params or {}),
-        },
-    )
 
 
 def _scenario_neighborhood(

@@ -132,6 +132,7 @@ def _finding_users(
 
 
 def _validate_methods(methods: Sequence[DiscoveryMethod]) -> None:
+    seen_names: set[str] = set()
     for method in methods:
         metadata = getattr(method, "metadata", None)
         if metadata is None:
@@ -148,6 +149,9 @@ def _validate_methods(methods: Sequence[DiscoveryMethod]) -> None:
                 f"Discovery method name {method.name!r} does not match metadata "
                 f"name {metadata.name!r}"
             )
+        if metadata.name in seen_names:
+            raise ValueError(f"Duplicate discovery method name: {metadata.name!r}")
+        seen_names.add(metadata.name)
 
 
 def _validate_finding_sets(
@@ -176,7 +180,7 @@ def _finding_sets_for_promotion(
     promotable_methods = {
         method.name
         for method in methods
-        if method.metadata.promotion_tier == "plug_candidate"
+        if method.metadata.plug_eligible
     }
     return [
         finding_set

@@ -76,7 +76,7 @@ def test_select_candidates_excludes_non_promotable_tiers():
         rule=SelectionRule(min_marginal_users=1, min_marginal_dpd45_user_rate=0.5),
     )
 
-    assert result.selected == []
+    assert result.selected == ()
     assert result.excluded[0].name == "graph:review"
     assert result.excluded[0].reason == "promotion_tier"
     assert result.final_users == set()
@@ -174,5 +174,7 @@ def test_selection_results_do_not_expose_mutable_user_sets():
     )
 
     assert isinstance(result.final_users, frozenset)
+    assert isinstance(result.selected, tuple)
+    assert isinstance(result.excluded, tuple)
     assert isinstance(result.selected[0].users, frozenset)
     assert isinstance(result.selected[0].marginal_users, frozenset)

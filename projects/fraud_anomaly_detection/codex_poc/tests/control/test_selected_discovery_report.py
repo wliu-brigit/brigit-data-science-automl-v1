@@ -4,10 +4,57 @@ import pytest
 
 from projects.fraud_anomaly_detection.codex_poc.control.selected_discovery_report import (
     SelectedReportConfig,
+    _graph_row,
     generate_selected_discovery_report,
+)
+from projects.fraud_anomaly_detection.codex_poc.control.discovery.metadata import (
+    MethodMetadata,
+)
+from projects.fraud_anomaly_detection.codex_poc.control.discovery.selection import (
+    SelectionRow,
 )
 
 SAMPLE = Path("projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb")
+
+
+def test_graph_row_exposes_metadata_without_sample_store():
+    metadata = MethodMetadata(
+        name="graph:test",
+        version="v1",
+        method_type="graph",
+        time_semantics="snapshot_review",
+        promotion_tier="review_queue",
+        enforcement_projection="entity_key",
+        params={"display_name": "test"},
+    )
+    row = _graph_row(
+        SelectionRow(
+            name="graph:test",
+            users=frozenset({"u1"}),
+            total={"users": 1, "dpd45_user_rate": 0.5},
+            net_new_users=frozenset({"u1"}),
+            net={"users": 1, "dpd45_user_rate": 0.5},
+            marginal_users=frozenset({"u1"}),
+            marginal={"users": 1, "dpd45_user_rate": 0.5},
+            selected=False,
+            reason="promotion_tier",
+            metadata=metadata,
+        )
+    )
+
+    assert row == {
+        "graph method": "graph:test",
+        "display name": "test",
+        "method type": "graph",
+        "time semantics": "snapshot_review",
+        "promotion tier": "review_queue",
+        "enforcement projection": "entity_key",
+        "total users / DPD45": "1 / 50.0%",
+        "net-new beyond scenarios / DPD45": "1 / 50.0%",
+        "marginal after dedupe / DPD45": "1 / 50.0%",
+        "selected?": "no",
+        "reason": "promotion_tier",
+    }
 
 
 @pytest.mark.skipif(not SAMPLE.exists(), reason="sample store not built")

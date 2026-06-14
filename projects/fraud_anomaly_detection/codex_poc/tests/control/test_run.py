@@ -322,6 +322,29 @@ def test_run_skeleton_accepts_methods_and_returns_holistic_stage_report(tiny_sto
     assert len(plug_facts) == report["plug"]["candidate_count"]
 
 
+def test_run_skeleton_reports_trimmed_unchanged_finding_snapshot(tiny_store, tmp_path):
+    findings_db = tmp_path / "findings.duckdb"
+    first = run_skeleton(
+        tiny_store,
+        findings_db=findings_db,
+        refresh_key="first",
+        config=ControlConfig(min_support=2, min_coverage=1, block_tier_precision=0.5),
+        methods=[StaticMethod()],
+    )
+    second = run_skeleton(
+        tiny_store,
+        findings_db=findings_db,
+        refresh_key="second",
+        config=ControlConfig(min_support=2, min_coverage=1, block_tier_precision=0.5),
+        methods=[StaticMethod()],
+    )
+
+    assert first["finding_store"]["snapshot_written"] is True
+    assert second["finding_store"]["snapshot_written"] is False
+    assert second["finding_store"]["snapshot_refresh_key"] == "first"
+    assert second["finding_store"]["snapshot_id"] == first["finding_store"]["snapshot_id"]
+
+
 @pytest.mark.skipif(not SAMPLE.exists(), reason="sample store not built")
 def test_run_skeleton_end_to_end(tmp_path):
     report = run_skeleton(

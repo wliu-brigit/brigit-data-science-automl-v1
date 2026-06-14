@@ -82,6 +82,44 @@ def test_changed_snapshot_is_kept(tmp_path):
     assert store.refresh_keys() == ["2026-06-13", "2026-06-14"]
 
 
+def test_read_latest_orders_rows_deterministically(tmp_path):
+    store = FindingStore(tmp_path / "findings.duckdb")
+    scenario = FindingSet(
+        "scenario:b",
+        "v1",
+        [Finding("u2"), Finding("u1")],
+    )
+    model = FindingSet(
+        "model:a",
+        "v1",
+        [Finding("u3")],
+    )
+
+    store.write_snapshot(
+        "daily",
+        data_version="v3",
+        finding_sets=[scenario, model],
+        method_metadata=[
+            _metadata(method="scenario:b"),
+            MethodMetadata(
+                name="model:a",
+                version="v1",
+                method_type="model",
+                time_semantics="leakfree_asof",
+                promotion_tier="plug_candidate",
+                enforcement_projection="entity_key",
+            ),
+        ],
+    )
+
+    latest = store.read_latest()
+    assert list(zip(latest["method"], latest["user_id"])) == [
+        ("model:a", "u3"),
+        ("scenario:b", "u1"),
+        ("scenario:b", "u2"),
+    ]
+
+
 def test_logic_version_change_is_kept_even_when_findings_match(tmp_path):
     store = FindingStore(tmp_path / "findings.duckdb")
     store.write_snapshot(

@@ -1,6 +1,6 @@
 """Discovery method catalog for the walking skeleton.
 
-This is the reviewed, in-repo extension point for methods that are live in the
+The catalog is the reviewed extension point for methods that are live in the
 control loop. Scenario definitions still live in ``scenarios/register.yaml``;
 graph methods live as adapters under ``control.discovery``.
 """
@@ -15,6 +15,14 @@ from projects.fraud_anomaly_detection.codex_poc.control.discovery.scenario_metho
 )
 
 
-def default_methods() -> list[DiscoveryMethod]:
-    """Return the discovery methods currently wired into the skeleton run."""
+def all_methods() -> list[DiscoveryMethod]:
+    """Return every reviewed discovery method known to the skeleton."""
     return [ScenarioMethod("ring_account_reuse"), ResidualRingMethod()]
+
+
+def default_methods(*, enabled_only: bool = True) -> list[DiscoveryMethod]:
+    """Return discovery methods enabled for the default skeleton profile."""
+    methods = all_methods()
+    if not enabled_only:
+        return methods
+    return [method for method in methods if method.metadata.enabled]

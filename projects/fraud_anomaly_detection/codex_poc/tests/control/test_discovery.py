@@ -37,6 +37,16 @@ def test_default_method_catalog_is_the_extension_point():
     assert metadata[1].enforcement_projection == "entity_key"
 
 
+def test_method_catalog_can_filter_enabled_methods():
+    methods = default_methods(enabled_only=True)
+
+    assert all(method.metadata.enabled for method in methods)
+    assert [method.metadata.name for method in methods] == [
+        "scenario:ring_account_reuse",
+        "graph:residual_ring_members",
+    ]
+
+
 def test_scenario_method_is_a_discovery_method():
     method = ScenarioMethod(scenario_name="ring_account_reuse")
 

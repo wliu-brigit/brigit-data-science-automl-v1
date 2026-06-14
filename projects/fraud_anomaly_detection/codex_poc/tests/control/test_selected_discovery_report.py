@@ -27,3 +27,4 @@ def test_selected_discovery_report_is_repeatable(tmp_path):
     assert report["plug"]["candidate_keys"] > 0
     assert report["plug"]["burned_keys"] > 0
     assert report["selected_graph_rows"][0]["selected?"] == "yes"
+    assert "reason" in report["excluded_graph_rows"][0]

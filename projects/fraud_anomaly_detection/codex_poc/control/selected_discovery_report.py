@@ -11,6 +11,15 @@ import pandas as pd
 
 from projects.fraud_anomaly_detection.codex_poc.control import plug
 from projects.fraud_anomaly_detection.codex_poc.control.config import ControlConfig
+from projects.fraud_anomaly_detection.codex_poc.control.discovery.metadata import (
+    MethodMetadata,
+)
+from projects.fraud_anomaly_detection.codex_poc.control.discovery.selection import (
+    DiscoveryCandidate,
+    SelectionRule,
+    SelectionRow,
+    select_candidates,
+)
 from projects.fraud_anomaly_detection.codex_poc.control.holdout import two_state_split
 from projects.fraud_anomaly_detection.codex_poc.control.plug_report import summarize_plugs
 from projects.fraud_anomaly_detection.graph.discover import (
@@ -69,7 +78,7 @@ def generate_selected_discovery_report(config: SelectedReportConfig) -> dict:
     )
 
     selected_graph_union = (
-        set().union(*(method["users"] for method in selected_graphs)) if selected_graphs else set()
+        set().union(*(method.users for method in selected_graphs)) if selected_graphs else set()
     )
     selected_graph_net_new = selected_graph_union - scenario_union
     final_discovery = scenario_union | selected_graph_union
@@ -240,20 +249,20 @@ def _graph_method_sets(
     edges: pd.DataFrame,
     truth: pd.DataFrame,
     scenarios: dict[str, set[str]],
-) -> list[dict]:
-    scenario_union = set().union(*scenarios.values()) if scenarios else set()
+) -> list[DiscoveryCandidate]:
     residual_users = set(truth.index[~truth.scenario_any & ~truth.is_fraud])
     g_scen = load_graph(store, base=advances, node_attrs=("is_fraud",), scenarios=True)
     g_no_scen = load_graph(store, base=advances, node_attrs=("is_fraud",), scenarios=False)
 
     methods = [
-        {
-            "name": "residual_ring_members",
-            "users": set(residual_ring_members(g_scen, flag="scenario_any").user_id.astype(str)),
-        },
-        {
-            "name": "suspicion_queue_top200",
-            "users": set(
+        DiscoveryCandidate(
+            name="residual_ring_members",
+            users=set(residual_ring_members(g_scen, flag="scenario_any").user_id.astype(str)),
+            metadata=_graph_metadata("residual_ring_members", promotion_tier="review_queue"),
+        ),
+        DiscoveryCandidate(
+            name="suspicion_queue_top200",
+            users=set(
                 suspicion_queue(
                     g_scen,
                     seed_flag="is_fraud",
@@ -261,35 +270,68 @@ def _graph_method_sets(
                     top_n=200,
                 ).user_id.astype(str)
             ),
-        },
-        {
-            "name": "fraud_neighbours_hops2",
-            "users": set(bad_neighbours(g_no_scen, flags=("is_fraud",), max_hops=2).user_id.astype(str)),
-        },
-        {
-            "name": "high_risk_entity_members_scenario_fraud_seed",
-            "users": _high_risk_entity_members(edges, truth, residual_users),
-        },
-        {
-            "name": "multi_witness_neighbors_scenario_fraud_seed",
-            "users": _multi_witness_neighbors(edges, truth, residual_users),
-        },
+            metadata=_graph_metadata("suspicion_queue_top200", promotion_tier="review_queue"),
+        ),
+        DiscoveryCandidate(
+            name="fraud_neighbours_hops2",
+            users=set(bad_neighbours(g_no_scen, flags=("is_fraud",), max_hops=2).user_id.astype(str)),
+            metadata=_graph_metadata("fraud_neighbours_hops2", promotion_tier="review_queue"),
+        ),
+        DiscoveryCandidate(
+            name="high_risk_entity_members_scenario_fraud_seed",
+            users=_high_risk_entity_members(edges, truth, residual_users),
+            metadata=_graph_metadata(
+                "high_risk_entity_members_scenario_fraud_seed",
+                promotion_tier="plug_candidate",
+            ),
+        ),
+        DiscoveryCandidate(
+            name="multi_witness_neighbors_scenario_fraud_seed",
+            users=_multi_witness_neighbors(edges, truth, residual_users),
+            metadata=_graph_metadata(
+                "multi_witness_neighbors_scenario_fraud_seed",
+                promotion_tier="review_queue",
+            ),
+        ),
     ]
     for scenario_name, scenario_users in scenarios.items():
         methods.append(
-            {
-                "name": f"scenario_neighborhood:{scenario_name}",
-                "users": _scenario_neighborhood(edges, residual_users, scenario_users),
-            }
+            DiscoveryCandidate(
+                name=f"scenario_neighborhood:{scenario_name}",
+                users=_scenario_neighborhood(edges, residual_users, scenario_users),
+                metadata=_graph_metadata(
+                    f"scenario_neighborhood:{scenario_name}",
+                    promotion_tier="review_queue",
+                    params={"scenario_name": scenario_name},
+                ),
+            )
         )
 
-    for method in methods:
-        users = {str(user_id) for user_id in method["users"]}
-        method["users"] = users
-        method["total"] = _outcome(users, truth)
-        method["net_new_users"] = users - scenario_union
-        method["net"] = _outcome(method["net_new_users"], truth)
-    return methods
+    return [
+        DiscoveryCandidate(
+            name=method.name,
+            users={str(user_id) for user_id in method.users},
+            metadata=method.metadata,
+        )
+        for method in methods
+    ]
+
+
+def _graph_metadata(
+    name: str,
+    *,
+    promotion_tier: str,
+    params: dict[str, object] | None = None,
+) -> MethodMetadata:
+    return MethodMetadata(
+        name=f"graph:{name}",
+        version="selected-report-1",
+        method_type="graph",
+        time_semantics="snapshot_review",
+        promotion_tier=promotion_tier,  # type: ignore[arg-type]
+        enforcement_projection="entity_key",
+        params={"source": "selected_discovery_report", **(params or {})},
+    )
 
 
 def _scenario_neighborhood(
@@ -354,35 +396,22 @@ def _multi_witness_neighbors(
 
 
 def _select_graph_methods(
-    methods: list[dict],
+    methods: list[DiscoveryCandidate],
     scenario_union: set[str],
     truth: pd.DataFrame,
     min_marginal_users: int,
     min_marginal_dpd45_user_rate: float,
-) -> tuple[list[dict], list[dict]]:
-    selected = []
-    excluded = []
-    covered = set(scenario_union)
-    sorted_methods = sorted(
+) -> tuple[list[SelectionRow], list[SelectionRow]]:
+    result = select_candidates(
         methods,
-        key=lambda method: (method["net"]["dpd45_user_rate"], method["net"]["users"]),
-        reverse=True,
+        baseline_users=scenario_union,
+        outcome_fn=lambda users: _outcome(users, truth),
+        rule=SelectionRule(
+            min_marginal_users=min_marginal_users,
+            min_marginal_dpd45_user_rate=min_marginal_dpd45_user_rate,
+        ),
     )
-    for method in sorted_methods:
-        marginal_users = method["users"] - covered
-        method["marginal_users"] = marginal_users
-        method["marginal"] = _outcome(marginal_users, truth)
-        include = (
-            method["marginal"]["users"] >= min_marginal_users
-            and method["marginal"]["dpd45_user_rate"] >= min_marginal_dpd45_user_rate
-        )
-        method["selected"] = include
-        if include:
-            selected.append(method)
-            covered |= method["users"]
-        else:
-            excluded.append(method)
-    return selected, excluded
+    return result.selected, result.excluded
 
 
 def _outcome(users: set[str], truth: pd.DataFrame) -> dict:
@@ -443,19 +472,20 @@ def _scenario_rows(
     return rows
 
 
-def _graph_row(method: dict) -> dict:
+def _graph_row(method: SelectionRow) -> dict:
     return {
-        "graph method": method["name"],
+        "graph method": method.name,
         "total users / DPD45": (
-            f"{method['total']['users']:,} / {_pct(method['total']['dpd45_user_rate'])}"
+            f"{method.total['users']:,} / {_pct(method.total['dpd45_user_rate'])}"
         ),
         "net-new beyond scenarios / DPD45": (
-            f"{method['net']['users']:,} / {_pct(method['net']['dpd45_user_rate'])}"
+            f"{method.net['users']:,} / {_pct(method.net['dpd45_user_rate'])}"
         ),
         "marginal after dedupe / DPD45": (
-            f"{method['marginal']['users']:,} / {_pct(method['marginal']['dpd45_user_rate'])}"
+            f"{method.marginal['users']:,} / {_pct(method.marginal['dpd45_user_rate'])}"
         ),
-        "selected?": "yes" if method["selected"] else "no",
+        "selected?": "yes" if method.selected else "no",
+        "reason": method.reason,
     }
 
 
@@ -502,11 +532,11 @@ Graph selection rule for this run: include a graph method only when its marginal
 
 ### Selected Graph Methods
 
-{_table(selected_rows, ["graph method", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?"]) if selected_rows else "No graph methods passed the marginal selection rule."}
+{_table(selected_rows, ["graph method", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?", "reason"]) if selected_rows else "No graph methods passed the marginal selection rule."}
 
 ### Screened But Excluded Graph Methods
 
-{_table(excluded_rows, ["graph method", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?"]) if excluded_rows else "No graph methods were excluded."}
+{_table(excluded_rows, ["graph method", "total users / DPD45", "net-new beyond scenarios / DPD45", "marginal after dedupe / DPD45", "selected?", "reason"]) if excluded_rows else "No graph methods were excluded."}
 
 ## Final Deduped Discovery Union
 

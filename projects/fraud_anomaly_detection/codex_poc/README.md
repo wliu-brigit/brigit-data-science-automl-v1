@@ -81,6 +81,31 @@ When `reports_db` is provided, the full report is appended to
 the local daily/persistent view while the production warehouse table is still
 out of scope for the sample skeleton.
 
+For the scenario-by-scenario, graph-screen, selected-union, and plug-validation
+view, use the repeatable selected-discovery report runner:
+
+```bash
+uv run --group fraud python -m \
+  projects.fraud_anomaly_detection.codex_poc.control.selected_discovery_report \
+  --store projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb \
+  --out-dir projects/fraud_anomaly_detection/codex_poc/reports \
+  --refresh-key selected_discovery_plug_report
+```
+
+That report:
+
+- evaluates every scenario in the canonical scenario register;
+- screens graph methods by total users, net-new users beyond the scenario union,
+  and marginal net-new users after dedupe;
+- includes only graph methods that clear the marginal selection rule in the
+  final discovery union;
+- derives plug candidates from the final State A discovery union;
+- reports State A and holdout buckets for `covered_discovery`,
+  `uncovered_discovery`, and `outside_discovery`.
+
+Generated files under `reports/` are ignored by git; rerun the command whenever
+the scenario register, graph screens, thresholds, or sample store changes.
+
 The default method list lives in `control/discovery/catalog.py`. It currently
 wires `ScenarioMethod("ring_account_reuse")` and `ResidualRingMethod` as the
 representative scenario + graph pair. This catalog is the reviewed extension

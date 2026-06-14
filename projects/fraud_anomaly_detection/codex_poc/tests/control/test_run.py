@@ -5,6 +5,9 @@ import pytest
 from projects.fraud_anomaly_detection.codex_poc.control.contract import Finding, FindingSet
 from projects.fraud_anomaly_detection.codex_poc.control.config import ControlConfig
 from projects.fraud_anomaly_detection.codex_poc.control.report_store import ReportStore
+from projects.fraud_anomaly_detection.codex_poc.control.discovery.metadata import (
+    MethodMetadata,
+)
 from projects.fraud_anomaly_detection.codex_poc.control.run import run_skeleton
 
 SAMPLE = Path("projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb")
@@ -12,12 +15,40 @@ SAMPLE = Path("projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb")
 
 class StaticMethod:
     name = "test:static"
+    metadata = MethodMetadata(
+        name="test:static",
+        version="v1",
+        method_type="model",
+        time_semantics="leakfree_asof",
+        promotion_tier="plug_candidate",
+        enforcement_projection="entity_key",
+    )
 
     def run(self, store):
         return FindingSet(
             method=self.name,
-            method_version="v1",
+            method_version=self.metadata.version,
             findings=[Finding("u1"), Finding("u2"), Finding("u3")],
+        )
+
+
+class LegacyMethodWithoutMetadata:
+    name = "test:legacy"
+
+    def run(self, store):
+        return FindingSet(
+            method=self.name,
+            method_version="legacy",
+            findings=[Finding("u1")],
+        )
+
+
+def test_run_skeleton_rejects_methods_without_metadata(tiny_store, tmp_path):
+    with pytest.raises(TypeError, match="metadata"):
+        run_skeleton(
+            tiny_store,
+            findings_db=tmp_path / "findings.duckdb",
+            methods=[LegacyMethodWithoutMetadata()],
         )
 
 

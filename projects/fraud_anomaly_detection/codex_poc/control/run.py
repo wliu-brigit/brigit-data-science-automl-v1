@@ -26,6 +26,7 @@ def run_skeleton(
     methods: Sequence[DiscoveryMethod] | None = None,
 ) -> dict:
     active_methods = list(methods) if methods is not None else default_methods()
+    _validate_methods(active_methods)
     finding_sets = [method.run(store) for method in active_methods]
     finding_store = FindingStore(findings_db)
     data_version = "sample"
@@ -125,3 +126,17 @@ def _finding_users(
             if eligible is None or user_id in eligible:
                 users.add(user_id)
     return pd.Series(sorted(users), dtype="string")
+
+
+def _validate_methods(methods: Sequence[DiscoveryMethod]) -> None:
+    for method in methods:
+        metadata = getattr(method, "metadata", None)
+        if metadata is None:
+            raise TypeError(
+                f"Discovery method {getattr(method, 'name', method)!r} is missing metadata"
+            )
+        if metadata.name != method.name:
+            raise ValueError(
+                f"Discovery method name {method.name!r} does not match metadata "
+                f"name {metadata.name!r}"
+            )

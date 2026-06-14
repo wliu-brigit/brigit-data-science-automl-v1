@@ -107,7 +107,7 @@ def suspicion_queue(
         return out.drop(columns=["seeded"], errors="ignore")
     flagged = {v["raw_id"] for v in g.vs if v["kind"] == "user"
                and any(bool(v[flag]) for flag in exclude_flags)}
-    out = out[~out.seeded & ~out.user_id.isin(flagged)]
+    out = out[~out.seeded & ~out.user_id.isin(flagged) & (out.score > 0)]
     return out.drop(columns="seeded").head(top_n).reset_index(drop=True)
 
 

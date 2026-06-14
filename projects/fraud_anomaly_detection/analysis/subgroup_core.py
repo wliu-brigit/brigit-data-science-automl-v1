@@ -114,14 +114,18 @@ def validate_rules(
             "never_tr": never_tr,
             "dpd_te": float(dpd_test[mask_te].mean()),
             "p": binom_sf(int(round(prec_te * n_te)), n_te, base_test),
+            "_mask_sig": np.packbits(mask_te).tobytes(),
         })
-    # Dedup: collapse subgroups with an identical test footprint (same n_te and
-    # precision = an inert extra condition), keeping the SHORTEST conjunction.
-    rows.sort(key=lambda r: (r["n_te"], round(r["never_te"], 6), r["conds"].count(" AND ")))
-    deduped: dict[tuple, dict[str, Any]] = {}
+    # Dedup: collapse subgroups with an identical test footprint, keeping the
+    # SHORTEST conjunction. Equal aggregate stats are not enough to dedup.
+    rows.sort(key=lambda r: (r["_mask_sig"], r["conds"].count(" AND ")))
+    deduped: dict[bytes, dict[str, Any]] = {}
     for row in rows:
-        sig = (row["n_te"], round(row["never_te"], 6))
+        sig = row["_mask_sig"]
         if (sig not in deduped
                 or row["conds"].count(" AND ") < deduped[sig]["conds"].count(" AND ")):
             deduped[sig] = row
-    return sorted(deduped.values(), key=lambda r: r["never_te"], reverse=True)
+    out = sorted(deduped.values(), key=lambda r: r["never_te"], reverse=True)
+    for row in out:
+        row.pop("_mask_sig", None)
+    return out

@@ -51,6 +51,54 @@ def test_validate_rules_scores_on_test_and_dedups(planted):
     top = rows[0]
     assert set(top) >= {"conds", "n_te", "never_te", "lift", "p"}
     assert top["never_te"] == max(r["never_te"] for r in rows)
-    # dedup: identical test footprints collapse to the shortest conjunction
-    sigs = [(r["n_te"], round(r["never_te"], 6)) for r in rows]
-    assert len(sigs) == len(set(sigs))
+    assert len({r["conds"] for r in rows}) == len(rows)
+
+
+def test_validate_rules_keeps_distinct_footprints_with_same_stats():
+    y_test = np.array([1, 1, 0, 0, 1, 1, 0, 0])
+    dpd_test = y_test.copy()
+    selectors_test = {
+        "A": np.array([True, True, True, True, False, False, False, False]),
+        "B": np.array([False, False, False, False, True, True, True, True]),
+    }
+    train_mask = np.ones_like(y_test, dtype=bool)
+    all_rules = {
+        frozenset({"A"}): train_mask,
+        frozenset({"B"}): train_mask,
+    }
+
+    rows = validate_rules(
+        all_rules,
+        selectors_test,
+        y_test,
+        dpd_test=dpd_test,
+        base_test=float(y_test.mean()),
+        min_test=1,
+    )
+
+    assert {row["conds"] for row in rows} == {"A", "B"}
+
+
+def test_validate_rules_dedups_identical_footprints_by_mask():
+    mask = np.array([True, True, True, True, False, False])
+    y_test = np.array([1, 1, 0, 0, 0, 0])
+    selectors_test = {
+        "A": mask,
+        "B": mask.copy(),
+    }
+    train_mask = np.ones_like(y_test, dtype=bool)
+    all_rules = {
+        frozenset({"A"}): train_mask,
+        frozenset({"A", "B"}): train_mask,
+    }
+
+    rows = validate_rules(
+        all_rules,
+        selectors_test,
+        y_test,
+        dpd_test=y_test,
+        base_test=float(y_test.mean()),
+        min_test=1,
+    )
+
+    assert [row["conds"] for row in rows] == ["A"]

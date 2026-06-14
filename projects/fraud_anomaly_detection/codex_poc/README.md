@@ -94,7 +94,7 @@ point for methods that are live in the skeleton.
 2. Validate the scenario register with the existing scenario tests/validation.
 3. Add `ScenarioMethod("<scenario_name>")` to `default_methods()` in
    `control/discovery/catalog.py`.
-4. Add or extend tests under `tests/control/` so the method emits a
+4. Add or extend tests under `codex_poc/tests/control/` so the method emits a
    `FindingSet` and appears in the catalog/report. The scenario will then be
    measured in `discovery.methods`, included in the deduped `discovery.union`,
    and split into State A / holdout outcome panels by `run_skeleton`.
@@ -109,8 +109,8 @@ point for methods that are live in the skeleton.
    `graph.discover`, `analysis`, or later Neo4j/GDS wrappers). It must not
    import from `codex_poc.archived`.
 3. Add the adapter to `default_methods()` in `control/discovery/catalog.py`.
-4. Add tests for the adapter, the catalog, and the end-to-end report. The graph
-   method will then contribute to `graph_only_users` or
+4. Add tests under `codex_poc/tests/control/` for the adapter, the catalog, and
+   the end-to-end report. The graph method will then contribute to `graph_only_users` or
    `scenario_and_graph_users`, depending on overlap with scenario findings.
 
 ## Build posture

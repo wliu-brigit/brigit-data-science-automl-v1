@@ -4,6 +4,9 @@ from __future__ import annotations
 from pathlib import Path
 
 from projects.fraud_anomaly_detection.codex_poc.control.contract import Finding, FindingSet
+from projects.fraud_anomaly_detection.codex_poc.control.discovery.metadata import (
+    MethodMetadata,
+)
 from projects.fraud_anomaly_detection.graph.discover import residual_ring_members
 from projects.fraud_anomaly_detection.graph.load import load_graph
 
@@ -11,7 +14,17 @@ METHOD_VERSION = "graph-skeleton-1"
 
 
 class ResidualRingMethod:
-    name = "graph:residual_ring_members"
+    def __init__(self):
+        self.metadata = MethodMetadata(
+            name="graph:residual_ring_members",
+            version=METHOD_VERSION,
+            method_type="graph",
+            time_semantics="snapshot_review",
+            promotion_tier="review_queue",
+            enforcement_projection="entity_key",
+            params={"queue": "residual_ring_members"},
+        )
+        self.name = self.metadata.name
 
     def run(self, store: Path | str) -> FindingSet:
         graph = load_graph(store)

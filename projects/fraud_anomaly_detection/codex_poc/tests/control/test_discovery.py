@@ -22,6 +22,19 @@ def test_default_method_catalog_is_the_extension_point():
         "graph:residual_ring_members",
     ]
     assert all(isinstance(method, DiscoveryMethod) for method in methods)
+    metadata = [method.metadata for method in methods]
+    assert [meta.name for meta in metadata] == [
+        "scenario:ring_account_reuse",
+        "graph:residual_ring_members",
+    ]
+    assert metadata[0].method_type == "scenario"
+    assert metadata[0].time_semantics == "production_safe"
+    assert metadata[0].promotion_tier == "plug_candidate"
+    assert metadata[0].enforcement_projection == "scenario_rule"
+    assert metadata[1].method_type == "graph"
+    assert metadata[1].time_semantics == "snapshot_review"
+    assert metadata[1].promotion_tier == "review_queue"
+    assert metadata[1].enforcement_projection == "entity_key"
 
 
 def test_scenario_method_is_a_discovery_method():
@@ -29,6 +42,7 @@ def test_scenario_method_is_a_discovery_method():
 
     assert isinstance(method, DiscoveryMethod)
     assert method.name == "scenario:ring_account_reuse"
+    assert method.metadata.params == {"scenario_name": "ring_account_reuse"}
 
 
 @pytest.mark.skipif(not SAMPLE.exists(), reason="sample store not built")

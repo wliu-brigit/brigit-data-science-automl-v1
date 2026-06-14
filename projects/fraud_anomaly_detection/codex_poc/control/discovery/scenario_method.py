@@ -6,13 +6,25 @@ from pathlib import Path
 import duckdb
 
 from projects.fraud_anomaly_detection.codex_poc.control.contract import Finding, FindingSet
+from projects.fraud_anomaly_detection.codex_poc.control.discovery.metadata import (
+    MethodMetadata,
+)
 from projects.fraud_anomaly_detection.scenarios import SCENARIOS_VERSION, assign
 
 
 class ScenarioMethod:
     def __init__(self, scenario_name: str):
         self.scenario_name = scenario_name
-        self.name = f"scenario:{scenario_name}"
+        self.metadata = MethodMetadata(
+            name=f"scenario:{scenario_name}",
+            version=SCENARIOS_VERSION,
+            method_type="scenario",
+            time_semantics="production_safe",
+            promotion_tier="plug_candidate",
+            enforcement_projection="scenario_rule",
+            params={"scenario_name": scenario_name},
+        )
+        self.name = self.metadata.name
 
     def run(self, store: Path | str) -> FindingSet:
         with duckdb.connect(str(store), read_only=True) as con:

@@ -10,50 +10,34 @@ Workspace:
 
 ## Current State
 
-The control skeleton now has a repeatable discovery -> plug -> validation flow
-over the local sample graph store:
+The control skeleton now has one repeatable discovery -> plug -> validation
+operator report over the local sample graph store:
 
 1. Scenario discovery reads the canonical scenario register.
 2. Graph methods are screened separately.
 3. Scenario users are unioned and deduped by `user_id`.
-4. Graph methods are added only when their marginal net-new population clears
-   the configured support and DPD45-rate bar.
+4. Graph methods are labeled with a status. Review-only graph pockets remain
+   visible, while only promotion-safe graph methods can enter plug derivation.
 5. The final discovery union feeds plug derivation.
 6. Plug validation reports `covered_discovery`, `uncovered_discovery`, and
    `outside_discovery` for State A and holdout.
 
-The default control skeleton entry point remains:
-
-```bash
-uv run --group fraud python - <<'PY'
-from pathlib import Path
-
-from projects.fraud_anomaly_detection.codex_poc.control.config import ControlConfig
-from projects.fraud_anomaly_detection.codex_poc.control.run import run_skeleton
-
-report = run_skeleton(
-    Path("projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb"),
-    findings_db=Path("/tmp/fraud_control_findings.duckdb"),
-    reports_db=Path("/tmp/fraud_control_reports.duckdb"),
-    config=ControlConfig(),
-)
-print(report.keys())
-PY
-```
-
-The scenario-by-scenario report that matches the latest review format is
-repeatable with:
+The supported entry point is:
 
 ```bash
 uv run --group fraud python -m \
-  projects.fraud_anomaly_detection.codex_poc.control.selected_discovery_report \
+  projects.fraud_anomaly_detection.neo4j_codex.control.control_loop_report \
   --store projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb \
-  --out-dir projects/fraud_anomaly_detection/codex_poc/reports \
-  --refresh-key selected_discovery_plug_report
+  --out-dir projects/fraud_anomaly_detection/neo4j_codex/reports \
+  --refresh-key fraud_control_loop_report
 ```
 
+Use `--include-status review_only` to show only graph review rows, or repeat
+`--include-status` for multiple statuses. The filter changes displayed graph
+rows only; all statuses are still counted in the JSON and Markdown.
+
 Generated report files under
-`projects/fraud_anomaly_detection/codex_poc/reports/` are intentionally ignored
+`projects/fraud_anomaly_detection/neo4j_codex/reports/` are intentionally ignored
 by git. Regenerate them when inputs or thresholds change.
 
 ## Current Scenarios
@@ -67,7 +51,7 @@ The current canonical scenarios are:
 - `ring_shared_persistent_account`
 - `ring_device_burst`
 
-The latest selected report over the sample produced this scenario readout:
+The latest control-loop report over the sample produced this scenario readout:
 
 | scenario | users found | DPD45 user rate | DPD45 advance rate |
 | --- | ---: | ---: | ---: |
@@ -79,59 +63,59 @@ The latest selected report over the sample produced this scenario readout:
 
 ## Current Graph Screen
 
-The selected report screens graph methods after the scenario union. The current
+The control-loop report screens graph methods after the scenario union. The current
 selection rule is:
 
 - marginal net-new users after dedupe >= 10
 - marginal DPD45 user rate >= 50%
 
-The latest sample run selected:
-
-- `high_risk_entity_members_scenario_fraud_seed`
-
-It excluded low-precision or duplicate graph methods, including:
+The latest sample run promoted no graph methods into plug derivation because the
+current graph screens are `snapshot_review` / `review_queue`. It still surfaces
+review-only graph pockets, including:
 
 - `residual_ring_members`
 - `suspicion_queue_top200`
 - `fraud_neighbours_hops2`
 - `multi_witness_neighbors_scenario_fraud_seed`
-- scenario-neighborhood variants whose marginal contribution did not clear the
-  rule after dedupe.
+- scenario-neighborhood variants, including
+  `graph:scenario_neighborhood:ring_account_reuse` with 13 net-new users at
+  84.6% DPD45 in the sample.
 
-This is intentional. Low-precision graph methods stay visible in the screened
+This is intentional. Review-only graph methods stay visible in the screened
 table for auditability, but they do not feed the final discovery union or plug
-derivation.
+derivation until their method metadata becomes promotion-safe.
 
 ## Latest Selected Discovery Readout
 
-Latest sample selected report:
+Latest sample control-loop report:
 
 - scenario union users: 1,024
-- selected graph net-new users: 15
-- final deduped discovery union users: 1,039
+- review-only graph net-new users: >0
+- selected graph net-new users: 0
+- final deduped discovery union users: 1,024
 - final discovery DPD45 user rate: 90.4%
-- final discovery DPD45 advance rate: 84.6%
+- final discovery DPD45 advance rate: 84.8%
 
 Plug validation from the final discovery union:
 
-- candidate keys from State A final discovery: 3,252
-- qualified burned keys: 214
+- candidate keys from State A final discovery: 3,211
+- qualified burned keys: 210
 
 State A:
 
 | bucket | users | DPD45 advance rate |
 | --- | ---: | ---: |
-| covered_discovery | 808 | 96.5% |
-| uncovered_discovery | 108 | 32.0% |
-| outside_discovery | 1 | 100.0% |
+| covered_discovery | 796 | 96.6% |
+| uncovered_discovery | 107 | 33.2% |
+| outside_discovery | 9 | 100.0% |
 
 Holdout:
 
 | bucket | users | DPD45 advance rate |
 | --- | ---: | ---: |
-| covered_discovery | 45 | 93.5% |
-| uncovered_discovery | 79 | 79.4% |
-| outside_discovery | 0 | 0.0% |
+| covered_discovery | 44 | 93.3% |
+| uncovered_discovery | 78 | 79.2% |
+| outside_discovery | 1 | 100.0% |
 
 ## Code Added Or Changed
 
@@ -141,8 +125,8 @@ Core skeleton:
 - `control/discovery_report.py` - method, union, and scenario-vs-graph reports.
 - `control/plug_report.py` - plug coverage and outside-discovery validation.
 - `control/report_store.py` - DuckDB JSON run report persistence.
-- `control/run.py` - holistic discovery, State A, holdout, and plug report.
-- `control/selected_discovery_report.py` - repeatable report runner and CLI.
+- `control/control_loop_report.py` - repeatable scenario, graph, plug,
+  State A, and holdout report runner and CLI.
 
 Audit fixes:
 
@@ -151,14 +135,14 @@ Audit fixes:
 - `graph/discover.py` filters zero-score disconnected PPR queue rows.
 - `analysis/subgroup_core.py` dedupes subgroup rules by actual test footprint,
   not aggregate stats.
-- `pyproject.toml` includes `projects/*/codex_poc/tests` in default pytest
+- `pyproject.toml` includes `projects/*/neo4j_codex/tests` in default pytest
   collection.
 
 Docs:
 
-- `codex_poc/README.md` documents the control-loop workflow and repeatable
-  selected report command.
-- `codex_poc/docs/CONTROL_SYSTEM_DESIGN.md` records the implemented validation
+- `neo4j_codex/README.md` documents the control-loop workflow and repeatable
+  report command.
+- `neo4j_codex/docs/CONTROL_SYSTEM_DESIGN.md` records the implemented validation
   spine.
 
 ## Caveats
@@ -168,9 +152,9 @@ Docs:
 - Some archive-inspired graph ideas use hindsight-like seeds or entity-risk
   summaries. They are discovery/review evidence until rewritten as leak-free
   as-of features.
-- The selected graph method is useful in this sample, but the graph catalog is
-  still not a formal reviewed registry. Future graph methods should move toward
-  a config-backed catalog like scenarios.
+- Manual/human-assigned plug lifecycle is not implemented yet. Automated plugs
+  are derived and evaluated; human-assigned plugs should be added as a separate
+  registry path and evaluated separately.
 - Plug persistence is still a report-level burned-key table, not the full
   lifecycle-managed production registry from the design spec.
 - Warehouse writes, GCS durability, and full v3 tuning remain future work.
@@ -183,8 +167,8 @@ The last full verification before handoff should be:
 ```bash
 uv run --group fraud pytest -q
 uv run --group fraud ruff check \
-  projects/fraud_anomaly_detection/codex_poc/control \
-  projects/fraud_anomaly_detection/codex_poc/tests/control \
+  projects/fraud_anomaly_detection/neo4j_codex/control \
+  projects/fraud_anomaly_detection/neo4j_codex/tests/control \
   projects/fraud_anomaly_detection/graph/discover.py \
   projects/fraud_anomaly_detection/analysis/subgroup_core.py
 python - <<'PY'
@@ -194,8 +178,8 @@ import sys
 result = subprocess.run(
     [
         "rg",
-        "codex_poc\\\\.archived|from .*archived|import .*archived",
-        "projects/fraud_anomaly_detection/codex_poc/control",
+        "neo4j_codex\\\\.archived|from .*archived|import .*archived",
+        "projects/fraud_anomaly_detection/neo4j_codex/control",
     ],
     capture_output=True,
     text=True,

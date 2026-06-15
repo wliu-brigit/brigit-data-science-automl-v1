@@ -59,7 +59,7 @@ testpaths = [
     "tests/integration",
     "tests/e2e",
     "projects/*/tests",
-    "projects/*/codex_poc/tests",
+    "projects/*/neo4j_codex/tests",
 ]
 pythonpath = ["."]
 addopts = ["--strict-markers"]

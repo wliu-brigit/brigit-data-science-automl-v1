@@ -116,14 +116,14 @@ do not point `base_table` at it — wrap it:
 
 Rebuilds happen only with the explicit `--refresh-source` flag.
 
-## The fraud-control track (`codex_poc/`) — different from the AutoML harness above
+## The fraud-control track (`neo4j_codex/`) — different from the AutoML harness above
 
 Everything above is about using the generic AutoML harness on this problem.
-The graph/fraud work (`graph/`, `analysis/`, and especially `codex_poc/`) is a
+The graph/fraud work (`graph/`, `analysis/`, and especially `neo4j_codex/`) is a
 separate track building a holistic **discovery → plug-the-hole → monitor**
 control system. Start with [`PRINCIPLES.md`](PRINCIPLES.md); the design and build plan live
-under [`codex_poc/docs/`](codex_poc/docs/) (`CONTROL_SYSTEM_DESIGN.md`,
-`SCHEMA_DESIGN.md`, `WALKING_SKELETON_PLAN.md`), and `codex_poc/` is the
+under [`neo4j_codex/docs/`](neo4j_codex/docs/) (`CONTROL_SYSTEM_DESIGN.md`,
+`SCHEMA_DESIGN.md`, `WALKING_SKELETON_PLAN.md`), and `neo4j_codex/` is the
 self-contained home for the build.
 
 **This track does not use MLflow.** MLflow is the AutoML package's experiment

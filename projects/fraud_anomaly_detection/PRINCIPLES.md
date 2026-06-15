@@ -9,7 +9,7 @@ loudly: amend in a dedicated change with the reasoning recorded.
 
 Status: draft from the 2026-06-12 schema discussions (wendao + Claude);
 sign-off pending (wendao). Schema-level working notes live in
-[`codex_poc/SCHEMA_DESIGN.md`](codex_poc/SCHEMA_DESIGN.md).
+[`neo4j_codex/docs/SCHEMA_DESIGN.md`](neo4j_codex/docs/SCHEMA_DESIGN.md).
 
 ## P1 — The system is a control loop; the graph is its discovery instrument
 

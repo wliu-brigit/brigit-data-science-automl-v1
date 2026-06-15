@@ -303,10 +303,12 @@ Keep:
 
 Fix:
 
-- `run_skeleton()` and `selected_discovery_report.py` are not one coherent
-  system yet.
-- Graph selection logic lives too much inside a report module.
-- The method catalog is too thin and lacks method semantics.
+- Keep `control_loop_report.py` as the single operator entry point while moving
+  reusable selection, registry, and backtesting pieces into focused modules as
+  they stabilize.
+- Graph selection logic still lives too much inside a report module.
+- The graph screen catalog is intentionally thin and needs the v3 method
+  registry shape.
 - The plug registry is report-level, not lifecycle-managed operational state.
 - Backtesting is not a first-class reusable module.
 
@@ -314,10 +316,11 @@ Fix:
 
 ### Gap 1: Unified Method Registry
 
-Current state: one small catalog drives `run_skeleton()`, while the richer
-selected report has its own graph and scenario logic.
+Current state: `control_loop_report.py` is the operator entry point; scenarios
+come from the canonical scenario register, while graph discovery is described
+by `graph_screen_catalog.py` and executed by the report.
 
-Target: one registry drives daily runs, selected reports, and backtests. Each
+Target: one registry drives daily runs, control-loop reports, and backtests. Each
 method declares type, time semantics, promotion tier, parameters, and version.
 
 ### Gap 2: Method Classification
@@ -330,7 +333,7 @@ as-of feature/rule, review queue, or plug candidate.
 
 ### Gap 3: Reusable Selection Layer
 
-Current state: marginal graph selection exists primarily in the selected report.
+Current state: marginal graph selection exists primarily in the control-loop report.
 
 Target: selection is a reusable module that reports total, overlap, net-new,
 marginal rate, and promotion eligibility.

@@ -46,6 +46,7 @@ def test_default_pytest_testpaths_include_all_cutover_tiers():
     assert "tests/contracts" in testpaths
     assert "tests/integration" in testpaths
     assert "tests/e2e" in testpaths
+    assert "projects/*/neo4j_codex/tests" in testpaths
 
 
 def _test_files(tier: str) -> list[Path]:

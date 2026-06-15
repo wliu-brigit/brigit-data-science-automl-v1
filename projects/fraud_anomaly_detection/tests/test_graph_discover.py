@@ -2,6 +2,7 @@
 
 import textwrap
 
+import igraph as ig
 import pandas as pd
 import pytest
 
@@ -14,6 +15,7 @@ from projects.fraud_anomaly_detection.graph.discover import (  # noqa: E402
     fresh_rings,
     multi_witness_pairs,
     residual_ring_members,
+    suspicion_queue,
 )
 from projects.fraud_anomaly_detection.graph.load import load_graph  # noqa: E402
 
@@ -94,6 +96,31 @@ def test_multi_witness_pairs_requires_two_channels_and_no_flags(tmp_path):
     one_flagged = none_flagged.copy()
     one_flagged["ua"] = True
     assert len(multi_witness_pairs(store, user_flags=one_flagged)) == 0
+
+
+def test_suspicion_queue_excludes_flagged_and_ranks_neighbours_first(toy_store):
+    g = load_graph(toy_store, scenarios=False)
+    q = suspicion_queue(g, seed_flag="is_fraud", exclude_flags=("is_fraud",))
+    assert "u1" not in set(q.user_id)  # the seed itself is never queued
+    assert q.iloc[0].user_id == "u2"  # closest unflagged neighbour tops the queue
+
+
+def test_suspicion_queue_drops_disconnected_zero_score_users():
+    g = ig.Graph()
+    g.add_vertices(
+        4,
+        attributes={
+            "name": ["user:u1", "device:d1", "user:u2", "device:d2"],
+            "kind": ["user", "device", "user", "device"],
+            "raw_id": ["u1", "d1", "u2", "d2"],
+            "is_fraud": [True, False, False, False],
+        },
+    )
+    g.add_edges([(0, 1), (2, 3)])
+
+    q = suspicion_queue(g, seed_flag="is_fraud", exclude_flags=("is_fraud",))
+
+    assert q.empty
 
 
 def test_fresh_rings_window_slices_recent_formation(toy_store):

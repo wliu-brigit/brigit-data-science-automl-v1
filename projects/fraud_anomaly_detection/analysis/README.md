@@ -14,8 +14,10 @@ The reusable logic lives in `../graph/` (`build` / `load` / `queries` /
 |---|---|
 | `graph_store_demo.py` | build the store from the local sample + capability acceptance run |
 | `graph_store_build.py` | build from a REGISTERED dataset (v3 path; needs `.env` + prod registry — preflights with a clear report) |
+| `graph_store_crosscheck.py` | **validate**: engine-vs-SQL scenario equivalence, label/window QA, graph-recount vs warehouse `users_on_*_72h` (quantifies the advance-grain blind spot — TODO "LINK-GRAIN EDGES"); run after every store build |
 | `graph_question_battery.py` | **measure**: pooled rates, hubs vs all three truth columns, multi-type census + residual cut, proximity — with ring-concentration and early/late decay checks built in |
-| `graph_discovery_queues.py` | **act**: five snapshot review queues (residual ring members, bad neighbours, emerging farms, multi-witness pairs, fresh rings) |
+| `graph_discovery_queues.py` | **act**: seven snapshot review queues (residual ring members, bad neighbours, emerging farms, multi-witness pairs, fresh rings, PPR suspicion, Fraudar-style dense blocks) |
+| `graph_subgroup_sweep.py` | **search**: beam-search subgroup discovery over the leak-free graph features (`asof.leakfree_features`) joined to the store's residual+mature pool — systematic conjunction hunting instead of hypothesis poking |
 
 Semantics to keep straight: the queues are SNAPSHOT views (review/clawback —
 hindsight is legitimate); any rule derived from them gets measured leak-free
@@ -34,7 +36,7 @@ git keeps the code).
 | `feature_due_diligence.py` | leakage/QA gate before discovery runs on a new feature base |
 | `unsupervised_lens.py` | IF/GMM/AE discovery lens on the gated residual |
 | `supervised_lens.py` | supervised GBM as a discovery lens on the gated residual |
-| `subgroup_discovery.py` | beam-search conjunctive rule discovery on the residual |
+| `subgroup_discovery.py` | beam-search conjunctive rule discovery on the residual (search/validate machinery lives in `subgroup_core.py`, shared with `graph_subgroup_sweep.py`) |
 | `rule_discovery.py` | rule extraction from a logged anomaly trial (by MLflow run id) |
 
 ## Pruned history

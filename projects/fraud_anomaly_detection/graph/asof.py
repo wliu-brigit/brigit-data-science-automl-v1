@@ -92,10 +92,14 @@ def leakfree_features(
     params: list = list(layers)
     cap_clause = ""
     if degree_cap is not None:
+        # advance-edge-only on BOTH sides: the replay is per-advance, and the
+        # cap must be computed over the same population it screens (link edges
+        # would shift caps without ever entering the replay)
         cap_clause = (
             " AND (entity_type, entity_value) IN (SELECT entity_type, entity_value"
             " FROM (SELECT entity_type, entity_value, count(DISTINCT user_id) AS du"
-            f" FROM edges WHERE entity_type IN ({', '.join('?' * len(layers))})"
+            f" FROM edges WHERE source = 'advance'"
+            f" AND entity_type IN ({', '.join('?' * len(layers))})"
             " GROUP BY 1, 2) WHERE du <= ?)"
         )
         params = params + list(layers) + [degree_cap]
@@ -103,7 +107,8 @@ def leakfree_features(
     with duckdb.connect(str(store), read_only=True) as con:
         edges = con.execute(
             "SELECT advance_id, entity_type, entity_value FROM edges"
-            f" WHERE entity_type IN ({', '.join('?' * len(layers))}){cap_clause}",
+            f" WHERE source = 'advance'"
+            f" AND entity_type IN ({', '.join('?' * len(layers))}){cap_clause}",
             params,
         ).df()
         scored = con.execute(

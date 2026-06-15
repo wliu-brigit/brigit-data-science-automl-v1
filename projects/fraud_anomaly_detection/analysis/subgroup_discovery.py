@@ -65,16 +65,6 @@ def _load_env() -> None:
             os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
 
-def _binom_sf(k: int, n: int, p: float) -> float:
-    """One-sided P(X >= k) under Binomial(n, p), normal approximation with a
-    continuity correction — significance of the test precision vs base."""
-    from math import erfc, sqrt
-    if n == 0 or p <= 0 or p >= 1:
-        return 1.0
-    z = (k - 0.5 - n * p) / sqrt(n * p * (1 - p))
-    return 0.5 * erfc(z / sqrt(2))
-
-
 def build_selectors(sub: pd.DataFrame) -> list[tuple[str, np.ndarray]]:
     sels: list[tuple[str, np.ndarray]] = []
     def num(c):
@@ -137,77 +127,21 @@ def main() -> None:
     print(f"selectors: {len(sels)} | beam search depth {args.depth}, width {args.beam}, "
           f"min train support {args.min_support}\n")
 
+    from projects.fraud_anomaly_detection.analysis.subgroup_core import (
+        beam_search,
+        validate_rules,
+    )
+
     ytr, yte = y[tr], y[te]
     sel_tr = [(name, m[tr]) for name, m in sels]
     sel_te = {name: m[te] for name, m in sels}
 
-    # beam of (selector-name-tuple, train_mask) — quality = train never-paid precision
-    def precision(mask, yy):
-        n = int(mask.sum())
-        return (yy[mask].mean() if n else 0.0), n
-
-    evaluated = 0
-    beam: list[tuple[tuple[str, ...], np.ndarray]] = []
-    for name, m in sel_tr:
-        evaluated += 1
-        p, n = precision(m, ytr)
-        if n >= args.min_support:
-            beam.append(((name,), m))
-    beam.sort(key=lambda b: precision(b[1], ytr)[0], reverse=True)
-    beam = beam[: args.beam]
-
-    seen: set[frozenset] = set(frozenset(c) for c, _ in beam)
-    all_rules: dict[frozenset, np.ndarray] = {frozenset(c): m for c, m in beam}
-
-    for _ in range(args.depth - 1):
-        cand: list[tuple[tuple[str, ...], np.ndarray]] = []
-        for conds, m in beam:
-            for name, sm in sel_tr:
-                if name in conds:
-                    continue
-                key = frozenset(conds + (name,))
-                if key in seen:
-                    continue
-                nm = m & sm
-                evaluated += 1
-                n = int(nm.sum())
-                if n < args.min_support:
-                    continue
-                seen.add(key)
-                cand.append((tuple(sorted(key)), nm))
-                all_rules[key] = nm
-        if not cand:
-            break
-        cand.sort(key=lambda b: precision(b[1], ytr)[0], reverse=True)
-        beam = cand[: args.beam]
-
-    # validate every discovered rule on held-out TEST
-    rows = []
-    for key, _m in all_rules.items():
-        mask_te = np.ones(te.sum(), bool)
-        for name in key:
-            mask_te = mask_te & sel_te[name]
-        n_te = int(mask_te.sum())
-        if n_te < args.min_test:
-            continue
-        prec_te = yte[mask_te].mean()
-        dpd_te = dpd_k[te][mask_te].mean()
-        prec_tr = ytr[all_rules[key]].mean() if all_rules[key].sum() else float("nan")
-        rows.append({
-            "conds": " AND ".join(sorted(key)), "n_te": n_te,
-            "never_te": prec_te, "lift": prec_te / base_te,
-            "never_tr": prec_tr, "dpd_te": dpd_te,
-            "p": _binom_sf(int(round(prec_te * n_te)), n_te, base_te),
-        })
-    # Dedup: collapse subgroups with an identical test footprint (same n_te and
-    # precision = an inert extra condition), keeping the SHORTEST conjunction.
-    rows.sort(key=lambda r: (r["n_te"], round(r["never_te"], 6), r["conds"].count(" AND ")))
-    deduped: dict[tuple, dict] = {}
-    for r in rows:
-        sig = (r["n_te"], round(r["never_te"], 6))
-        if sig not in deduped or r["conds"].count(" AND ") < deduped[sig]["conds"].count(" AND "):
-            deduped[sig] = r
-    rows = sorted(deduped.values(), key=lambda r: r["never_te"], reverse=True)
+    all_rules, evaluated = beam_search(
+        sel_tr, ytr, depth=args.depth, beam_width=args.beam,
+        min_support=args.min_support)
+    rows = validate_rules(
+        all_rules, sel_te, yte, dpd_test=dpd_k[te], base_test=base_te,
+        y_train=ytr, min_test=args.min_test)
     print(f"candidates evaluated: {evaluated}  (Bonferroni: significant if p < alpha/{evaluated})")
     print(f"top {args.top} subgroups by held-out TEST never-paid precision (min {args.min_test} test rows):\n")
     for r in rows[: args.top]:

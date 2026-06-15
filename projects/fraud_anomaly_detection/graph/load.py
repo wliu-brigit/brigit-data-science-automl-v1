@@ -30,6 +30,9 @@ def _read_store(store: Path | str, sql: str, params: list | None = None) -> pd.D
         return con.execute(sql, params or []).df()
 
 
+EDGE_SOURCES: tuple[str, ...] = ("advance", "link")
+
+
 def load_graph(
     store: Path | str,
     base: pd.DataFrame | None = None,
@@ -40,6 +43,7 @@ def load_graph(
     node_attrs: tuple[str, ...] = DEFAULT_NODE_ATTRS,
     scenarios: bool = True,
     register_path: Path | str | None = None,
+    sources: tuple[str, ...] = EDGE_SOURCES,
 ) -> ig.Graph:
     """One opinionated view of the stored graph, as an igraph multigraph.
 
@@ -49,15 +53,25 @@ def load_graph(
     (users always stay). scenarios=True runs the register (the bound one, or
     `register_path`) against `base` NOW and attaches user-level
     scenario_<name> / scenario_any flags — never persisted, always current.
+    sources picks the edge provenance: 'advance' (an advance happened) and/or
+    'link' (the user touched the entity — includes advance-less users).
     """
     if not layers:
         raise ValueError("layers must name at least one entity type")
     unknown = set(layers) - set(ENTITY_COLS)
     if unknown:
         raise ValueError(f"unknown layer(s) {sorted(unknown)}; expected {sorted(ENTITY_COLS)}")
+    if not sources:
+        raise ValueError("sources must name at least one edge source")
+    bad_sources = set(sources) - set(EDGE_SOURCES)
+    if bad_sources:
+        raise ValueError(f"unknown source(s) {sorted(bad_sources)}; expected {sorted(EDGE_SOURCES)}")
 
-    conds = ["entity_type IN (" + ", ".join("?" * len(layers)) + ")"]
-    params: list = list(layers)
+    conds = [
+        "entity_type IN (" + ", ".join("?" * len(layers)) + ")",
+        "source IN (" + ", ".join("?" * len(sources)) + ")",
+    ]
+    params: list = list(layers) + list(sources)
     if as_of is not None:
         conds.append("ts <= ?")
         params.append(as_of)
@@ -71,7 +85,7 @@ def load_graph(
         cap_params = params + [degree_cap]
         edges = _read_store(
             store,
-            f"SELECT advance_id, user_id, entity_type, entity_value, ts "
+            f"SELECT advance_id, user_id, entity_type, entity_value, ts, source "
             f"FROM (SELECT *, count(DISTINCT user_id) OVER "
             f"(PARTITION BY entity_type, entity_value) AS du FROM edges WHERE {where}) "
             f"WHERE du <= ?",
@@ -80,7 +94,7 @@ def load_graph(
     else:
         edges = _read_store(
             store,
-            f"SELECT advance_id, user_id, entity_type, entity_value, ts "
+            f"SELECT advance_id, user_id, entity_type, entity_value, ts, source "
             f"FROM edges WHERE {where}",
             params,
         )
@@ -106,6 +120,7 @@ def load_graph(
     g.add_edges(list(zip(src, dst)))
     g.es["etype"] = edges["entity_type"].tolist()
     g.es["ts"] = list(edges["ts"])
+    g.es["source"] = edges["source"].tolist()
 
     flags = pd.DataFrame(index=base.index)
     if scenarios:

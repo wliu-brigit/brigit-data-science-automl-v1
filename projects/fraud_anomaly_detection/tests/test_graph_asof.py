@@ -34,6 +34,16 @@ def test_seed_activates_at_maturity_not_at_event(toy_store):
     assert (row.comp_users, row.comp_types, row.nb_comp, row.nb_d1) == (3, 2, 1, 0)
 
 
+def test_link_edges_do_not_enter_leakfree_replay(toy_store, toy_store_with_links):
+    # Snapshot-only pass: the replay is advance-edge-only by design (link-event
+    # replay is future work). With degree_cap=5 the link edge would push dH to
+    # 6 users and screen it — identical outputs prove links are excluded from
+    # both the cap computation and the replayed edges.
+    base = _by_advance(leakfree_features(toy_store, degree_cap=5))
+    with_links = _by_advance(leakfree_features(toy_store_with_links, degree_cap=5))
+    pd.testing.assert_frame_equal(base, with_links)
+
+
 def test_own_prior_default_is_excluded(tmp_path):
     from projects.fraud_anomaly_detection.graph.build import build_store
 

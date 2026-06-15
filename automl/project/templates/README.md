@@ -10,6 +10,7 @@ stays generic; everything specific to this problem lives here.
 ├── README.md                # this file
 ├── config.py                # the recipe: TASK / DATA / EVAL / RUN_CONFIG
 ├── PROJECT_INSTRUCTIONS.md  # domain guidance the agent loop reads every turn
+├── docs/                    # task-specific guides (see "Project docs" below)
 ├── data/                    # custom DataPipeline (when the default needs replacing)
 │   └── queries/             # base_table.sql + training_data.sql (Snowflake)
 ├── eval/                    # custom Metric classes (automl.eval protocol)
@@ -21,6 +22,15 @@ Project code mirrors the library package it extends, so imports read the
 same on both sides: `from projects.{project_name}.eval.metrics import ...`
 next to `from automl.eval import ...`. Keep project tests in `tests/` here —
 never in the repo-level `tests/` tree, which belongs to the core library.
+
+## Project docs
+
+`docs/` holds task-specific guides — read the one that fits what you're doing.
+This list is the entry point; add a line when a new guide lands.
+
+- **Publishing an experiment-level learning** →
+  [`docs/experiment-learnings.md`](docs/experiment-learnings.md) — the durable
+  home, the study format, and how to promote a finding.
 
 ## Project-specific dependencies
 

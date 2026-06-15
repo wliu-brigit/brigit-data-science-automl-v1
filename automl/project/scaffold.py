@@ -214,6 +214,13 @@ def _snowflake_templates(project_name: str) -> dict[str, str]:
     return {
         "__init__.py": "",
         "README.md": _readme_template(project_name),
+        # Generic, version-controlled guides surfaced through README's "Project
+        # docs" index (progressive disclosure). experiment-learnings.md is the
+        # canonical format+flow for promoting experiment-level learnings; copied
+        # verbatim so every project carries the same convention.
+        "docs/experiment-learnings.md": (
+            _TEMPLATES_DIR / "experiment-learnings.md"
+        ).read_text(encoding="utf-8"),
         # Project code mirrors the library domain it extends (see README.md):
         # eval/ for custom metrics, model/ for transformers/preprocessing,
         # data/ for a custom DataPipeline. Stubs so the convention is the path

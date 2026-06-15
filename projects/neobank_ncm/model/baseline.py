@@ -93,6 +93,16 @@ class NeobankNCMReplicationModel(BaseModel):
 
     name = "neobank_ncm_v3_replication"
 
+    # ── data-scaling knobs (defaults reproduce run #1 exactly) ────────────
+    # KNOWN_SAMPLE_N: random-downsample known (labeled) train rows to this
+    #   count, seed-pinned (random_state=42). None = use all known rows.
+    # UNKNOWN_FRAC: the unknown group's share of the training mix. None keeps
+    #   the legacy winning_ratio (80/20 -> 0.20); 0.0 trains known-only (no
+    #   synthetic dual records). Subclasses override these for the data-scaling
+    #   study; the base class leaves both None and is byte-faithful to legacy.
+    KNOWN_SAMPLE_N: int | None = None
+    UNKNOWN_FRAC: float | None = None
+
     def __init__(self) -> None:
         self.feature_registry = None
         self.preprocessor = None
@@ -136,6 +146,10 @@ class NeobankNCMReplicationModel(BaseModel):
         # prefit variant (the required-transformer contract checks the entry;
         # ColumnTransformer refitting must not see the synthetic labels).
         known = df_train[df_train[target].notna()]
+        # data-scaling knob: random-downsample known rows. tiny-sample-safe so
+        # the runner's 200-row / 10-row pre-fit guard never asks for n > len.
+        if self.KNOWN_SAMPLE_N is not None and len(known) > self.KNOWN_SAMPLE_N:
+            known = known.sample(self.KNOWN_SAMPLE_N, random_state=42)
         unknown = df_train[df_train[target].isna()]
         self.bank_col_ = bank_col
         self.woe_encoder_ = BankInstitutionWOEEncoder()
@@ -151,15 +165,25 @@ class NeobankNCMReplicationModel(BaseModel):
         # First replay the legacy server-side downsample from the materialized
         # hash rank (rank <= 200K), and pin the frame order by that rank so
         # the random_state=42 ratio draw is identical run-to-run.
-        ratio = float(decisions["winning_ratio"])
+        # data-scaling knob: the unknown group's share of the training mix.
+        # None -> legacy winning_ratio (80/20); 0.0 -> known-only.
+        if self.UNKNOWN_FRAC is not None:
+            unk_frac = float(self.UNKNOWN_FRAC)
+        else:
+            unk_frac = 1.0 - float(decisions["winning_ratio"])
         scored = (
             unknown[unknown[syn_col].notna()] if syn_col is not None else unknown.iloc[0:0]
         )
+        if unk_frac <= 0.0 and len(known):
+            # known-only: no synthetic dual records. Only force this when known
+            # rows exist — the runner's tiny pre-fit guard can draw an all-unknown
+            # head(200), and there the synthetic fallback is the only trainable data.
+            scored = scored.iloc[0:0]
         rank_col = by_norm.get(_norm(RANK_COL))
         if rank_col is not None and len(scored) and scored[rank_col].notna().any():
             scored = scored[scored[rank_col] <= UNKNOWN_TRAIN_SAMPLE].sort_values(rank_col)
         if len(known) and len(scored):
-            n_syn_target = max(1, int(len(known) * (1 - ratio) / ratio))
+            n_syn_target = max(1, int(len(known) * unk_frac / (1.0 - unk_frac)))
             if len(scored) > n_syn_target:
                 scored = scored.sample(n_syn_target, random_state=42)
         entity_col = by_norm.get(_norm(ENTITY_COL))

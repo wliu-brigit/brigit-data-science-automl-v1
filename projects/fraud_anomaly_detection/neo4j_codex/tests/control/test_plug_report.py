@@ -14,7 +14,7 @@ def test_summarize_plugs_splits_discovery_coverage_from_outside_discovery(tiny_s
 
     assert report["covered_discovery"]["n_users"] == 0
     assert report["outside_discovery"]["n_users"] == 2
-    assert report["outside_discovery"]["outcomes"]["n_dpd45_advances"] == 0
+    assert report["outside_discovery"]["outcomes"]["dpd45_advances"] == 0
     assert report["uncovered_discovery"]["n_users"] == 3
 
 
@@ -30,6 +30,6 @@ def test_summarize_plugs_can_measure_holdout_delta_only(tiny_store):
     )
 
     assert report["covered_discovery"]["n_users"] == 1
-    assert report["covered_discovery"]["outcomes"]["n_dpd45_advances"] == 1
+    assert report["covered_discovery"]["outcomes"]["dpd45_advances"] == 1
     assert report["outside_discovery"]["n_users"] == 0
     assert report["uncovered_discovery"]["n_users"] == 1

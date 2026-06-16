@@ -44,12 +44,29 @@ NEO4J_PASSWORD=fraudpocpass uv run --with neo4j --group fraud python -m \
   --neo4j-database neo4j
 ```
 
-The report expects a local Neo4j mirror with GDS available. For the current
-sample workflow, rebuild and start it first with:
+The report expects a local Neo4j mirror with GDS available. Two steps stand it up.
+
+**1. Build the graph store (run once).** The store is a DuckDB snapshot built from
+a registered dataset (MLflow registry -> GCS parquet -> DuckDB). It needs `.env`
+(MLflow + GCS) and GCS ADC, but **not** VPN/Snowflake:
+
+```bash
+uv run --group fraud python -m projects.fraud_anomaly_detection.analysis.graph_store_build \
+  --dataset-id v4_086fbc5a \
+  --out projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb
+```
+
+**2. Mirror it into Neo4j.** This pins the Neo4j image and the GDS plugin version
+(downloads the GDS jar on the host and mounts it — the container cannot reach the
+plugin host), bakes in full-data memory settings, and pours the store in
+(export -> import -> start -> healthcheck):
 
 ```bash
 bash projects/fraud_anomaly_detection/neo4j_codex/neo4j_mirror/scripts/setup_neo4j.sh
 ```
+
+Point at a different store with `STORE=/path/to/store.duckdb bash …/setup_neo4j.sh`.
+For the small bundled sample, set `STORE` to the sample store.
 
 That report:
 
@@ -88,6 +105,16 @@ Valid graph statuses are:
 
 Generated files under `reports/` are ignored by git; rerun the command whenever
 the scenario register, graph screens, thresholds, or sample store changes.
+
+### Scenario source: native by default
+
+By default the burst scenarios (`ring_device_burst`, `ring_identity_burst`,
+`ring_shared_persistent_account`) are derived **natively in Neo4j** from edge
+timestamps + entity linkage — one discovery definition in the graph, no upstream
+feature column. `ring_account_reuse` falls through to the DuckDB path (its trigger
+needs advance-grain fields the user-level mirror does not carry). Pass
+`--duckdb-scenarios` to compute every scenario from the DuckDB aggregate path
+instead.
 
 Each discovery method exposes method metadata:
 
@@ -134,10 +161,11 @@ Plug validation buckets are intentionally named from the operator perspective:
 
 ## Build posture
 
-- **Sample data only.** Build and test against
-  `../data/graph/fraud_graph.duckdb` (the local sample). Full v3 / warehouse
-  work is out of scope here — it needs VPN; see the design's build-staging
-  section.
+- **Two data scales, one code path.** TDD against the small bundled sample;
+  run at full scale against the v4 store built by `graph_store_build` (registered
+  dataset -> GCS -> DuckDB, no VPN). The `STORE` variable selects which — the
+  export and report read the same store. Materializing a *new* dataset still
+  needs VPN/Snowflake, but building the store from an existing dataset does not.
 - **No Python graph backend in the active graph path.** Scenario definitions
   remain canonical in the repo scenario package; active graph discovery stays
   inside the Neo4j-backed control graph boundary.

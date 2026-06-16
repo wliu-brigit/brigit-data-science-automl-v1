@@ -33,7 +33,7 @@ def test_summarize_discovery_reports_methods_and_deduped_union(tiny_store):
     assert report["methods"][0]["method_type"] == "scenario"
     assert report["methods"][1]["method_type"] == "graph"
     assert report["methods"][0]["n_users"] == 2
-    assert report["methods"][0]["outcomes"]["n_dpd45_advances"] == 2
+    assert report["methods"][0]["outcomes"]["dpd45_advances"] == 2
     assert report["union"]["n_users"] == 3
     assert report["union"]["outcomes"]["dpd45_advance_rate"] == 1.0
     assert report["attribution"] == {

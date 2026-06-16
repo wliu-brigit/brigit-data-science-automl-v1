@@ -7,7 +7,11 @@ from pathlib import Path
 import duckdb
 import pandas as pd
 
-from projects.fraud_anomaly_detection.neo4j_codex.control.outcomes import summarize_users
+from projects.fraud_anomaly_detection.neo4j_codex.control.discovery.metrics import (
+    load_advances,
+    outcome,
+    user_truth,
+)
 
 
 def summarize_plugs(
@@ -29,12 +33,13 @@ def summarize_plugs(
     outside_discovery = covered - discovery
     uncovered_discovery = discovery - covered
 
+    truth = user_truth(load_advances(store), start=start_ts, end=end_ts)
     return {
         "burned_key_count": int(len(burned_keys)),
-        "covered_users": _bucket(store, covered, start_ts, end_ts),
-        "covered_discovery": _bucket(store, covered_discovery, start_ts, end_ts),
-        "outside_discovery": _bucket(store, outside_discovery, start_ts, end_ts),
-        "uncovered_discovery": _bucket(store, uncovered_discovery, start_ts, end_ts),
+        "covered_users": _bucket(truth, covered),
+        "covered_discovery": _bucket(truth, covered_discovery),
+        "outside_discovery": _bucket(truth, outside_discovery),
+        "uncovered_discovery": _bucket(truth, uncovered_discovery),
     }
 
 
@@ -81,13 +86,8 @@ def _covered_users(
     return set(frame["user_id"].astype(str))
 
 
-def _bucket(
-    store: Path | str,
-    users: set[str],
-    start_ts: pd.Timestamp | None,
-    end_ts: pd.Timestamp | None,
-) -> dict:
+def _bucket(truth: pd.DataFrame, users: set[str]) -> dict:
     return {
         "n_users": len(users),
-        "outcomes": summarize_users(store, users, start_ts=start_ts, end_ts=end_ts),
+        "outcomes": outcome(users, truth),
     }

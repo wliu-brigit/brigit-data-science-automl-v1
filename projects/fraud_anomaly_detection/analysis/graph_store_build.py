@@ -20,7 +20,7 @@ import argparse
 import os
 from pathlib import Path
 
-DATASET_ID = "v2_2ac98b52"  # v3 base table (HANDOFF 2026-06-09): 2.41M rows x 115 cols
+DATASET_ID = "v4_086fbc5a"  # v4 graph dataset: 1.27M advances x 110 cols, 868K users
 PROJECT = Path("projects/fraud_anomaly_detection")
 DEFAULT_OUT = PROJECT / "data" / "graph" / "fraud_graph_v3.duckdb"
 REQUIRED_ENV = ("MLFLOW_TRACKING_URI", "GCS_BUCKET", "GCP_PROJECT")

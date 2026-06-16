@@ -6,7 +6,6 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-import duckdb
 import pandas as pd
 
 from projects.fraud_anomaly_detection.neo4j_codex.control import plug
@@ -24,9 +23,20 @@ from projects.fraud_anomaly_detection.neo4j_codex.control.graph.client import Ne
 from projects.fraud_anomaly_detection.neo4j_codex.control.graph.methods import (
     Neo4jGraphDiscovery,
 )
+from projects.fraud_anomaly_detection.neo4j_codex.control.graph.native_scenarios import (
+    DUCKDB_SCENARIO_DEPENDS,
+    NativeScenarioSource,
+    ScenarioDescriptor,
+)
+from projects.fraud_anomaly_detection.neo4j_codex.control.discovery.metrics import (
+    asof_advances as _asof_advances,
+    load_advances as _load_inputs,
+    outcome as _outcome,
+    user_truth as _user_truth,
+)
 from projects.fraud_anomaly_detection.neo4j_codex.control.holdout import two_state_split
 from projects.fraud_anomaly_detection.neo4j_codex.control.plug_report import summarize_plugs
-from projects.fraud_anomaly_detection.scenarios import SCENARIOS, SCENARIOS_VERSION, assign
+from projects.fraud_anomaly_detection.scenarios import SCENARIOS, SCENARIOS_VERSION
 
 DEFAULT_STORE = Path("projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb")
 DEFAULT_OUT_DIR = Path("projects/fraud_anomaly_detection/neo4j_codex/reports")
@@ -72,11 +82,21 @@ def generate_control_loop_report(
     config: ControlLoopReportConfig,
     *,
     graph_discovery: Neo4jGraphDiscovery | None = None,
+    scenario_source: object | None = None,
 ) -> dict:
-    """Generate the control-loop report and write Markdown/JSON files."""
+    """Generate the control-loop report and write Markdown/JSON files.
+
+    ``scenario_source`` selects where scenario user sets come from. Default is the
+    native Neo4j path (``NativeScenarioSource``): burst scenarios are derived in the
+    graph, ``ring_account_reuse`` falls through to DuckDB. Pass
+    ``duckdb_scenario_source`` to use the DuckDB aggregate path for every scenario.
+    Either way it is called as ``scenario_source(truth, as_of=...)``.
+    """
     if not config.store.exists():
         raise FileNotFoundError(f"store not found: {config.store}")
     graph_discovery = graph_discovery or _default_graph_discovery()
+    if scenario_source is None:
+        scenario_source = NativeScenarioSource(graph_discovery.runner)
 
     config.out_dir.mkdir(parents=True, exist_ok=True)
     paths = ReportPaths(
@@ -86,7 +106,7 @@ def generate_control_loop_report(
 
     advances = _load_inputs(config.store)
     truth = _user_truth(advances)
-    scenarios = _scenario_sets(truth)
+    scenarios = scenario_source(truth, as_of=None)
     scenario_candidates = _scenario_candidates(scenarios)
     scenario_union = set().union(*scenarios.values()) if scenarios else set()
     graph_screens = _graph_screen_candidates(graph_discovery, scenarios)
@@ -104,10 +124,18 @@ def generate_control_loop_report(
     selected_graph_net_new = selected_graph_union - scenario_union
     final_discovery = scenario_union | selected_graph_union
 
+    cache_path = _write_discovery_cache(
+        config,
+        scenario_candidates=scenario_candidates,
+        graph_rows=[*selected_graphs, *excluded_graphs],
+        scenario_union=scenario_union,
+        final_discovery=final_discovery,
+    )
+
     split = two_state_split(config.store, config.plug_config)
     state_advances = _asof_advances(advances, split.cutoff)
     state_truth = _user_truth(state_advances)
-    state_scenarios = _scenario_sets(state_truth)
+    state_scenarios = scenario_source(state_truth, as_of=split.cutoff)
     state_scenario_union = (
         set().union(*state_scenarios.values()) if state_scenarios else set()
     )
@@ -159,7 +187,9 @@ def generate_control_loop_report(
         start_ts=split.cutoff,
     )
 
-    scenario_rows = _scenario_rows(scenario_candidates, scenario_union, truth)
+    scenario_rows = _scenario_rows(
+        scenario_candidates, scenario_union, truth, scenario_source
+    )
     graph_selection_rows = [*selected_graphs, *excluded_graphs]
     graph_rows = [_graph_row(method) for method in graph_selection_rows]
     graph_status_counts = {
@@ -273,6 +303,7 @@ def generate_control_loop_report(
         "paths": {
             "markdown": str(paths.markdown),
             "json": str(paths.json),
+            "cache": str(cache_path),
         },
     }
     paths.json.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
@@ -298,52 +329,37 @@ def generate_control_loop_report(
     return payload
 
 
-def _load_inputs(store: Path) -> pd.DataFrame:
-    with duckdb.connect(str(store), read_only=True) as con:
-        return con.execute("SELECT * FROM advances").df()
+def discovery_cache_path(config: ControlLoopReportConfig) -> Path:
+    """Sidecar cache file holding discovery user-id sets for the ad-hoc evaluator."""
+    return config.out_dir / f"{config.refresh_key}.cache.json"
 
 
-def _asof_advances(
-    advances: pd.DataFrame,
-    cutoff: pd.Timestamp,
-) -> pd.DataFrame:
-    return advances[
-        pd.to_datetime(advances["feature_as_of_ts"]) <= pd.Timestamp(cutoff)
-    ].copy()
-
-
-def _user_truth(advances: pd.DataFrame) -> pd.DataFrame:
-    flags = assign(advances)
-    truth = pd.DataFrame(
-        {
-            "user_id": advances.user_id.astype(str),
-            "mature_d45": advances.label_mature_d45.fillna(False).astype(bool),
-            "dpd45": (
-                advances.label_mature_d45.fillna(False).astype(bool)
-                & advances.label_gross_dpd45.fillna(False).astype(bool)
-            ),
-            "is_fraud": advances.is_fraud.fillna(False).astype(bool),
-        }
-    )
-    for scenario in SCENARIOS:
-        truth[f"scenario_{scenario.name}"] = flags[f"scenario_{scenario.name}"].fillna(
-            False
-        ).astype(bool)
-    truth["scenario_any"] = flags.scenario_any.fillna(False).astype(bool)
-
-    user_truth = truth.groupby("user_id").agg(
-        mature_d45=("mature_d45", "max"),
-        dpd45=("dpd45", "max"),
-        is_fraud=("is_fraud", "max"),
-        scenario_any=("scenario_any", "max"),
-        n_advances=("user_id", "size"),
-        n_mature_advances=("mature_d45", "sum"),
-        n_dpd45_advances=("dpd45", "sum"),
-    )
-    for scenario in SCENARIOS:
-        col = f"scenario_{scenario.name}"
-        user_truth[col] = truth.groupby("user_id")[col].max()
-    return user_truth
+def _write_discovery_cache(
+    config: ControlLoopReportConfig,
+    *,
+    scenario_candidates: list[DiscoveryCandidate],
+    graph_rows: list[SelectionRow],
+    scenario_union: set[str],
+    final_discovery: set[str],
+) -> Path:
+    """Write per-method + union user-id sets so adhoc_eval can score net-new cheaply."""
+    methods: dict[str, list[str]] = {
+        candidate.name: sorted(str(u) for u in candidate.users)
+        for candidate in scenario_candidates
+    }
+    for row in graph_rows:
+        methods[row.name] = sorted(str(u) for u in row.users)
+    payload = {
+        "store": str(config.store),
+        "scenario_version": SCENARIOS_VERSION,
+        "refresh_key": config.refresh_key,
+        "scenario_union": sorted(str(u) for u in scenario_union),
+        "final_discovery": sorted(str(u) for u in final_discovery),
+        "methods": methods,
+    }
+    path = discovery_cache_path(config)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
 
 
 def _scenario_sets(truth: pd.DataFrame) -> dict[str, set[str]]:
@@ -351,6 +367,28 @@ def _scenario_sets(truth: pd.DataFrame) -> dict[str, set[str]]:
         scenario.name: set(truth.index[truth[f"scenario_{scenario.name}"]])
         for scenario in SCENARIOS
     }
+
+
+class DuckDbScenarioSource:
+    """Scenario sets from the DuckDB aggregate path (opt-in alternative to native)."""
+
+    def __call__(
+        self,
+        truth: pd.DataFrame,
+        *,
+        as_of: object | None = None,  # noqa: ARG002 - truth is already as-of-filtered
+    ) -> dict[str, set[str]]:
+        return _scenario_sets(truth)
+
+    def describe(self, scenario_name: str) -> ScenarioDescriptor:
+        return ScenarioDescriptor(
+            source="duckdb",
+            depends_on=DUCKDB_SCENARIO_DEPENDS.get(scenario_name, ()),
+        )
+
+
+# module-level instance so callers/tests can pass it as `scenario_source`
+duckdb_scenario_source = DuckDbScenarioSource()
 
 
 def _scenario_candidates(scenarios: dict[str, set[str]]) -> list[DiscoveryCandidate]:
@@ -376,7 +414,9 @@ def _graph_screen_candidates(
     scenarios: dict[str, set[str]],
     as_of: pd.Timestamp | None = None,
 ) -> list[DiscoveryCandidate]:
-    return graph_discovery.run(sorted(scenarios), as_of=as_of)
+    # Pass the scenario user sets (from the active scenario source) so scenario-seeded
+    # graph methods seed natively, not from DuckDB-baked scenario flags.
+    return graph_discovery.run(scenarios, as_of=as_of)
 
 
 def _select_graph_screens(
@@ -398,53 +438,23 @@ def _select_graph_screens(
     return result.selected, result.excluded
 
 
-def _outcome(users: frozenset[str] | set[str], truth: pd.DataFrame) -> dict:
-    user_ids = {str(user_id) for user_id in users}
-    unknown_users = user_ids - {str(user_id) for user_id in truth.index}
-    if unknown_users:
-        raise ValueError(
-            "Outcome users are missing from truth frame: "
-            + ", ".join(sorted(unknown_users)[:10])
-        )
-    if not user_ids:
-        return {
-            "users": 0,
-            "dpd45_users": 0,
-            "dpd45_user_rate": 0.0,
-            "advances": 0,
-            "mature_advances": 0,
-            "dpd45_advances": 0,
-            "dpd45_advance_rate": 0.0,
-        }
-    sub_users = truth.loc[truth.index.isin(user_ids)]
-    dpd45_users = int(sub_users.dpd45.sum())
-    advances = int(sub_users.n_advances.sum())
-    mature_advances = int(sub_users.n_mature_advances.sum())
-    dpd45_advances = int(sub_users.n_dpd45_advances.sum())
-    return {
-        "users": len(user_ids),
-        "dpd45_users": dpd45_users,
-        "dpd45_user_rate": dpd45_users / len(user_ids),
-        "advances": advances,
-        "mature_advances": mature_advances,
-        "dpd45_advances": dpd45_advances,
-        "dpd45_advance_rate": dpd45_advances / mature_advances if mature_advances else 0.0,
-    }
-
-
 def _scenario_rows(
     scenarios: list[DiscoveryCandidate],
     scenario_union: set[str],
     truth: pd.DataFrame,
+    scenario_source: object,
 ) -> list[dict]:
     rows = []
     for scenario in scenarios:
         scenario_name = str(scenario.metadata.params["scenario_name"])
+        descriptor = scenario_source.describe(scenario_name)
         outcomes = _outcome(scenario.users, truth)
         row = {
             "scenario": scenario_name,
             "scenario method": scenario.name,
             "method version": scenario.metadata.version,
+            "source": descriptor.source_label,
+            "depends on": descriptor.depends_on_label,
             "method type": scenario.metadata.method_type,
             "time semantics": scenario.metadata.time_semantics,
             "promotion tier": scenario.metadata.promotion_tier,
@@ -457,6 +467,8 @@ def _scenario_rows(
         "scenario": "scenario union (deduped)",
         "scenario method": "scenario:union",
         "method version": SCENARIOS_VERSION,
+        "source": "mixed",
+        "depends on": "—",
         "method type": "scenario",
         "time semantics": "production_safe",
         "promotion tier": "plug_candidate",
@@ -473,6 +485,8 @@ def _graph_row(method: SelectionRow) -> dict:
         "status": _graph_status(method),
         "display name": str(method.metadata.params["display_name"]),
         "method version": method.metadata.version,
+        "source": method.metadata.source_label,
+        "depends on": method.metadata.depends_on_label,
         "method type": method.metadata.method_type,
         "time semantics": method.metadata.time_semantics,
         "promotion tier": method.metadata.promotion_tier,
@@ -525,11 +539,11 @@ def _plug_bucket_row(bucket: str, report_bucket: dict) -> dict:
     return {
         "bucket": bucket,
         "users": f"{report_bucket['n_users']:,}",
-        "DPD45 users": f"{outcomes['n_dpd45_users']:,}/{outcomes['n_users_with_advances']:,}",
-        "DPD45 user rate": _pct(outcomes["dpd45_user_rate"]),
-        "advances": f"{outcomes['n_advances']:,}",
+        "DPD45 users": f"{outcomes['dpd45_users']:,}/{outcomes['users_with_advances']:,}",
+        "DPD45 user rate": _pct(outcomes["dpd45_user_rate_with_advances"]),
+        "advances": f"{outcomes['advances']:,}",
         "DPD45 advances": (
-            f"{outcomes['n_dpd45_advances']:,}/{outcomes['n_mature_advances']:,}"
+            f"{outcomes['dpd45_advances']:,}/{outcomes['mature_advances']:,}"
         ),
         "DPD45 advance rate": _pct(outcomes["dpd45_advance_rate"]),
     }
@@ -559,6 +573,8 @@ def _render_markdown(
         "scenario",
         "scenario method",
         "method version",
+        "source",
+        "depends on",
         "method type",
         "time semantics",
         "promotion tier",
@@ -572,6 +588,8 @@ def _render_markdown(
         "status",
         "display name",
         "method version",
+        "source",
+        "depends on",
         "method type",
         "time semantics",
         "promotion tier",
@@ -690,6 +708,15 @@ def main(argv: list[str] | None = None) -> None:
             "Default: all."
         ),
     )
+    parser.add_argument(
+        "--duckdb-scenarios",
+        action="store_true",
+        help=(
+            "Use the DuckDB aggregate scenario path for all scenarios. Default is "
+            "native Neo4j scenarios (burst scenarios derived in the graph; "
+            "ring_account_reuse falls through to DuckDB)."
+        ),
+    )
     parser.add_argument("--min-support", type=int, default=ControlConfig().min_support)
     parser.add_argument("--min-coverage", type=int, default=ControlConfig().min_coverage)
     parser.add_argument(
@@ -709,6 +736,7 @@ def main(argv: list[str] | None = None) -> None:
         password=args.neo4j_password,
         database=args.neo4j_database,
     )
+    scenario_source = duckdb_scenario_source if args.duckdb_scenarios else None
     try:
         report = generate_control_loop_report(
             ControlLoopReportConfig(
@@ -725,6 +753,7 @@ def main(argv: list[str] | None = None) -> None:
                 include_statuses=include_statuses,
             ),
             graph_discovery=Neo4jGraphDiscovery(client),
+            scenario_source=scenario_source,
         )
     finally:
         client.close()

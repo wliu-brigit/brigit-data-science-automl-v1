@@ -22,13 +22,15 @@ class RecordingRunner:
 
 
 def test_default_neo4j_graph_methods_are_review_screens():
-    methods = default_neo4j_graph_methods(["ring_account_reuse"])
+    methods = default_neo4j_graph_methods({"ring_account_reuse": {"u1"}})
     by_name = {method.name: method for method in methods}
 
     assert "graph:scenario_neighborhood:ring_account_reuse" in by_name
-    assert "MATCHED_SCENARIO" in by_name[
-        "graph:scenario_neighborhood:ring_account_reuse"
-    ].cypher
+    neighborhood = by_name["graph:scenario_neighborhood:ring_account_reuse"].cypher
+    # Re-seeded: scenario seeds come natively from $scenario_users, not the
+    # DuckDB-baked MATCHED_SCENARIO edges.
+    assert "$scenario_users" in neighborhood
+    assert "MATCHED_SCENARIO" not in neighborhood
     assert "gds.pageRank.stream" in by_name["graph:suspicion_queue_top200"].cypher
     assert {
         method.metadata.promotion_tier for method in methods
@@ -37,7 +39,7 @@ def test_default_neo4j_graph_methods_are_review_screens():
 
 
 def test_gds_projection_queries_do_not_redeclare_graph_name():
-    methods = default_neo4j_graph_methods([])
+    methods = default_neo4j_graph_methods({})
     gds_queries = [
         method.cypher
         for method in methods
@@ -54,7 +56,7 @@ def test_gds_projection_queries_do_not_redeclare_graph_name():
 def test_fraud_neighbour_query_uses_bounded_expansion_not_variable_path():
     by_name = {
         method.name: method
-        for method in default_neo4j_graph_methods([])
+        for method in default_neo4j_graph_methods({})
     }
 
     query = by_name["graph:fraud_neighbours_hops2"].cypher
@@ -64,13 +66,13 @@ def test_fraud_neighbour_query_uses_bounded_expansion_not_variable_path():
 
 
 def test_graph_queries_filter_users_by_asof_presence():
-    methods = default_neo4j_graph_methods(["ring_account_reuse"])
+    methods = default_neo4j_graph_methods({"ring_account_reuse": {"u1"}})
 
     assert all("first_seen_ts <= localdatetime($as_of)" in method.cypher for method in methods)
 
 
 def test_graph_queries_do_not_pre_filter_scenario_candidate_users():
-    methods = default_neo4j_graph_methods(["ring_account_reuse"])
+    methods = default_neo4j_graph_methods({"ring_account_reuse": {"u1"}})
 
     for method in methods:
         assert "coalesce(candidate.scenario_any, false) = false" not in method.cypher
@@ -91,7 +93,9 @@ def test_neo4j_graph_discovery_returns_contract_candidates():
     )
     discovery = Neo4jGraphDiscovery(runner=runner)
 
-    candidates = discovery.run(["ring_account_reuse"], as_of="2026-02-01T00:00:00")
+    candidates = discovery.run(
+        {"ring_account_reuse": {"u1"}}, as_of="2026-02-01T00:00:00"
+    )
     by_name = {candidate.name: candidate for candidate in candidates}
 
     assert by_name["graph:scenario_neighborhood:ring_account_reuse"].users == frozenset({"u3"})
@@ -105,4 +109,4 @@ def test_neo4j_graph_discovery_rejects_rows_without_user_id():
     discovery = Neo4jGraphDiscovery(runner=runner)
 
     with pytest.raises(ValueError, match="user_id"):
-        discovery.run([])
+        discovery.run({})

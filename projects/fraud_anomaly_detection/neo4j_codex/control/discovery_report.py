@@ -10,7 +10,11 @@ from projects.fraud_anomaly_detection.neo4j_codex.control.contract import Findin
 from projects.fraud_anomaly_detection.neo4j_codex.control.discovery.metadata import (
     MethodMetadata,
 )
-from projects.fraud_anomaly_detection.neo4j_codex.control.outcomes import summarize_users
+from projects.fraud_anomaly_detection.neo4j_codex.control.discovery.metrics import (
+    load_advances,
+    outcome,
+    user_truth,
+)
 
 
 def summarize_discovery(
@@ -25,6 +29,7 @@ def summarize_discovery(
     _validate_metadata(finding_sets, method_metadata)
     metadata_by_method = {metadata.name: metadata for metadata in method_metadata}
     eligible = None if eligible_users is None else {str(user_id) for user_id in eligible_users}
+    truth = user_truth(load_advances(store), start=start_ts, end=end_ts)
     method_reports = []
     union_users: set[str] = set()
     users_by_type: dict[str, set[str]] = {
@@ -51,7 +56,7 @@ def summarize_discovery(
                 "enforcement_projection": metadata.enforcement_projection,
                 "findings": int(len(frame)),
                 "n_users": len(method_users),
-                "outcomes": summarize_users(store, method_users, start_ts=start_ts, end_ts=end_ts),
+                "outcomes": outcome(method_users, truth),
             }
         )
 
@@ -59,7 +64,7 @@ def summarize_discovery(
         "methods": method_reports,
         "union": {
             "n_users": len(union_users),
-            "outcomes": summarize_users(store, union_users, start_ts=start_ts, end_ts=end_ts),
+            "outcomes": outcome(union_users, truth),
         },
         "attribution": {
             "by_method_type": {

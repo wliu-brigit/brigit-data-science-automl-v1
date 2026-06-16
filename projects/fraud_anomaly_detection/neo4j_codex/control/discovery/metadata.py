@@ -10,12 +10,22 @@ MethodType = Literal["scenario", "graph", "model", "subgroup"]
 TimeSemantics = Literal["snapshot_review", "leakfree_asof", "production_safe"]
 PromotionTier = Literal["evidence_only", "review_queue", "plug_candidate"]
 EnforcementProjection = Literal["entity_key", "scenario_rule", "none"]
+# Where the method is computed. GDS is flagged non-deterministic (approximate,
+# order-dependent) and slower; Cypher and DuckDB are deterministic.
+Source = Literal["duckdb", "neo4j_cypher", "neo4j_gds"]
 
 VALID_METHOD_TYPES = frozenset(("scenario", "graph", "model", "subgroup"))
 VALID_TIME_SEMANTICS = frozenset(("snapshot_review", "leakfree_asof", "production_safe"))
 VALID_PROMOTION_TIERS = frozenset(("evidence_only", "review_queue", "plug_candidate"))
 VALID_ENFORCEMENT_PROJECTIONS = frozenset(("entity_key", "scenario_rule", "none"))
+VALID_SOURCES = frozenset(("duckdb", "neo4j_cypher", "neo4j_gds"))
 PLUG_SAFE_TIME_SEMANTICS = frozenset(("leakfree_asof", "production_safe"))
+NON_DETERMINISTIC_SOURCES = frozenset(("neo4j_gds",))
+_SOURCE_LABELS = {
+    "duckdb": "DuckDB",
+    "neo4j_cypher": "Neo4j (Cypher)",
+    "neo4j_gds": "Neo4j (GDS, non-deterministic)",
+}
 
 
 @dataclass(frozen=True)
@@ -30,6 +40,11 @@ class MethodMetadata:
     enforcement_projection: EnforcementProjection
     enabled: bool = True
     params: Mapping[str, object] = field(default_factory=dict)
+    # `source`: which engine computes this method (declared, not resolved at runtime).
+    # `depends_on`: declared dependency tags, e.g. "column:is_fraud",
+    # "scenario:ring_device_burst"; empty means structural (no seed).
+    source: Source = "duckdb"
+    depends_on: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.name.strip():
@@ -44,6 +59,8 @@ class MethodMetadata:
             self.enforcement_projection,
             VALID_ENFORCEMENT_PROJECTIONS,
         )
+        _require_member("source", self.source, VALID_SOURCES)
+        object.__setattr__(self, "depends_on", tuple(self.depends_on))
         if self.promotion_tier == "plug_candidate" and self.enforcement_projection == "none":
             raise ValueError("plug_candidate methods must declare an enforcement projection")
         if (
@@ -62,6 +79,28 @@ class MethodMetadata:
             and self.enforcement_projection != "none"
             and self.time_semantics in PLUG_SAFE_TIME_SEMANTICS
         )
+
+    @property
+    def deterministic(self) -> bool:
+        return self.source not in NON_DETERMINISTIC_SOURCES
+
+    @property
+    def source_label(self) -> str:
+        return source_label(self.source)
+
+    @property
+    def depends_on_label(self) -> str:
+        return depends_on_label(self.depends_on)
+
+
+def source_label(source: str) -> str:
+    """Human-readable engine label, e.g. 'Neo4j (GDS, non-deterministic)'."""
+    return _SOURCE_LABELS[source]
+
+
+def depends_on_label(depends_on: tuple[str, ...]) -> str:
+    """Render declared dependency tags; 'structural' when there are none."""
+    return "; ".join(depends_on) if depends_on else "structural"
 
 
 def _require_member(name: str, value: str, allowed: frozenset[str]) -> None:

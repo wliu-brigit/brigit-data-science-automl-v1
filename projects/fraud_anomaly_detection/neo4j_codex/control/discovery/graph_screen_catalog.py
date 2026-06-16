@@ -8,6 +8,7 @@ from types import MappingProxyType
 from projects.fraud_anomaly_detection.neo4j_codex.control.discovery.metadata import (
     MethodMetadata,
     PromotionTier,
+    Source,
 )
 from projects.fraud_anomaly_detection.neo4j_codex.control.discovery.selection import (
     DiscoveryCandidate,
@@ -22,10 +23,13 @@ class GraphScreenSpec:
 
     name: str
     promotion_tier: PromotionTier
+    source: Source = "neo4j_cypher"
+    depends_on: tuple[str, ...] = ()
     params: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "params", MappingProxyType(dict(self.params)))
+        object.__setattr__(self, "depends_on", tuple(self.depends_on))
 
     @property
     def metadata(self) -> MethodMetadata:
@@ -36,9 +40,11 @@ class GraphScreenSpec:
             time_semantics="snapshot_review",
             promotion_tier=self.promotion_tier,
             enforcement_projection="entity_key",
+            source=self.source,
+            depends_on=self.depends_on,
             params={
                 "display_name": self.name,
-                "source": "control_loop_report",
+                "catalog": "control_loop_report",
                 **self.params,
             },
         )
@@ -55,22 +61,42 @@ class GraphScreenSpec:
 def default_graph_screen_specs(scenario_names: Iterable[str]) -> list[GraphScreenSpec]:
     """Return graph screens reviewed for the control-loop report."""
     specs = [
-        GraphScreenSpec("residual_ring_members", promotion_tier="review_queue"),
-        GraphScreenSpec("suspicion_queue_top200", promotion_tier="review_queue"),
-        GraphScreenSpec("fraud_neighbours_hops2", promotion_tier="review_queue"),
+        GraphScreenSpec(
+            "residual_ring_members",
+            promotion_tier="review_queue",
+            source="neo4j_gds",
+            depends_on=("column:is_fraud",),
+        ),
+        GraphScreenSpec(
+            "suspicion_queue_top200",
+            promotion_tier="review_queue",
+            source="neo4j_gds",
+        ),
+        GraphScreenSpec(
+            "fraud_neighbours_hops2",
+            promotion_tier="review_queue",
+            source="neo4j_cypher",
+            depends_on=("column:is_fraud",),
+        ),
         GraphScreenSpec(
             "high_risk_entity_members_scenario_fraud_seed",
             promotion_tier="review_queue",
+            source="neo4j_cypher",
+            depends_on=("column:is_fraud", "scenario:any"),
         ),
         GraphScreenSpec(
             "multi_witness_neighbors_scenario_fraud_seed",
             promotion_tier="review_queue",
+            source="neo4j_cypher",
+            depends_on=("column:is_fraud", "scenario:any"),
         ),
     ]
     specs.extend(
         GraphScreenSpec(
             f"scenario_neighborhood:{scenario_name}",
             promotion_tier="review_queue",
+            source="neo4j_cypher",
+            depends_on=(f"scenario:{scenario_name}",),
             params={"scenario_name": scenario_name},
         )
         for scenario_name in scenario_names

@@ -83,19 +83,28 @@ class Neo4jGraphDiscovery:
 
     def run(
         self,
-        scenario_names: Iterable[str],
+        scenario_users: Mapping[str, Iterable[str]],
         *,
         as_of: str | pd.Timestamp | None = None,
     ) -> list[DiscoveryCandidate]:
-        methods = self._methods or default_neo4j_graph_methods(scenario_names)
+        methods = self._methods or default_neo4j_graph_methods(scenario_users)
         as_of_value = _as_neo4j_localdatetime(as_of)
         return [method.run(self.runner, as_of=as_of_value) for method in methods]
 
 
 def default_neo4j_graph_methods(
-    scenario_names: Iterable[str],
+    scenario_users: Mapping[str, Iterable[str]],
 ) -> list[Neo4jGraphMethod]:
-    """Return Neo4j-backed graph discovery screens for the report."""
+    """Return Neo4j-backed graph discovery screens for the report.
+
+    Scenario-seeded screens take the active scenario source's user sets as Cypher
+    parameters (no DuckDB-baked scenario flags). ``is_fraud`` seeds come from the
+    ``FraudUser`` label. The scenario union seeds ``scenario:any`` screens.
+    """
+    scenario_names = sorted(scenario_users)
+    seed_union = sorted({
+        str(user_id) for users in scenario_users.values() for user_id in users
+    })
     specs = {spec.name: spec for spec in default_graph_screen_specs(scenario_names)}
     methods = [
         Neo4jGraphMethod(
@@ -116,19 +125,24 @@ def default_neo4j_graph_methods(
         Neo4jGraphMethod(
             specs["high_risk_entity_members_scenario_fraud_seed"],
             _high_risk_entity_members_cypher(),
-            {"min_entity_users": 3, "max_entity_users": 50},
+            {"min_entity_users": 3, "max_entity_users": 50, "seed_users": seed_union},
         ),
         Neo4jGraphMethod(
             specs["multi_witness_neighbors_scenario_fraud_seed"],
             _multi_witness_neighbors_cypher(),
-            {"min_shared_types": 2},
+            {"min_shared_types": 2, "seed_users": seed_union},
         ),
     ]
     methods.extend(
         Neo4jGraphMethod(
             specs[f"scenario_neighborhood:{scenario_name}"],
             _scenario_neighborhood_cypher(),
-            {"scenario_name": scenario_name},
+            {
+                "scenario_name": scenario_name,
+                "scenario_users": sorted(
+                    {str(user_id) for user_id in scenario_users[scenario_name]}
+                ),
+            },
         )
         for scenario_name in scenario_names
     )
@@ -153,10 +167,10 @@ def _user_asof(alias: str) -> str:
 
 def _scenario_neighborhood_cypher() -> str:
     return f"""
-    MATCH (:Scenario {{name: $scenario_name}})<-[:MATCHED_SCENARIO]-(seed:User)
+    UNWIND $scenario_users AS seed_id
+    MATCH (seed:User {{user_id: seed_id}})
           -[r:{REL_PATTERN}]->(entity:Entity)<-[r2:{REL_PATTERN}]-(candidate:User)
     WHERE candidate <> seed
-      AND {_user_asof("seed")}
       AND {_user_asof("candidate")}
       AND {_relationship_asof("r")}
       AND {_relationship_asof("r2")}
@@ -175,13 +189,24 @@ def _scenario_neighborhood_cypher() -> str:
 
 def _high_risk_entity_members_cypher() -> str:
     return f"""
-    MATCH (member:User)-[r:{REL_PATTERN}]->(entity:Entity)
+    CALL () {{
+      MATCH (s:FraudUser)-[r:{REL_PATTERN}]->(e:Entity)
+      WHERE {_user_asof("s")} AND {_relationship_asof("r")}
+      RETURN DISTINCT e AS entity
+      UNION
+      UNWIND $seed_users AS sid
+      MATCH (s:User {{user_id: sid}})-[r:{REL_PATTERN}]->(e:Entity)
+      WHERE {_relationship_asof("r")}
+      RETURN DISTINCT e AS entity
+    }}
+    WITH entity
+    MATCH (member:User)-[r:{REL_PATTERN}]->(entity)
     WHERE {_user_asof("member")}
       AND {_relationship_asof("r")}
     WITH entity,
          count(DISTINCT member) AS entity_users,
-         count(DISTINCT CASE WHEN coalesce(member.is_fraud, false) THEN member END) AS fraud_users,
-         count(DISTINCT CASE WHEN coalesce(member.scenario_any, false) THEN member END) AS scenario_users
+         count(DISTINCT CASE WHEN member:FraudUser THEN member END) AS fraud_users,
+         count(DISTINCT CASE WHEN member.user_id IN $seed_users THEN member END) AS scenario_users
     WHERE entity_users >= $min_entity_users
       AND entity_users <= $max_entity_users
       AND (fraud_users >= 1 OR scenario_users >= 2)
@@ -201,11 +226,20 @@ def _high_risk_entity_members_cypher() -> str:
 
 def _multi_witness_neighbors_cypher() -> str:
     return f"""
-    MATCH (candidate:User)-[r:{REL_PATTERN}]->(entity:Entity)<-[r2:{REL_PATTERN}]-(seed:User)
+    CALL () {{
+      UNWIND $seed_users AS sid
+      MATCH (s:User {{user_id: sid}})
+      WHERE {_user_asof("s")}
+      RETURN s AS seed
+      UNION
+      MATCH (s:FraudUser)
+      WHERE {_user_asof("s")}
+      RETURN s AS seed
+    }}
+    WITH seed
+    MATCH (seed)-[r:{REL_PATTERN}]->(entity:Entity)<-[r2:{REL_PATTERN}]-(candidate:User)
     WHERE candidate <> seed
       AND {_user_asof("candidate")}
-      AND {_user_asof("seed")}
-      AND (coalesce(seed.scenario_any, false) = true OR coalesce(seed.is_fraud, false) = true)
       AND {_relationship_asof("r")}
       AND {_relationship_asof("r2")}
     WITH candidate,
@@ -225,22 +259,20 @@ def _multi_witness_neighbors_cypher() -> str:
 def _fraud_neighbours_cypher() -> str:
     return f"""
     CALL () {{
-      MATCH (seed:User)-[r1:{REL_PATTERN}]->(entity:Entity)<-[r2:{REL_PATTERN}]-(candidate:User)
+      MATCH (seed:FraudUser)-[r1:{REL_PATTERN}]->(entity:Entity)<-[r2:{REL_PATTERN}]-(candidate:User)
       WHERE candidate <> seed
         AND {_user_asof("seed")}
         AND {_user_asof("candidate")}
-        AND coalesce(seed.is_fraud, false) = true
         AND {_relationship_asof("r1")}
         AND {_relationship_asof("r2")}
       RETURN candidate.user_id AS user_id, 1 AS user_hops
 
       UNION
 
-      MATCH (seed:User)-[r1:{REL_PATTERN}]->(entity:Entity)<-[r2:{REL_PATTERN}]-(mid:User)
+      MATCH (seed:FraudUser)-[r1:{REL_PATTERN}]->(entity:Entity)<-[r2:{REL_PATTERN}]-(mid:User)
       WHERE mid <> seed
         AND {_user_asof("seed")}
         AND {_user_asof("mid")}
-        AND coalesce(seed.is_fraud, false) = true
         AND {_relationship_asof("r1")}
         AND {_relationship_asof("r2")}
       WITH DISTINCT mid
@@ -312,7 +344,7 @@ def _residual_ring_members_cypher() -> str:
          componentId,
          users,
          entities,
-         [u IN users WHERE coalesce(u.scenario_any, false) = true
+         [u IN users WHERE u:FraudUser
                       AND {_user_asof("u")}] AS flagged_users,
          [u IN users WHERE {_user_asof("u")}] AS candidate_users
     UNWIND entities AS entity

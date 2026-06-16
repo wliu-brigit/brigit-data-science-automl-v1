@@ -22,15 +22,11 @@ guiding principles these notes answer to live in
 - **Advances are not nodes.** Roll-up rules instead: user nodes carry
   `n_advances`, `n_mature_advances`, `n_bad_advances`, `bad_advance_rate`
   (empty when no mature advance — unknown, not zero). Implemented in
-  `export_neo4j_mirror.py` with tests.
+  `neo4j_mirror/export.py` with tests.
 - **Dual outcome semantics** (P6): ever-bad = sensitive evidence marker;
   strict = query-time threshold over `bad_advance_rate`, default 0.8.
-  Cluster artifacts report both and self-document the threshold
-  (`strict_dpd45_users`, `strict_dpd45_user_rate`, `strict_threshold`).
-  Evidence behind the design: in the sample an 80% bar excludes 48 of 2,056
-  ever-bad users, and 31 of those 48 are bust-out-shaped (bad advance is
-  their last) — a hard purity definition would systematically drop the
-  fraud-shaped trajectory.
+  The mirror pours counts and rates; the report/query layer decides how strict
+  each graph screen should be.
 - **Sample caveat (standing):** the 20k sample is advance-sampled (97.9%
   single-advance users); the user↔advance roll-up profile must be re-run on
   the v3 store as a validation anchor (tracked in TODO).
@@ -41,9 +37,9 @@ guiding principles these notes answer to live in
 
 ## Edge model — agreed in discussion 2026-06-12 (DESIGN ONLY, not built)
 
-> Not yet implemented: the current export still uses the old single
-> `USED_<TYPE>` edge with a merged `sources` string and one `n_events` count.
-> The model below is the agreed target for the v3 pour rework.
+> Not yet implemented: the current sample mirror still uses one `USED_<TYPE>`
+> edge with a merged `sources` string and one `n_events` count. The model below
+> is the agreed target for the v3 pour rework.
 
 - **One edge per (user, entity, type); provenance carried as counts on the
   edge** — not split into `LINKED_*`/`ADVANCED_ON_*` types, and not merged

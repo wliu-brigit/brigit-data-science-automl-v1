@@ -67,6 +67,17 @@ new system is free to adapt them into its own discovery-method interface rather
 than wrap the existing `engine.py` as-is — whatever fits the holistic system
 more cohesively. Everything else is built fresh.
 
+The near-term implementation is deliberately **DuckDB + Neo4j**, not one
+database pretending to be all things. Scenario evaluation, DPD45 outcomes,
+plug extraction, and validation still run over the sample DuckDB graph store.
+Graph discovery runs through `control/graph/` against Neo4j with Cypher/GDS.
+Python is the orchestration/report boundary: it chooses methods, passes
+parameters, normalizes returned `user_id` rows, and applies promotion metadata;
+graph traversal, components, ranking, and neighborhood expansion belong in
+Neo4j. This matches the eventual production direction: as engineering provides
+real-time graph infrastructure, more discovery logic can move behind the same
+Neo4j method contract without rebuilding plug validation or monitoring.
+
 **Primary design goal — an extensible end-to-end skeleton.** The near-term
 deliverable is the *whole pipeline in skeleton form* behind a **stable
 discovery-method contract**: any discovery method (a scenario, a graph
@@ -174,13 +185,14 @@ shift**. Feeds the flywheel: leakage → new findings → new plugs; drift → e
 Monitoring is what keeps the accumulating plug list honest.
 
 Walking-skeleton status: `control/outcomes.py`, `discovery_report.py`,
-`plug_report.py`, and `control_loop_report.py` implement the daily report shape
-over the sample store. The control-loop report emits the full scenario set,
-graph review screens with promotion status, final plug-eligible discovery
-union, State A plug validation, holdout plug validation, and
-`outside_discovery` coverage buckets. This is still a skeleton: real thresholds,
-expiry policy, manual plug lifecycle, and production warehouse writes remain v3
-/ VPN work, but the extension and validation surfaces now exist.
+`plug_report.py`, `control/graph/`, and `control_loop_report.py` implement the
+daily report shape over the sample store plus Neo4j mirror. The control-loop
+report emits the full scenario set, Neo4j graph review screens with promotion
+status, final plug-eligible discovery union, State A plug validation, holdout
+plug validation, and `outside_discovery` coverage buckets. This is still a
+skeleton: real thresholds, expiry policy, manual plug lifecycle, production
+warehouse writes, and leak-free promotion of graph methods remain v3 / VPN
+work, but the extension and validation surfaces now exist.
 
 ## 8. Build staging & dependencies
 
@@ -195,7 +207,7 @@ Design-now, build-staged behind data:
   cheap-filter seam, the two-state holdout harness, the config scaffold — **plus
   a representative few real discovery methods wired through the contract**
   (≥1 scenario adapted from the register, ≥1 graph method from the
-  `analysis/`/`neo4j_codex` runners), deliberately **not exhaustive**. Enough to
+  Neo4j/Cypher/GDS control graph runner), deliberately **not exhaustive**. Enough to
   prove the loop runs on real findings and that new methods plug in — you can't
   validate a plug-in contract with zero plug-ins. All on the sample; v3 is
   needed only later for tuning and the full method set. Built once, the
@@ -208,9 +220,13 @@ Design-now, build-staged behind data:
 
 - Finding-store record schema (exact columns of the shared discovery output
   contract) — detail at build time.
-- Graph-method registry format beyond the skeleton's
-  `control/discovery/graph_screen_catalog.py` screen descriptors — lighter
-  than the scenario register; v3 shape still TBD.
+- Graph-method registry format beyond the skeleton's split between
+  `control/discovery/graph_screen_catalog.py` metadata and
+  `control/graph/methods.py` Cypher/GDS implementations — lighter than the
+  scenario register; v3 shape still TBD.
+- Promotion-safe graph semantics: current graph methods are snapshot review
+  evidence. Any method promoted into plug derivation must be rewritten and
+  tested as leak-free/as-of or production-safe inside Neo4j.
 - Plug expiry policy specifics (cold/age/precision thresholds) — tune on v3.
 - Whether the production-facing list is value-keyed only or also carries
   precomputed per-entity flags — depends on the production consumption seam

@@ -11,9 +11,6 @@ import pandas as pd
 
 from projects.fraud_anomaly_detection.neo4j_codex.control import plug
 from projects.fraud_anomaly_detection.neo4j_codex.control.config import ControlConfig
-from projects.fraud_anomaly_detection.neo4j_codex.control.discovery.graph_screen_catalog import (
-    default_graph_screen_specs,
-)
 from projects.fraud_anomaly_detection.neo4j_codex.control.discovery.scenario_method import (
     ScenarioMethod,
 )
@@ -23,14 +20,12 @@ from projects.fraud_anomaly_detection.neo4j_codex.control.discovery.selection im
     SelectionRow,
     select_candidates,
 )
+from projects.fraud_anomaly_detection.neo4j_codex.control.graph.client import Neo4jClient
+from projects.fraud_anomaly_detection.neo4j_codex.control.graph.methods import (
+    Neo4jGraphDiscovery,
+)
 from projects.fraud_anomaly_detection.neo4j_codex.control.holdout import two_state_split
 from projects.fraud_anomaly_detection.neo4j_codex.control.plug_report import summarize_plugs
-from projects.fraud_anomaly_detection.graph.discover import (
-    bad_neighbours,
-    residual_ring_members,
-    suspicion_queue,
-)
-from projects.fraud_anomaly_detection.graph.load import load_graph
 from projects.fraud_anomaly_detection.scenarios import SCENARIOS, SCENARIOS_VERSION, assign
 
 DEFAULT_STORE = Path("projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb")
@@ -73,10 +68,15 @@ class ReportPaths:
     json: Path
 
 
-def generate_control_loop_report(config: ControlLoopReportConfig) -> dict:
+def generate_control_loop_report(
+    config: ControlLoopReportConfig,
+    *,
+    graph_discovery: Neo4jGraphDiscovery | None = None,
+) -> dict:
     """Generate the control-loop report and write Markdown/JSON files."""
     if not config.store.exists():
         raise FileNotFoundError(f"store not found: {config.store}")
+    graph_discovery = graph_discovery or _default_graph_discovery()
 
     config.out_dir.mkdir(parents=True, exist_ok=True)
     paths = ReportPaths(
@@ -84,12 +84,12 @@ def generate_control_loop_report(config: ControlLoopReportConfig) -> dict:
         json=config.out_dir / f"{config.refresh_key}.json",
     )
 
-    advances, edges = _load_inputs(config.store)
+    advances = _load_inputs(config.store)
     truth = _user_truth(advances)
     scenarios = _scenario_sets(truth)
     scenario_candidates = _scenario_candidates(scenarios)
     scenario_union = set().union(*scenarios.values()) if scenarios else set()
-    graph_screens = _graph_screen_candidates(config.store, advances, edges, truth, scenarios)
+    graph_screens = _graph_screen_candidates(graph_discovery, scenarios)
     selected_graphs, excluded_graphs = _select_graph_screens(
         graph_screens,
         scenario_union=scenario_union,
@@ -105,17 +105,14 @@ def generate_control_loop_report(config: ControlLoopReportConfig) -> dict:
     final_discovery = scenario_union | selected_graph_union
 
     split = two_state_split(config.store, config.plug_config)
-    state_advances, state_edges = _asof_inputs(advances, edges, split.cutoff)
+    state_advances = _asof_advances(advances, split.cutoff)
     state_truth = _user_truth(state_advances)
     state_scenarios = _scenario_sets(state_truth)
     state_scenario_union = (
         set().union(*state_scenarios.values()) if state_scenarios else set()
     )
     state_graph_screens = _graph_screen_candidates(
-        config.store,
-        state_advances,
-        state_edges,
-        state_truth,
+        graph_discovery,
         state_scenarios,
         as_of=split.cutoff,
     )
@@ -217,17 +214,41 @@ def generate_control_loop_report(config: ControlLoopReportConfig) -> dict:
         "graph_rows": included_graph_rows,
         "graph_status_counts": graph_status_counts,
         "review_graph_net_new_users": len(review_graph_net_new),
+        "review_graph_net_new_dpd45_users": _outcome(review_graph_net_new, truth)[
+            "dpd45_users"
+        ],
         "review_graph_net_new_dpd45_user_rate": _outcome(review_graph_net_new, truth)[
             "dpd45_user_rate"
+        ],
+        "review_graph_net_new_dpd45_advances": _outcome(review_graph_net_new, truth)[
+            "dpd45_advances"
+        ],
+        "review_graph_net_new_mature_advances": _outcome(review_graph_net_new, truth)[
+            "mature_advances"
+        ],
+        "review_graph_net_new_dpd45_advance_rate": _outcome(review_graph_net_new, truth)[
+            "dpd45_advance_rate"
         ],
         "selected_graph_rows": selected_rows,
         "excluded_graph_rows": excluded_rows,
         "final_discovery": {
             "scenario_union_users": len(scenario_union),
             "selected_graph_net_new_users": len(selected_graph_net_new),
+            "selected_graph_net_new_dpd45_users": _outcome(
+                selected_graph_net_new, truth
+            )["dpd45_users"],
             "selected_graph_net_new_dpd45_user_rate": _outcome(
                 selected_graph_net_new, truth
             )["dpd45_user_rate"],
+            "selected_graph_net_new_dpd45_advances": _outcome(
+                selected_graph_net_new, truth
+            )["dpd45_advances"],
+            "selected_graph_net_new_mature_advances": _outcome(
+                selected_graph_net_new, truth
+            )["mature_advances"],
+            "selected_graph_net_new_dpd45_advance_rate": _outcome(
+                selected_graph_net_new, truth
+            )["dpd45_advance_rate"],
             "final_union_users": len(final_discovery),
             "final_union_dpd45_user_rate": _outcome(final_discovery, truth)[
                 "dpd45_user_rate"
@@ -277,32 +298,18 @@ def generate_control_loop_report(config: ControlLoopReportConfig) -> dict:
     return payload
 
 
-def _load_inputs(store: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _load_inputs(store: Path) -> pd.DataFrame:
     with duckdb.connect(str(store), read_only=True) as con:
-        advances = con.execute("SELECT * FROM advances").df()
-        edges = con.execute(
-            """
-            SELECT DISTINCT
-                CAST(user_id AS VARCHAR) AS user_id,
-                CAST(entity_type AS VARCHAR) AS entity_type,
-                CAST(entity_value AS VARCHAR) AS entity_value,
-                ts
-            FROM edges
-            """
-        ).df()
-    return advances, edges
+        return con.execute("SELECT * FROM advances").df()
 
 
-def _asof_inputs(
+def _asof_advances(
     advances: pd.DataFrame,
-    edges: pd.DataFrame,
     cutoff: pd.Timestamp,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
-    state_advances = advances[
+) -> pd.DataFrame:
+    return advances[
         pd.to_datetime(advances["feature_as_of_ts"]) <= pd.Timestamp(cutoff)
     ].copy()
-    state_edges = edges[pd.to_datetime(edges["ts"]) <= pd.Timestamp(cutoff)].copy()
-    return state_advances, state_edges
 
 
 def _user_truth(advances: pd.DataFrame) -> pd.DataFrame:
@@ -360,127 +367,16 @@ def _scenario_candidates(scenarios: dict[str, set[str]]) -> list[DiscoveryCandid
     return candidates
 
 
+def _default_graph_discovery() -> Neo4jGraphDiscovery:
+    return Neo4jGraphDiscovery(Neo4jClient.from_env())
+
+
 def _graph_screen_candidates(
-    store: Path,
-    advances: pd.DataFrame,
-    edges: pd.DataFrame,
-    truth: pd.DataFrame,
+    graph_discovery: Neo4jGraphDiscovery,
     scenarios: dict[str, set[str]],
     as_of: pd.Timestamp | None = None,
 ) -> list[DiscoveryCandidate]:
-    residual_users = set(truth.index[~truth.scenario_any & ~truth.is_fraud])
-    g_scen = load_graph(
-        store,
-        base=advances,
-        node_attrs=("is_fraud",),
-        scenarios=True,
-        as_of=as_of,
-    )
-    g_no_scen = load_graph(
-        store,
-        base=advances,
-        node_attrs=("is_fraud",),
-        scenarios=False,
-        as_of=as_of,
-    )
-    specs = {
-        spec.name: spec
-        for spec in default_graph_screen_specs(sorted(scenarios))
-    }
-
-    methods = [
-        specs["residual_ring_members"].candidate(
-            users=set(residual_ring_members(g_scen, flag="scenario_any").user_id.astype(str)),
-        ),
-        specs["suspicion_queue_top200"].candidate(
-            users=set(
-                suspicion_queue(
-                    g_scen,
-                    seed_flag="is_fraud",
-                    exclude_flags=("scenario_any", "is_fraud"),
-                    top_n=200,
-                ).user_id.astype(str)
-            ),
-        ),
-        specs["fraud_neighbours_hops2"].candidate(
-            users=set(bad_neighbours(g_no_scen, flags=("is_fraud",), max_hops=2).user_id.astype(str)),
-        ),
-        specs["high_risk_entity_members_scenario_fraud_seed"].candidate(
-            users=_high_risk_entity_members(edges, truth, residual_users),
-        ),
-        specs["multi_witness_neighbors_scenario_fraud_seed"].candidate(
-            users=_multi_witness_neighbors(edges, truth, residual_users),
-        ),
-    ]
-    for scenario_name, scenario_users in scenarios.items():
-        methods.append(
-            specs[f"scenario_neighborhood:{scenario_name}"].candidate(
-                users=_scenario_neighborhood(edges, residual_users, scenario_users),
-            )
-        )
-
-    return methods
-
-
-def _scenario_neighborhood(
-    edges: pd.DataFrame,
-    residual_users: set[str],
-    scenario_users: set[str],
-) -> set[str]:
-    seed_edges = edges[edges.user_id.isin(scenario_users)]
-    candidate_edges = edges[edges.user_id.isin(residual_users)]
-    joined = candidate_edges.merge(
-        seed_edges.rename(columns={"user_id": "seed_user"}),
-        on=["entity_type", "entity_value"],
-        how="inner",
-    )
-    return set(joined.user_id.astype(str))
-
-
-def _high_risk_entity_members(
-    edges: pd.DataFrame,
-    truth: pd.DataFrame,
-    residual_users: set[str],
-) -> set[str]:
-    frame = edges.merge(
-        truth[["scenario_any", "is_fraud"]],
-        left_on="user_id",
-        right_index=True,
-        how="left",
-    ).fillna(False)
-    stats = frame.groupby(["entity_type", "entity_value"]).agg(
-        entity_users=("user_id", "nunique"),
-        fraud_users=("is_fraud", "sum"),
-        scenario_users=("scenario_any", "sum"),
-    ).reset_index()
-    risky = stats[
-        (stats.entity_users >= 3)
-        & (stats.entity_users <= 50)
-        & ((stats.fraud_users >= 1) | (stats.scenario_users >= 2))
-    ]
-    candidates = edges[edges.user_id.isin(residual_users)].merge(
-        risky[["entity_type", "entity_value"]],
-        on=["entity_type", "entity_value"],
-        how="inner",
-    )
-    return set(candidates.user_id.astype(str))
-
-
-def _multi_witness_neighbors(
-    edges: pd.DataFrame,
-    truth: pd.DataFrame,
-    residual_users: set[str],
-) -> set[str]:
-    risky_users = set(truth.index[truth.scenario_any | truth.is_fraud])
-    joined = edges[edges.user_id.isin(residual_users)].merge(
-        edges[edges.user_id.isin(risky_users)].rename(columns={"user_id": "seed_user"}),
-        on=["entity_type", "entity_value"],
-        how="inner",
-    )
-    grouped = joined.groupby("user_id").agg(
-        shared_type_count=("entity_type", "nunique")
-    ).reset_index()
-    return set(grouped.loc[grouped.shared_type_count >= 2, "user_id"].astype(str))
+    return graph_discovery.run(sorted(scenarios), as_of=as_of)
 
 
 def _select_graph_screens(
@@ -545,42 +441,34 @@ def _scenario_rows(
     for scenario in scenarios:
         scenario_name = str(scenario.metadata.params["scenario_name"])
         outcomes = _outcome(scenario.users, truth)
-        rows.append(
-            {
-                "scenario": scenario_name,
-                "scenario method": scenario.name,
-                "method version": scenario.metadata.version,
-                "method type": scenario.metadata.method_type,
-                "time semantics": scenario.metadata.time_semantics,
-                "promotion tier": scenario.metadata.promotion_tier,
-                "enforcement projection": scenario.metadata.enforcement_projection,
-                "users found": f"{outcomes['users']:,}",
-                "DPD45 user rate": _pct(outcomes["dpd45_user_rate"]),
-                "DPD45 advances": f"{outcomes['dpd45_advances']:,}/{outcomes['mature_advances']:,}",
-                "DPD45 advance rate": _pct(outcomes["dpd45_advance_rate"]),
-            }
-        )
-    outcomes = _outcome(scenario_union, truth)
-    rows.append(
-        {
-            "scenario": "scenario union (deduped)",
-            "scenario method": "scenario:union",
-            "method version": SCENARIOS_VERSION,
-            "method type": "scenario",
-            "time semantics": "production_safe",
-            "promotion tier": "plug_candidate",
-            "enforcement projection": "scenario_rule",
-            "users found": f"{outcomes['users']:,}",
-            "DPD45 user rate": _pct(outcomes["dpd45_user_rate"]),
-            "DPD45 advances": f"{outcomes['dpd45_advances']:,}/{outcomes['mature_advances']:,}",
-            "DPD45 advance rate": _pct(outcomes["dpd45_advance_rate"]),
+        row = {
+            "scenario": scenario_name,
+            "scenario method": scenario.name,
+            "method version": scenario.metadata.version,
+            "method type": scenario.metadata.method_type,
+            "time semantics": scenario.metadata.time_semantics,
+            "promotion tier": scenario.metadata.promotion_tier,
+            "enforcement projection": scenario.metadata.enforcement_projection,
         }
-    )
+        row.update(_method_outcome_columns("all discovered", outcomes))
+        rows.append(row)
+    outcomes = _outcome(scenario_union, truth)
+    union_row = {
+        "scenario": "scenario union (deduped)",
+        "scenario method": "scenario:union",
+        "method version": SCENARIOS_VERSION,
+        "method type": "scenario",
+        "time semantics": "production_safe",
+        "promotion tier": "plug_candidate",
+        "enforcement projection": "scenario_rule",
+    }
+    union_row.update(_method_outcome_columns("all discovered", outcomes))
+    rows.append(union_row)
     return rows
 
 
 def _graph_row(method: SelectionRow) -> dict:
-    return {
+    row = {
         "graph method": method.name,
         "status": _graph_status(method),
         "display name": str(method.metadata.params["display_name"]),
@@ -589,17 +477,34 @@ def _graph_row(method: SelectionRow) -> dict:
         "time semantics": method.metadata.time_semantics,
         "promotion tier": method.metadata.promotion_tier,
         "enforcement projection": method.metadata.enforcement_projection,
-        "total users / DPD45": (
-            f"{method.total['users']:,} / {_pct(method.total['dpd45_user_rate'])}"
-        ),
-        "net-new beyond scenarios / DPD45": (
-            f"{method.net['users']:,} / {_pct(method.net['dpd45_user_rate'])}"
-        ),
-        "marginal after dedupe / DPD45": (
-            f"{method.marginal['users']:,} / {_pct(method.marginal['dpd45_user_rate'])}"
-        ),
         "selected?": "yes" if method.selected else "no",
         "reason": method.reason,
+    }
+    row.update(_method_outcome_columns("all discovered", method.total))
+    row.update(_method_outcome_columns("net-new", method.net))
+    row.update(_method_outcome_columns("marginal", method.marginal))
+    return row
+
+
+def _method_outcome_columns(prefix: str, outcome: dict) -> dict:
+    if prefix == "all discovered":
+        users_key = "all discovered users"
+    elif prefix == "net-new":
+        users_key = "net-new users beyond scenarios"
+    elif prefix == "marginal":
+        users_key = "marginal users after dedupe"
+    else:
+        raise ValueError(f"Unknown method outcome prefix: {prefix!r}")
+    return {
+        users_key: f"{outcome['users']:,}",
+        f"{prefix} DPD45 users/rate": (
+            f"{outcome['dpd45_users']:,}/{outcome['users']:,} "
+            f"({_pct(outcome['dpd45_user_rate'])})"
+        ),
+        f"{prefix} DPD45 advances/rate": (
+            f"{outcome['dpd45_advances']:,}/{outcome['mature_advances']:,} "
+            f"({_pct(outcome['dpd45_advance_rate'])})"
+        ),
     }
 
 
@@ -620,6 +525,8 @@ def _plug_bucket_row(bucket: str, report_bucket: dict) -> dict:
     return {
         "bucket": bucket,
         "users": f"{report_bucket['n_users']:,}",
+        "DPD45 users": f"{outcomes['n_dpd45_users']:,}/{outcomes['n_users_with_advances']:,}",
+        "DPD45 user rate": _pct(outcomes["dpd45_user_rate"]),
         "advances": f"{outcomes['n_advances']:,}",
         "DPD45 advances": (
             f"{outcomes['n_dpd45_advances']:,}/{outcomes['n_mature_advances']:,}"
@@ -648,6 +555,18 @@ def _render_markdown(
     graph_outcomes = _outcome(selected_graph_net_new, truth)
     review_graph_outcomes = _outcome(review_graph_net_new, truth)
     displayed_statuses = ", ".join(sorted(config.include_statuses))
+    scenario_headers = [
+        "scenario",
+        "scenario method",
+        "method version",
+        "method type",
+        "time semantics",
+        "promotion tier",
+        "enforcement projection",
+        "all discovered users",
+        "all discovered DPD45 users/rate",
+        "all discovered DPD45 advances/rate",
+    ]
     graph_headers = [
         "graph method",
         "status",
@@ -657,9 +576,12 @@ def _render_markdown(
         "time semantics",
         "promotion tier",
         "enforcement projection",
-        "total users / DPD45",
-        "net-new beyond scenarios / DPD45",
-        "marginal after dedupe / DPD45",
+        "all discovered users",
+        "all discovered DPD45 users/rate",
+        "all discovered DPD45 advances/rate",
+        "net-new users beyond scenarios",
+        "net-new DPD45 users/rate",
+        "net-new DPD45 advances/rate",
         "selected?",
         "reason",
     ]
@@ -671,9 +593,9 @@ Graph selection rule for this run: include a graph method only when its metadata
 
 Displayed graph statuses: `{displayed_statuses}`.
 
-## Scenario Performance
+## Scenario Method Screen
 
-{_table(scenario_rows, ["scenario", "scenario method", "method version", "method type", "time semantics", "promotion tier", "enforcement projection", "users found", "DPD45 user rate", "DPD45 advances", "DPD45 advance rate"])}
+{_table(scenario_rows, scenario_headers)}
 
 ## Graph Method Screen
 
@@ -684,7 +606,7 @@ Status counts before display filtering:
 - below_min_marginal_users: `{graph_status_counts["below_min_marginal_users"]}`
 - below_min_marginal_dpd45_user_rate: `{graph_status_counts["below_min_marginal_dpd45_user_rate"]}`
 
-Review-only graph net-new users beyond scenarios: `{len(review_graph_net_new):,}` at `{_pct(review_graph_outcomes["dpd45_user_rate"])}` DPD45 user rate. These are visible discovery leads, not plug-derived users, until their method metadata is upgraded to leak-free/as-of or production-safe.
+Review-only graph net-new users beyond scenarios: `{len(review_graph_net_new):,}`. User-level DPD45: `{review_graph_outcomes["dpd45_users"]:,}/{review_graph_outcomes["users"]:,}` at `{_pct(review_graph_outcomes["dpd45_user_rate"])}`. Advance-level DPD45: `{review_graph_outcomes["dpd45_advances"]:,}/{review_graph_outcomes["mature_advances"]:,}` at `{_pct(review_graph_outcomes["dpd45_advance_rate"])}`. These are visible discovery leads, not plug-derived users, until their method metadata is upgraded to leak-free/as-of or production-safe.
 
 ### Promoted Graph Methods
 
@@ -694,11 +616,12 @@ Review-only graph net-new users beyond scenarios: `{len(review_graph_net_new):,}
 
 {_table(excluded_rows, graph_headers) if excluded_rows else "No graph methods matched the display filter."}
 
-## Final Deduped Discovery Union
+## Discovery Summary
 
 - Scenario union users: `{_scenario_union_users(scenario_rows)}`
 - Selected graph net-new users beyond scenarios: `{len(selected_graph_net_new):,}`
-- Selected graph net-new DPD45 user rate: `{_pct(graph_outcomes["dpd45_user_rate"])}`
+- Selected graph net-new DPD45 user rate: `{graph_outcomes["dpd45_users"]:,}/{graph_outcomes["users"]:,}` at `{_pct(graph_outcomes["dpd45_user_rate"])}`
+- Selected graph net-new DPD45 advance rate: `{graph_outcomes["dpd45_advances"]:,}/{graph_outcomes["mature_advances"]:,}` at `{_pct(graph_outcomes["dpd45_advance_rate"])}`
 - Final discovery union users: `{final_outcomes["users"]:,}`
 - Final discovery union DPD45 user rate: `{_pct(final_outcomes["dpd45_user_rate"])}`
 - Final discovery union DPD45 advance rate: `{_pct(final_outcomes["dpd45_advance_rate"])}`
@@ -712,11 +635,11 @@ Default plug gates: support >= `{config.plug_config.min_support}`, discovery cov
 
 ### State A Backtest
 
-{_table(state_rows, ["bucket", "users", "advances", "DPD45 advances", "DPD45 advance rate"])}
+{_table(state_rows, ["bucket", "users", "DPD45 users", "DPD45 user rate", "advances", "DPD45 advances", "DPD45 advance rate"])}
 
 ### Holdout Cross-Validation
 
-{_table(holdout_rows, ["bucket", "users", "advances", "DPD45 advances", "DPD45 advance rate"])}
+{_table(holdout_rows, ["bucket", "users", "DPD45 users", "DPD45 user rate", "advances", "DPD45 advances", "DPD45 advance rate"])}
 
 ## Notes
 
@@ -730,7 +653,7 @@ Machine-readable JSON: `{paths.json}`
 
 
 def _scenario_union_users(scenario_rows: list[dict]) -> str:
-    return scenario_rows[-1]["users found"]
+    return scenario_rows[-1]["all discovered users"]
 
 
 def _pct(value: float) -> str:
@@ -754,6 +677,10 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--refresh-key", default=DEFAULT_REFRESH_KEY)
     parser.add_argument("--graph-min-marginal-users", type=int, default=10)
     parser.add_argument("--graph-min-marginal-dpd45-user-rate", type=float, default=0.50)
+    parser.add_argument("--neo4j-uri", default=None)
+    parser.add_argument("--neo4j-user", default=None)
+    parser.add_argument("--neo4j-password", default=None)
+    parser.add_argument("--neo4j-database", default=None)
     parser.add_argument(
         "--include-status",
         action="append",
@@ -776,21 +703,31 @@ def main(argv: list[str] | None = None) -> None:
         if not args.include_status or "all" in args.include_status
         else frozenset(args.include_status)
     )
-    report = generate_control_loop_report(
-        ControlLoopReportConfig(
-            store=args.store,
-            out_dir=args.out_dir,
-            refresh_key=args.refresh_key,
-            graph_min_marginal_users=args.graph_min_marginal_users,
-            graph_min_marginal_dpd45_user_rate=args.graph_min_marginal_dpd45_user_rate,
-            plug_config=ControlConfig(
-                min_support=args.min_support,
-                min_coverage=args.min_coverage,
-                block_tier_precision=args.block_tier_precision,
-            ),
-            include_statuses=include_statuses,
-        )
+    client = Neo4jClient.from_env(
+        uri=args.neo4j_uri,
+        user=args.neo4j_user,
+        password=args.neo4j_password,
+        database=args.neo4j_database,
     )
+    try:
+        report = generate_control_loop_report(
+            ControlLoopReportConfig(
+                store=args.store,
+                out_dir=args.out_dir,
+                refresh_key=args.refresh_key,
+                graph_min_marginal_users=args.graph_min_marginal_users,
+                graph_min_marginal_dpd45_user_rate=args.graph_min_marginal_dpd45_user_rate,
+                plug_config=ControlConfig(
+                    min_support=args.min_support,
+                    min_coverage=args.min_coverage,
+                    block_tier_precision=args.block_tier_precision,
+                ),
+                include_statuses=include_statuses,
+            ),
+            graph_discovery=Neo4jGraphDiscovery(client),
+        )
+    finally:
+        client.close()
     print(
         json.dumps(
             {

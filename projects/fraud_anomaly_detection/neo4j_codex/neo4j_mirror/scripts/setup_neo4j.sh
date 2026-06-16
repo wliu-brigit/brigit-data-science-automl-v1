@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Rebuild a disposable local Neo4j mirror from the DuckDB graph store and start
-# Neo4j Browser. Everything persistent lives under neo4j_codex/out/.
+# Rebuild a disposable local Neo4j mirror from the DuckDB graph store.
+# Everything persistent lives under neo4j_codex/out/.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 UNIT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -20,7 +20,7 @@ LOGS_DIR="$UNIT_DIR/out/neo4j-logs"
 
 echo "==> Rebuilding Neo4j mirror CSV bundle from DuckDB"
 cd "$REPO_ROOT"
-uv run --group fraud python -m projects.fraud_anomaly_detection.neo4j_codex.archived.export_neo4j_mirror \
+uv run --group fraud python -m projects.fraud_anomaly_detection.neo4j_codex.neo4j_mirror.export \
   --out "$OUT_DIR"
 
 echo "==> Removing prior POC container/data, if any"
@@ -38,14 +38,12 @@ docker run --rm \
     --overwrite-destination=true \
     --nodes=User=/import/users.csv \
     --nodes=Entity=/import/entities.csv \
-    --nodes=ReviewCluster=/import/clusters.csv \
     --nodes=Scenario=/import/scenarios.csv \
     --relationships=USED_DEVICE=/import/used_device_rels.csv \
     --relationships=USED_BANK_ACCOUNT=/import/used_bank_account_rels.csv \
     --relationships=USED_PERSISTENT_ACCOUNT=/import/used_persistent_account_rels.csv \
     --relationships=USED_PHONE=/import/used_phone_rels.csv \
     --relationships=USED_ADDRESS=/import/used_address_rels.csv \
-    --relationships=IN_REVIEW_CLUSTER=/import/cluster_member_rels.csv \
     --relationships=MATCHED_SCENARIO=/import/scenario_match_rels.csv
 
 echo "==> Starting Neo4j Browser on http://localhost:7474"
@@ -64,7 +62,7 @@ docker run -d \
 
 cat <<EOF
 
-Neo4j POC is starting.
+Neo4j mirror is starting.
 
 URL:      http://localhost:7474
 Login:    neo4j
@@ -72,11 +70,14 @@ Password: ${NEO4J_AUTH#*/}
 
 Start with:
   $OUT_DIR/summary.md
-  $OUT_DIR/cypher/00_top_suspicious_clusters.cypher
+
+Run the control report with:
+  NEO4J_PASSWORD=${NEO4J_AUTH#*/} uv run --with neo4j --group fraud python -m projects.fraud_anomaly_detection.neo4j_codex.control.control_loop_report --neo4j-uri bolt://localhost:7687
 
 Check logs:
   docker logs -f $CONTAINER_NAME
 
 Stop:
-  bash $UNIT_DIR/archived/scripts/stop_neo4j.sh
+  bash $UNIT_DIR/neo4j_mirror/scripts/stop_neo4j.sh
 EOF
+

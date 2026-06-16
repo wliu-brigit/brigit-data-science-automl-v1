@@ -78,7 +78,7 @@ def decision_eval(run_id: str) -> bool:
     print(f"  decision-eval {run_id} ...", flush=True)
     proc = subprocess.run(
         [sys.executable,
-         "projects/neobank_ncm/scripts/score_trial_financials.py",
+         "projects/neobank_ncm/scripts/reeval/score_trial_financials.py",
          "--eval-dataset-id", EVAL_DATASET_ID,
          "--model-run-id", run_id],
         capture_output=True, text=True,

@@ -8,7 +8,7 @@ returns the existing id unless --overwrite.
 Run OFF-VPN if possible (writes ~GB to GCS; VPN throttles GCS). Cached frames are
 reused from .cache/automl/fin/; no Snowflake/VPN needed for the data itself.
 
-    uv run python projects/neobank_ncm/scripts/prepare_oot_new_links_dataset.py
+    uv run python projects/neobank_ncm/scripts/reeval/prepare_oot_new_links_dataset.py
 """
 from __future__ import annotations
 
@@ -61,6 +61,10 @@ def main() -> None:
         + [f"total_ltv_lite_{h}" for h in impact.HORIZONS]
         + [f"ltv_{h}_elig" for h in impact.HORIZONS]
     )
+    # ``loan_amount_max`` exists in BOTH frames (daily _EXTRA_COLS + ltv); the LTV
+    # frame's value is the one impact.merge_ltv/build_lookup expect, so drop daily's
+    # copy to avoid a _x/_y suffix collision that would hide the required column.
+    daily = daily.drop(columns=["loan_amount_max"], errors="ignore")
     frame = daily.merge(ltv[ltv_cols], on="user_id", how="left")  # broadcast LTV per daily row
 
     ds, existed = prepare_eval_dataset(

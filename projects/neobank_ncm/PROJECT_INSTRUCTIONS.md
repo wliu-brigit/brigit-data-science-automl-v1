@@ -69,7 +69,7 @@ windows) and evaluated on `oot` once (legacy Phases 4–5).
   constraints, locked XGBoost params. Run it first; its test-split AUC is
   the replication checkpoint — compare against the **constrained** legacy
   number ≈ 0.7002 (`test_auc_constrained`; the 0.7016 in Goal is the
-  unconstrained variant, the loop's stretch reference). `scripts/evaluate_split.py
+  unconstrained variant, the loop's stretch reference). `scripts/reeval/evaluate_split.py
   --split oot` is the one sanctioned OOT read for the winner.
 - XGBoost first (legacy winner), LightGBM as challenger.
 - **Neural approaches are in scope — try a reasonable one.** PyTorch is
@@ -81,6 +81,11 @@ windows) and evaluated on `oot` once (legacy Phases 4–5).
   stay within `per_trial_seconds`, and use the same `synthetic_score` soft-label
   data the GBMs train on. Flag in the trial's findings any legacy property a net
   ends up dropping (e.g. the monotone constraints).
+  - **Operational must (not a modeling choice):** call `torch.set_num_threads(1)`
+    at the top of `model.py`. Full-data torch `fit` otherwise hits a native
+    OpenMP/MKL threading crash (SIGSEGV) under the runner; the loop also exports
+    `OMP_NUM_THREADS=1` / `MKL_NUM_THREADS=1`. This is harness hygiene — the same
+    net trains fine at dry-run scale without it.
 - Median imputation for non-payday numerics (legacy also coerced ±inf to NaN
   before imputing); the 11 derived ratio/flag candidates from the legacy EDA
   are already materialized in the base table (8 survived their selection, 3

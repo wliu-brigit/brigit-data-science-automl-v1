@@ -6,7 +6,7 @@ Records eval/oot_new_links/report.json + index + the day2_known_auc scalar
 (never set as the run's primary label — decision metrics never drive selection).
 See docs/to-do/decision-metric-vocabulary.md + native-decision-reeval-plan.md.
 
-    uv run python projects/neobank_ncm/scripts/score_trial_financials.py \
+    uv run python projects/neobank_ncm/scripts/reeval/score_trial_financials.py \
         --eval-dataset-id <id> --model-run-id <id> [--model-run-id <id> ...]
 """
 from __future__ import annotations

@@ -12,7 +12,7 @@ at the requested split. Two sanctioned uses:
 
 Usage (needs warehouse/MLflow access):
 
-    uv run python projects/neobank_ncm/scripts/evaluate_split.py \
+    uv run python projects/neobank_ncm/scripts/reeval/evaluate_split.py \
         --model-run-id <trial's MLflow run id> [--split oot] [--dataset-id <id>]
 
 The headline comparison: oot AUC here vs the legacy v3 OOT known-only AUC

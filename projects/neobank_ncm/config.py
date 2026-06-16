@@ -146,7 +146,7 @@ EVAL = EvalSpec(primary=Auc())
 #                train-side eval dies (silently) on train's NULL-target
 #                unknown rows, so the legacy "train known-only" diagnostic
 #                is computed on demand against this split instead
-#                (scripts/evaluate_split.py --split train_known).
+#                (scripts/reeval/evaluate_split.py --split train_known).
 #   test         Nov–Dec 2025, known-only — the in-loop leaderboard metric
 #                (disjoint from train: the loop fits train_split, scores
 #                eval_split)

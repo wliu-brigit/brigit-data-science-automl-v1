@@ -1,5 +1,10 @@
 # Runner best-effort visibility
 
+> Part of the holistic [`runner-error-visibility/`](runner-error-visibility/)
+> umbrella — this is **layer 1's missing piece** (a breadcrumb channel for
+> swallowed, non-fatal degradations). Read that README for the full failure
+> taxonomy and shared design before picking this up.
+
 ## Status
 
 Captured 2026-06-09 (branch `neobank_NCM_V3_replicate`, neobank_ncm CSV QA

@@ -7,182 +7,143 @@ relevant. Rewritten at each wrap, not appended to.
 > **These docs are best-effort documentation. The code is the source of truth
 > for current behavior.**
 
-**Last updated:** 2026-06-12 — branch `neobank_ncm_v3_replicate`. This session
-(1) built the **native decision/financial re-eval** (settled vocabulary, all
-scenarios, recorded through the harness eval flow), (2) **re-validated the AUC ↔
-business-metric divergence** with the bug-fixed numbers — **it holds**, and (3)
-hit + worked around a **memory wall** in `evaluate()` for non-tree models.
+**Last updated:** 2026-06-13 — branch `neobank_ncm_v3_replicate`. This session ran
+a **breadth-first model search** read on the business metric (scenario-2 UW ΔAR +
+swap-in BR), not AUC. Arc: post-hoc XGB+MLP blend → trained stack → **decision-focused
+training (the winner)** → controls + breadth (ensemble diversity, representation
+transfer). Net finding: **two real levers — better preprocessing and decision-focused
+boundary weighting — lifted ΔAR from +4.65% (prod-replica XGB) to +6.45%, while
+ensembling and neural-representation transfer did NOT help.**
 
 ## TL;DR — where we are
 
-1. **Native decision re-eval is built and run for all 5 trials.** Each trial now
-   has `eval/oot_new_links/report.json` on its MLflow run: the full per-scenario ×
-   per-track decision table, settled metric names, recorded the same way every
-   other eval is. No more ad-hoc `newlinks.*`.
-2. **The divergence finding is VALIDATED** (was tentative — rested on a gate bug).
-   Corrected ΔAR roughly halved vs the buggy values, but the headline holds: the
-   **MLP ties the trees on approval-gain at ~0.025 lower AUC**, and beats the GAM
-   **3×** at near-identical AUC. **Don't select on AUC alone.**
-3. **`evaluate()` thrashes swap for non-tree models** on the 5.3M-row frame (it
-   predicts the whole frame at once). Tree models are fine; the GAM ran 5 hours
-   paging before we killed it. Workaround in place; core fix parked.
+1. **New best model: `boundary XGB`** (decision-focused, single XGBoost) — ΔAR
+   **+6.45%**, swap-in BR **0.2018**, test AUC 0.696, single-row latency **446 ms**,
+   no torch → clean serving validation + cheap deploy. `boundary LightGBM` ties it
+   (+6.38%, lowest swap-in 0.2012) — the lever reproduces across two GBM libraries.
+2. **AUC ↔ business divergence is now extreme and ordered:** the top-3 ΔAR models
+   have the **lowest** day2 AUC (0.660–0.664). Selecting on AUC picks the *worst*
+   business model. Decision metrics must drive selection here, never AUC.
+3. **Two levers, both real, ~equal size (decomposed via a matched control):**
+   - **Preprocessing / pool** (clean 168 + per-feature missingness flags + scaling,
+     vs the prod-replica recipe): +4.65% → **+5.60%** (+0.95pp).
+   - **Decision-focused boundary weighting** (upweight the v3a-boundary cohort):
+     +5.60% → **+6.45%** (+0.85pp), and lowers swap-in BR. **Positive across all 4
+     match-bad-rate scenarios × both UW/CLE tracks** (not a scenario-2 artifact).
+4. **Negative results (don't re-chase):** ensembling/stacking does NOT add once
+   preprocessing is fixed (single XGB ≈ stack; boundary stack +6.20% < boundary XGB
+   +6.45%); MLP-embedding→XGB representation transfer is marginal (+5.72%, ~noise
+   over the +5.60% baseline). Consistent with the ~0.70 AUC **signal ceiling**:
+   little *new* information is extractable from the 168 features.
+5. **Latency is preprocessing-bound (~440–475 ms/row), model-agnostic** — confirmed
+   across every measured model. The real latency lever is the transform, not the model.
 
-## How to read the decision metrics (for the next session)
+## Consolidated results (scenario 2, UW track; sorted by ΔAR)
 
-The numbers live on each trial run as a structured artifact — three ways in:
+`uv run python projects/neobank_ncm/scripts/consolidated_results.py`
+(→ `.cache/automl/fin/consolidated_results.parquet`)
 
-- **Cross-trial table (easiest):**
-  `uv run python projects/neobank_ncm/scripts/rebuild_decision_comparison.py`
-  prints + writes `.cache/automl/fin/decision_comparison.parquet` (headline
-  scenario-2 UW numbers + `day2_known_auc` for all trials in its `TRIALS` map).
-- **One trial's full report (all 7 scenarios, both tracks):**
-  ```python
-  from automl.project import use_project; use_project("neobank_ncm")
-  from automl.mlflow.trial import artifacts
-  r = artifacts.load_eval("<run_id>", "oot_new_links")
-  rep = next(m["value"] for m in r.metrics if m["name"] == "decision_report")
-  rep["scenarios"]["2_income500_match_bad_rate"]["tracks"]["uw"]   # ΔAR etc.
-  rep["scenarios"]["2_income500_match_bad_rate"]["ltv_per_link_d90"]
-  rep["benchmark"]; rep["discrimination"]
-  ```
-- **Scalar in MLflow:** `eval.oot_new_links.day2_known_auc` is the only logged
-  scalar (deliberately — decision metrics never drive selection, so it is never
-  `set_as_primary_label`).
-
-**What the names mean** is the contract in
-[`docs/to-do/decision-metric-vocabulary.md`](to-do/decision-metric-vocabulary.md):
-`candidate` = model under eval, `v3a` = incumbent production strategy, `cle` =
-lenient track, `*_delta` = candidate − v3a. Scenarios keyed `2_income500_match_bad_rate`
-etc. (legacy number + KO-gate + objective). Family 3 (ΔAR, swap sets) is per-track;
-Family 4 (LTV-per-link) is per-scenario over the combined UW∪CLE population.
-**Headline = scenario 2 (income>500, BR-match), UW track, `approval_rate_delta`.**
-
-## Re-validated comparison (scenario 2, UW track)
-
-| trial | run_id | family | test AUC | day2 AUC | ΔAR | swap-in BR |
+| model | family | test AUC | day2 AUC | ΔAR % | swap-in BR | latency ms |
 |---|---|---|---|---|---|---|
-| 11 | `b3e5efdb9a924157b4ca521022ccf816` | WoE scorecard | 0.656 | 0.632 | +0.37% | 0.221 |
-| 12 | `9c6b2e176e9f45888d7489be3e38aedc` | spline GAM | 0.663 | 0.643 | +1.46% | 0.218 |
-| 13 | `e4ea3b7256924bdc83e942e79bb85715` | compact MLP | 0.684 | 0.648 | **+4.23%** | 0.209 |
-| 1 | `51bd38d4bcb845cbbad52dcacd637e1e` | XGBoost | 0.700 | 0.672 | +4.29% | 0.212 |
-| 3 | `2f39e0ead13d4a588e4a385f272dc38f` | XGBoost | 0.701 | 0.673 | +4.65% | 0.211 |
+| **boundary XGB** | tree+decision | 0.696 | 0.664 | **+6.45** | 0.2018 | 446 |
+| boundary LightGBM | tree+decision | 0.693 | 0.660 | +6.38 | **0.2012** | 449 |
+| boundary stack | ensemble+decision | 0.695 | 0.662 | +6.20 | 0.2034 | n/a (torch SIGSEGV) |
+| mlp_embed_xgb (repr-transfer) | repr-transfer | n/a* | 0.656 | +5.72 | 0.2045 | n/a |
+| baseline XGB (good prep, no weighting) | tree | 0.699 | 0.670 | +5.60 | 0.2044 | 435 |
+| t15 XGB+MLP stack | ensemble | 0.698 | 0.669 | +5.53 | 0.2037 | n/a (torch SIGSEGV) |
+| t3 XGBoost (prod replica) | tree | 0.701 | 0.673 | +4.65 | 0.2108 | 474 |
+| t1 XGBoost | tree | 0.700 | 0.673 | +4.29 | 0.2125 | n/a |
+| t13 compact MLP | neural | 0.684 | 0.648 | +4.23 | 0.2090 | 466 |
+| t12 spline GAM | additive | 0.663 | 0.643 | +1.46 | 0.2177 | 437 |
+| t11 WoE scorecard | linear | 0.656 | 0.632 | +0.37 | 0.2214 | 476 |
 
-(Trial 7 excluded — not deployable, 114 leaky features.) LTV-per-link is invariant
-(~$3.0 D90 / ~$3.1 D120 everywhere) — dominated by population economics, not the
-model. Eval dataset: `oot_new_links_with_ltv` = `ev_abb30380d8bc`.
-Draft learning (local, not yet promoted):
-`.cache/automl/learnings/auc-vs-business-divergence.md`.
+*mlp_embed_xgb trial was marked FAILED on a GCS data-read flap during serving
+validation (hash mismatch — known transient, not a model bug); the model was logged
+and decision-eval'd off local frames. test AUC not captured.
 
-## Chunked prediction — what it is, and what it supports
+Run IDs: boundary XGB `a14bca0a287d49f2b8934a400e2d547c` (trial 16) · boundary
+LightGBM `da2065072b104c15893347d4976feb61` · boundary stack
+`41eb1d6fc7a04305ad505ab06fba1f19` · baseline XGB `c9ba2f1368884974a0beca26e5601aed`
+· mlp_embed `528699abdcfb4a12b11573f478f12053` · stack `e7973486fc8e4dfda1f2a4eb3207920f`.
 
-`evaluate()` predicts the **entire** 5.3M-row frame in one `model.predict` call
-(`automl/eval/evaluate.py` `_predict_model`). For models whose preprocessing
-materializes a big dense matrix (spline GAM, torch MLP) that exhausts RAM →
-swap-thrash. Trees (XGB) are fine.
+## How to read the decision metrics (unchanged from before)
+Each model run carries `eval/oot_new_links/report.json` (full per-scenario × per-track
+table). Cross-trial: `consolidated_results.py` (table above) or
+`rebuild_decision_comparison.py` (headline parquet). One report:
+`artifacts.load_eval("<run_id>","oot_new_links")` → the `decision_report` metric.
+Vocabulary contract: [`to-do/decision-metric-vocabulary.md`]. Headline = scenario 2
+(income>500, BR-match), UW track, `approval_rate_delta`. Selection stays on `test`;
+day2/decision metrics are a study, never `set_as_primary_label`.
 
-- **`scripts/score_trial_decision_chunked.py`** is the workaround: it scores via
-  `scoring.score_daily` → `TrialModel` (250k-row chunks) over the **local cached
-  frames** (no 2 GB GCS read), then records the same `eval/oot_new_links/report.json`.
-- **It supports every model we have.** The chunker is model-agnostic — it slices
-  the input and calls the pyfunc `.predict()` per chunk; XGB / scorecard / GAM / MLP
-  all work identically. **Use it as the default for any decision re-eval; reserve
-  native `evaluate()` for tree models only** (until the core fix lands).
-- **Core fix parked:** [`docs/to-do/eval-chunked-prediction.md`](to-do/eval-chunked-prediction.md)
-  — add chunked prediction to the eval path so any large eval dataset is safe
-  generically. Promote this if decision re-eval becomes routine.
+## What the decision-focus model does
+`boundary_weighted_xgb` (trial dir `experiments/neobank_ncm/neobank_ncm_v3_replicate/
+boundary_weighted_xgb/model.py`): two-stage. Stage-1 XGB scores the soft-label
+dual-record training rows; a Gaussian weight bump centered at the ~30%-approval
+percentile (`BOUNDARY_Q=0.30, SIGMA=0.12, AMP=3.0`) upweights the contested cohort;
+stage-2 XGB refits on those weights. Preprocessing = WoE(bank) + OHE(payfreq) +
+numeric inf→nan / median-impute + missingness-flag / scale. 168 deployable features.
+`boundary_weighted_lgbm` is the same recipe with LightGBM.
 
-**How to score a new/non-tree trial:** off-VPN, one at a time, watching RSS:
-`uv run python projects/neobank_ncm/scripts/score_trial_decision_chunked.py --model-run-id <id>`
-(healthy = high CPU + bounded RSS; the thrash signature is *low* CPU + high RSS +
-climbing swap — kill it and chunk instead).
+## Next steps (recommended)
 
-## Next steps
+### A. Promote / harden the decision-focus winner — *do first*
+The +6.45% is one OOT time-snapshot. It already holds across all scenarios × both
+tracks (checked). Before production: confirm on a refit/second time window, then
+promote a learning to `000_overview`. Recommend **deploying `boundary XGB` or
+`boundary LightGBM`** (single tree, ~446 ms, clean validation).
 
-### A. Explore new directions — *not just seeds, and not just architectures* (the main ask)
-Tried so far: trees (XGB), linear (WoE scorecard), additive (spline GAM), neural
-(compact MLP) — all hit the ~0.70 AUC ceiling. The directions below are **things to
-LEARN whether they apply, not a checklist to apply blindly** — each has a
-precondition or a data dependency that must be checked first; some may not be
-feasible here. All work stays within the **168 deployable features**
-(`projects/neobank_ncm/data/deployable_features.json`), `--max-budget-usd 5` per
-run, **OFF-VPN**, and is read on **ΔAR + swap-in BR via the chunked decision
-script**, not just AUC. Loop pattern:
-`automl --project neobank_ncm experiment run --max-iter 1 --max-budget-usd 5 --instruction "..."`.
+### B. Tune the decision-focus lever — *now appropriate (was deferred)*
+The boundary knobs were fixed heuristics. Sweep `Q / SIGMA / AMP`; try centering the
+band on the **actual matched-bad-rate threshold** rather than a fixed 30% percentile;
+try a hard band (train stage-2 only on the cohort) vs the soft Gaussian. Cheap, and
+the lever clearly has signal.
 
-**Evidence framing (Home Credit + tabular-credit literature):** GBMs won that
-competition; fancy nets (TabNet, FT-Transformer, DAE) did *not* reliably beat GBMs
-and cost more compute — NN mostly added value inside **blends/stacks**, and the real
-lever was **feature engineering over the relational/temporal tables**, not the model.
-So the high-value bets here are **features + framing + blend**, *not* a deeper net.
-Sources: [DAE+GBDT HC writeup](https://github.com/pklauke/Kaggle-HomeCreditDefaultRisk),
-[2024 tabular ML/DL benchmark](https://arxiv.org/html/2408.14817v1),
-[TabNet-stacking credit paper](https://pmc.ncbi.nlm.nih.gov/articles/PMC11506879/).
+### C. Principled decision objective (higher-ceiling, needs a small data join)
+Replace the self-referential boundary heuristic with a target that *is* the decision:
+**incumbent-disagreement weighting** (upweight rows where the candidate would swap
+the v3a decision) or a **rank-at-threshold / pairwise loss** on the marginal cohort.
+Blocker: `v2_score` (incumbent) is **not in the training frame** (only the eval frame)
+— join it in at materialize time first. This is the most promising untested direction.
 
-1. **Temporal / trajectory features over the D1–D30 window — IF the data supports it
-   (verify FIRST).** We collapse the daily sequence to a min-score and discard the
-   trajectory. Our analog of HC's aggregations would be slope/volatility/range/
-   recent-vs-early deltas over the 30 days. **Precondition / may not apply:** the
-   production daily *scoring* path must be able to compute cross-day features at score
-   time — we may **not have** the per-user daily history available in production (some
-   168 features are already lookback-windowed like `inflowsum14d`, but cross-*day*
-   evolution is new). **Check deployability before investing**; if production only sees
-   the current day, this is out.
-2. **Blend / stack the existing deployable XGB + MLP — applies regardless (data is in
-   hand).** This is where NN paid off in HC. Our MLP is decorrelated from XGB (ties
-   trees on ΔAR at lower AUC = recovers different signal), so a simple stack may beat
-   either *and* lift ΔAR. Cheap. The most reliable near-term bet.
-3. **Reframe toward the decision, not global AUC — explore if the labels support it.**
-   ΔAR rewards ranking the marginal *swap-in* cohort. Options: model the swap-in
-   population's risk directly, a residual-vs-v3a framing (learn where to disagree with
-   the incumbent), or a rank-at-threshold loss. **May not apply:** the swap-in cohort
-   is small and partly *unlabeled* (rejects) — confirm there's enough labeled signal
-   before framing the target this way.
-4. **If touching the NN, keep it proven + light (don't go deep).** Skip TabNet/FT-T
-   (underperform + compute). Cheap evidence-backed tweaks: RankGauss/quantile input
-   normalization + categorical embeddings on the existing MLP; or a tiny 1D-CNN / small
-   GRU over D1–D30 (only if direction #1's data check passes). No deep stacks.
+### D. Latency (separate ops track, if real-time matters)
+~446 ms/row is **preprocessing-bound** (WoE + ColumnTransformer + per-row pandas),
+not model-bound — and it's the same for every family. Optimize the transform
+(vectorize WoE, drop per-row pandas) to cut latency for *all* models at once.
 
-### B. Harden the divergence finding before promoting it
-One OOT snapshot, scenario 2 only. Confirm the MLP's parity-with-trees with a
-**re-fit seed** and a **second scenario**, then promote
-`auc-vs-business-divergence.md` to the experiment `000_overview` learnings.
+### E. Do NOT re-chase (evidence this session): deeper nets, ensembling/stacking,
+and embedding-as-features — all failed to beat a well-preprocessed single tree here.
+The one untested representation idea is a **self-supervised DAE** (unsupervised
+structure, unlike the supervised embedding that was marginal) — low priority given
+the embedding-transfer result, but the only representation stone unturned.
 
-### C. (Optional) the chunked-prediction core fix — see §Chunked above.
+### F. Torch serving SIGSEGV (if ever deploying a torch model)
+The stack / boundary-stack / mlp_embed (all torch) SIGSEGV in serving validation
+(torch + xgboost OpenMP thread clash in the fresh subprocess). Fix: `nthread=1` on the
+XGB and/or `OMP_NUM_THREADS=1` in the serving image. Not needed for the recommended
+single-tree models. (We did not re-run the stack just to measure its latency, since
+it isn't the recommendation.)
 
-## Legacy fidelity — audited 2026-06-12 (don't redo)
-The decision-eval helpers (`analysis/{policy,impact,scoring,data}.py`) are a
-faithful port of `financial_impact_analysis.ipynb`; the one real bug (no-KO ΔAR
-paired with a scenario-gated LTV) is fixed and validated — corrected trial-1 ≈
-legacy sc2 (ΔAR +4.3% vs +4.5%). The native re-eval reproduces it (trial-1
-day2_auc 0.6725, ΔAR +0.0429). Difference from production is the retrain vs the
-production artifact, not a code gap. LPL has a live `user_ltv.sql` drift source
-(non-snapshotted) — consider freezing it to a dated snapshot for reproducibility.
-
-## Where things live
-- **Decision-eval code:** `projects/neobank_ncm/analysis/report.py` (assembly),
-  `projects/neobank_ncm/eval/metrics.py` (metrics + spec).
-- **Scripts:** `scripts/prepare_oot_new_links_dataset.py` (one-time dataset
-  materialize), `scripts/score_trial_financials.py` (native evaluate driver — trees),
-  `scripts/score_trial_decision_chunked.py` (chunked — all models),
-  `scripts/rebuild_decision_comparison.py` (cross-trial table),
-  `scripts/evaluate_split.py` (the cross-population AUC precedent).
-- **Docs:** [`to-do/decision-metric-vocabulary.md`](to-do/decision-metric-vocabulary.md)
-  (naming + recording contract), [`to-do/native-decision-reeval-plan.md`](to-do/native-decision-reeval-plan.md)
-  (the build), [`to-do/native-reeval-decision-metrics.md`](to-do/native-reeval-decision-metrics.md)
-  (the larger "level-2" capability), [`to-do/eval-chunked-prediction.md`](to-do/eval-chunked-prediction.md).
-- **Deployable asset:** `projects/neobank_ncm/data/deployable_features.json` (168).
-- **Scratch cache (prunable, local):** `.cache/automl/fin/*.parquet` (daily 1.7 GB,
-  user_ltv, ri_scores, `decision_comparison.parquet`), `.cache/automl/learnings/`.
+## Where things live (this session's additions)
+- **Winning models:** `experiments/neobank_ncm/neobank_ncm_v3_replicate/{boundary_weighted_xgb,
+  boundary_weighted_lgbm,boundary_baseline_xgb,boundary_weighted_stack,mlp_embed_xgb,xgb_mlp_stack}/model.py`
+- **Scripts:** `scripts/consolidated_results.py` (the table above + latency),
+  `scripts/blend_study.py` (post-hoc rank-blend study),
+  `scripts/score_trial_decision_chunked.py` (decision eval, **now persists predictions** —
+  the fix so reruns/blends reuse them), `scripts/rebuild_decision_comparison.py`.
+- **Staging copies** of the new models live at `projects/neobank_ncm/staging_*.py` (source
+  of the trial `model.py`s) and `scripts/_smoke_*.py` (in-process smoke harness; the runner's
+  formal `--dry-run` is a different container and the prefix sampler empties the temporal
+  test split, so smoke-test in-process instead). Prunable.
+- **Batch log:** `.cache/automl/fin/AUTONOMOUS_BATCH.md` (overnight run tracker).
 
 ## Gotchas
-- **Run everything OFF-VPN.** GCS flaps on VPN (~0.5 MB/s, hangs). The decision eval
-  is GCS-heavy (one ~2 GB dataset write + reads); none of it needs Snowflake (frames
-  cached). The training loop also flaps + orphans trials on VPN.
-- **Non-tree decision evals: use the chunked script, one at a time, watch RSS.**
-  Native `evaluate()` will thrash them.
-- **torch trials** SIGSEGV the eval without single-thread env (`OMP_NUM_THREADS=1`
-  etc.); both decision scripts set this at import.
-- **`.env` not auto-loaded** by `uv run python`; the scripts load it (GCS/MLflow
-  creds + `REQUESTS_CA_BUNDLE`/`SSL_CERT_FILE` for the VPN TLS intercept).
-- **OOT discipline:** the decision eval is a metric *study*, never trial selection.
-  Keep selection on `test`; `day2_known_auc` is logged but never the primary label.
+- **OFF-VPN for everything.** GCS flaps on VPN. Full-data reads also hit occasional
+  corrupted-bytes/oauth transients even off-VPN (the registry retries; mlp_embed's
+  serving validation still caught one → trial FAILED but model was logged).
+- **Decision eval for non-tree / heavy models: use `score_trial_decision_chunked.py`**
+  (250k-row chunks over local frames). Native `evaluate()` thrashes them.
+- **Runner pre-fit guard** fits on `head(200)`/`head(10)`; any new model must be
+  tiny-sample-safe (a meta-learner needing both classes will fail there — guard it).
+- **Smoke-test new model.py in-process** (`scripts/_smoke_model.py <path>`) before the
+  full run; it mirrors the pre-fit guard and the contract check.
+- Selection on `test` AUC only; decision metrics never drive selection.

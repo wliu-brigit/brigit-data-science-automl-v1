@@ -1,5 +1,9 @@
 # To-do: a crashed runner process should still yield a finalized MLflow record
 
+> Part of the holistic [`runner-error-visibility/`](runner-error-visibility/)
+> umbrella — this is **layer 2** (out-of-process supervision). Read that README
+> for the full failure taxonomy and shared design before picking this up.
+
 **Status:** parked 2026-06-10 out of the `trial-reliability` design (its
 consciously-accepted boundary #3). Real gap, deliberately not solved there.
 

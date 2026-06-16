@@ -1,19 +1,22 @@
-# Per-Trial Timeout Policy
+# Timeout Policy
 
-The runner enforces `RUN_CONFIG.per_trial_seconds` from
-`projects/<project_name>/config.py` using
-`signal.SIGALRM` raised inside the runner process. On timeout, the alarm fires
-and `result["status"]` is set to `"timeout"`.
+Two time knobs exist on `RUN_CONFIG` (`projects/<project_name>/config.py`),
+and they are different kinds of thing:
 
-## Linux-only
+- **`per_trial_seconds` — an advisory budget, not a hard kill.** Nothing in
+  the runner enforces it (no `SIGALRM`, no subprocess timeout). It is read and
+  surfaced to the proposer/coder as a planning constraint ("design a trial
+  that fits this budget"). The only hard cap on a whole trial today is
+  whatever tool timeout the invoking agent applies to `run.py`. This is
+  deliberate: a hard kill could murder a legitimately-long full-data fit
+  (decided 2026-06-10).
+- **`serving_validation_seconds` — a real, enforced timeout** (default 300).
+  The post-fit serving-validation subprocess runs under
+  `subprocess.run(timeout=...)`; on expiry the trial records a serializable
+  failure report and a `validation.status=failed` tag, keeps the trained
+  model and its eval metric, and the loop continues (fail-soft).
 
-`signal.SIGALRM` is a POSIX signal not available on Windows. brigit-automl v0.1.0
-targets Linux (Saturn Cloud, Ubuntu, macOS). If Windows support becomes a
-requirement, replace this with a process-group timeout wrapper.
-
-## Why not also a subprocess timeout?
-
-Earlier drafts also wrapped the evaluation subprocess in a `subprocess.run(..., timeout=120)`.
-This was removed because the inner timeout (120s) was inconsistent with the
-SIGALRM-based per-trial budget (default 600s). With one canonical guard, there's
-no inconsistency.
+If per-trial enforcement is ever wanted, see
+`docs/execution/trial-reliability/design.md` and mirror the validation
+timeout's fail-soft shape — record `status="timeout"` cleanly, never crash
+the handler.

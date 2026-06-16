@@ -15,8 +15,54 @@ from projects.fraud_anomaly_detection.neo4j_codex.control.discovery.metadata imp
 from projects.fraud_anomaly_detection.neo4j_codex.control.discovery.selection import (
     SelectionRow,
 )
+from projects.fraud_anomaly_detection.neo4j_codex.control.graph.methods import (
+    Neo4jGraphDiscovery,
+)
 
 SAMPLE = Path("projects/fraud_anomaly_detection/data/graph/fraud_graph.duckdb")
+RING_ACCOUNT_REUSE_GRAPH_USERS = [
+    "1f3d302e-f10e-4b5d-ae57-af3749e616b0",
+    "4498c60a-2e3d-44ee-a55c-b876b549e6a2",
+    "71dea5e8-6b06-40e5-8033-3d9876aafd61",
+    "7b9cf08f-ee09-48f1-b250-4e72289ca06b",
+    "7fcefe39-633d-4c24-87d0-030592930304",
+    "8158e022-0486-4869-9a4c-40380c1c62ec",
+    "8d700dd3-4add-4bcb-a1b0-138b986c5a3d",
+    "9b3830b4-4504-4c40-a9d7-b2f3a4afca90",
+    "a98d7a82-bead-4e8e-aa87-49024a7a6d87",
+    "c668acfb-7030-4654-9dd6-aab5a8b1f17d",
+    "cabaa79f-4581-4407-bac0-60c21b590cd3",
+    "ce5c9955-8613-4580-b2a2-7f6cff0e66b6",
+    "e813fedc-d47e-41a5-b66c-369ae9e05af1",
+]
+
+
+class FakeNeo4jRunner:
+    def __init__(
+        self,
+        rows_by_method: dict[str, list[dict]],
+        *,
+        state_rows_by_method: dict[str, list[dict]] | None = None,
+    ) -> None:
+        self.rows_by_method = rows_by_method
+        self.state_rows_by_method = state_rows_by_method or {}
+
+    def run(self, query: str, params: dict) -> list[dict]:
+        rows = self.state_rows_by_method if params.get("as_of") else self.rows_by_method
+        return rows.get(str(params["method_name"]), [])
+
+
+def fake_graph_discovery(
+    rows_by_method: dict[str, list[dict]],
+    *,
+    state_rows_by_method: dict[str, list[dict]] | None = None,
+) -> Neo4jGraphDiscovery:
+    return Neo4jGraphDiscovery(
+        runner=FakeNeo4jRunner(
+            rows_by_method,
+            state_rows_by_method=state_rows_by_method,
+        )
+    )
 
 
 def test_graph_row_exposes_metadata_without_sample_store():
@@ -68,7 +114,10 @@ def test_control_loop_report_runs_on_tiny_store(tiny_store, tmp_path):
             out_dir=tmp_path,
             refresh_key="tiny_selected_report",
             graph_min_marginal_users=1,
-        )
+        ),
+        graph_discovery=fake_graph_discovery(
+            {"graph:scenario_neighborhood:ring_account_reuse": [{"user_id": "u3"}]}
+        ),
     )
 
     assert Path(report["paths"]["markdown"]).exists()
@@ -90,7 +139,10 @@ def test_control_loop_report_filters_graph_rows_by_status(tiny_store, tmp_path):
             refresh_key="tiny_selected_report",
             graph_min_marginal_users=1,
             include_statuses=frozenset({"promoted_to_plug_derivation"}),
-        )
+        ),
+        graph_discovery=fake_graph_discovery(
+            {"graph:scenario_neighborhood:ring_account_reuse": [{"user_id": "u3"}]}
+        ),
     )
 
     assert report["graph_status_counts"]["review_only"] > 0
@@ -151,7 +203,8 @@ def test_control_loop_report_state_a_uses_asof_discovery(tmp_path):
             out_dir=tmp_path,
             refresh_key="leak_report",
             graph_min_marginal_users=1,
-        )
+        ),
+        graph_discovery=fake_graph_discovery({}),
     )
 
     assert report["final_discovery"]["final_union_users"] == 3
@@ -165,7 +218,14 @@ def test_control_loop_report_is_repeatable(tmp_path):
             store=SAMPLE,
             out_dir=tmp_path,
             refresh_key="selected_report_test",
-        )
+        ),
+        graph_discovery=fake_graph_discovery(
+            {
+                "graph:scenario_neighborhood:ring_account_reuse": [
+                    {"user_id": user_id} for user_id in RING_ACCOUNT_REUSE_GRAPH_USERS
+                ]
+            }
+        ),
     )
 
     assert Path(report["paths"]["markdown"]).exists()

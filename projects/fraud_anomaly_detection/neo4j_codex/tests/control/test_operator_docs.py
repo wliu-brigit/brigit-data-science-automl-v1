@@ -13,3 +13,8 @@ def test_neo4j_codex_readme_documents_control_extension_workflow():
     assert "method metadata" in text
     assert "promotion_tier" in text
     assert "--include-status" in text
+    assert "uv run --with neo4j --group fraud" in text
+    assert "NEO4J_PASSWORD" in text
+    assert "control/graph/methods.py" in text
+    assert "graph.load" not in text
+    assert "graph.discover" not in text

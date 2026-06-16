@@ -4,19 +4,16 @@ A self-contained unit for the fraud **discovery → plug-the-hole → monitor**
 control system. Development stays inside this folder. Importing the live repo
 scenario package is fine and expected because `scenarios/register.yaml` remains
 canonical. Active graph discovery is different: it is Neo4j-backed through
-`control/graph/`, not the old Python/igraph graph backend. The one hard rule is
-about `archived/`: borrow from it freely *while developing*, but the finished
-unit must carry **no dependency on `archived/`** — copy anything useful into
-`control/` and drop the import (guard tests enforce this). The goal is freedom
-to try the cleanest design while keeping the forward path obvious.
+`control/graph/`, not the old Python/igraph graph backend. The local
+`neo4j_mirror/` package only rebuilds the sample mirror; graph traversal,
+ranking, and communities belong in Neo4j queries executed by the report.
 
 ## Layout
 
-- **`docs/`** — the design and the build plan:
+- **`docs/`** — the current design notes:
   - `CONTROL_SYSTEM_DESIGN.md` — the system design (discovery / plug / monitor,
     persistence, the extensible-skeleton goal).
   - `SCHEMA_DESIGN.md` — the graph schema working notes.
-  - `WALKING_SKELETON_PLAN.md` — the TDD build plan for the walking skeleton.
 
   The durable guiding principles live one level up in
   [`../PRINCIPLES.md`](../PRINCIPLES.md) (kept project-level on purpose — the
@@ -24,9 +21,9 @@ to try the cleanest design while keeping the forward path obvious.
 - **`control/`** — the walking-skeleton system code: discovery adapters,
   finding snapshots, plug derivation, two-state holdout, monitoring, and the
   orchestrator.
-- **`archived/`** — the prior Neo4j-mirror POC, **reference only**. No
-  obligation to use or maintain it; copy snippets out if useful. See
-  `archived/README.md`.
+- **`neo4j_mirror/`** — the active local Neo4j mirror exporter and Docker
+  setup scripts. It pours DuckDB sample facts into Neo4j import CSVs and does
+  not run discovery itself.
 
 ## Control-loop workflow
 
@@ -47,7 +44,7 @@ The report expects a local Neo4j mirror with GDS available. For the current
 sample workflow, rebuild and start it first with:
 
 ```bash
-bash projects/fraud_anomaly_detection/neo4j_codex/archived/scripts/setup_neo4j.sh
+bash projects/fraud_anomaly_detection/neo4j_codex/neo4j_mirror/scripts/setup_neo4j.sh
 ```
 
 That report:
@@ -129,8 +126,7 @@ Plug validation buckets are intentionally named from the operator perspective:
    promoted to `plug_candidate`.
 4. Add tests under `neo4j_codex/tests/control/` for the graph screen catalog,
    Neo4j query registry, graph status/filter behavior, and the end-to-end
-   report. Active control code must not import from `neo4j_codex.archived` or
-   the old Python graph backend.
+   report. Active control code must not import the old Python graph backend.
 
 ## Build posture
 
@@ -138,10 +134,7 @@ Plug validation buckets are intentionally named from the operator perspective:
   `../data/graph/fraud_graph.duckdb` (the local sample). Full v3 / warehouse
   work is out of scope here — it needs VPN; see the design's build-staging
   section.
-- **No `archived/` dependency at the end.** Borrow from `archived/` during
-  development if useful, but the finished `control/` copies what it needs in —
-  the plan's final guard test asserts nothing in `control/` imports
-  `archived/`. Scenario definitions remain canonical in the repo scenario
-  package; active graph discovery stays inside the Neo4j-backed control graph
-  boundary.
-- **TDD on the sample**, per the plan.
+- **No Python graph backend in the active graph path.** Scenario definitions
+  remain canonical in the repo scenario package; active graph discovery stays
+  inside the Neo4j-backed control graph boundary.
+- **TDD on the sample.**

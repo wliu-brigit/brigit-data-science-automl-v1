@@ -158,8 +158,6 @@ def _scenario_neighborhood_cypher() -> str:
     WHERE candidate <> seed
       AND {_user_asof("seed")}
       AND {_user_asof("candidate")}
-      AND coalesce(candidate.scenario_any, false) = false
-      AND coalesce(candidate.is_fraud, false) = false
       AND {_relationship_asof("r")}
       AND {_relationship_asof("r2")}
     WITH candidate,
@@ -188,9 +186,7 @@ def _high_risk_entity_members_cypher() -> str:
       AND entity_users <= $max_entity_users
       AND (fraud_users >= 1 OR scenario_users >= 2)
     MATCH (candidate:User)-[r2:{REL_PATTERN}]->(entity)
-    WHERE coalesce(candidate.scenario_any, false) = false
-      AND coalesce(candidate.is_fraud, false) = false
-      AND {_user_asof("candidate")}
+    WHERE {_user_asof("candidate")}
       AND {_relationship_asof("r2")}
     RETURN DISTINCT candidate.user_id AS user_id,
            fraud_users + scenario_users AS score,
@@ -209,8 +205,6 @@ def _multi_witness_neighbors_cypher() -> str:
     WHERE candidate <> seed
       AND {_user_asof("candidate")}
       AND {_user_asof("seed")}
-      AND coalesce(candidate.scenario_any, false) = false
-      AND coalesce(candidate.is_fraud, false) = false
       AND (coalesce(seed.scenario_any, false) = true OR coalesce(seed.is_fraud, false) = true)
       AND {_relationship_asof("r")}
       AND {_relationship_asof("r2")}
@@ -236,8 +230,6 @@ def _fraud_neighbours_cypher() -> str:
         AND {_user_asof("seed")}
         AND {_user_asof("candidate")}
         AND coalesce(seed.is_fraud, false) = true
-        AND coalesce(candidate.scenario_any, false) = false
-        AND coalesce(candidate.is_fraud, false) = false
         AND {_relationship_asof("r1")}
         AND {_relationship_asof("r2")}
       RETURN candidate.user_id AS user_id, 1 AS user_hops
@@ -255,8 +247,6 @@ def _fraud_neighbours_cypher() -> str:
       MATCH (mid)-[r3:{REL_PATTERN}]->(entity2:Entity)<-[r4:{REL_PATTERN}]-(candidate:User)
       WHERE candidate <> mid
         AND {_user_asof("candidate")}
-        AND coalesce(candidate.scenario_any, false) = false
-        AND coalesce(candidate.is_fraud, false) = false
         AND {_relationship_asof("r3")}
         AND {_relationship_asof("r4")}
       RETURN candidate.user_id AS user_id, 2 AS user_hops
@@ -286,8 +276,6 @@ def _suspicion_queue_cypher() -> str:
     WITH graphName, gds.util.asNode(nodeId) AS candidate, score
     WHERE candidate:User
       AND {_user_asof("candidate")}
-      AND coalesce(candidate.scenario_any, false) = false
-      AND coalesce(candidate.is_fraud, false) = false
       AND score > 0
     WITH graphName,
          collect({{user_id: candidate.user_id, score: score}})[0..$top_n] AS rows
@@ -326,19 +314,18 @@ def _residual_ring_members_cypher() -> str:
          entities,
          [u IN users WHERE coalesce(u.scenario_any, false) = true
                       AND {_user_asof("u")}] AS flagged_users,
-         [u IN users WHERE coalesce(u.scenario_any, false) = false
-                      AND {_user_asof("u")}] AS residual_users
+         [u IN users WHERE {_user_asof("u")}] AS candidate_users
     UNWIND entities AS entity
     WITH graphName,
          componentId,
          users,
          flagged_users,
-         residual_users,
+         candidate_users,
          collect(DISTINCT entity.entity_type) AS entity_types
     WHERE size(users) >= $min_users
       AND size(entity_types) >= $min_types
       AND size(flagged_users) > 0
-    UNWIND residual_users AS candidate
+    UNWIND candidate_users AS candidate
     WITH graphName,
          collect({{
              user_id: candidate.user_id,

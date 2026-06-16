@@ -38,7 +38,7 @@ NEO4J_PASSWORD=fraudpocpass uv run --with neo4j --group fraud python -m \
 Start the current local mirror first:
 
 ```bash
-bash projects/fraud_anomaly_detection/neo4j_codex/archived/scripts/setup_neo4j.sh
+bash projects/fraud_anomaly_detection/neo4j_codex/neo4j_mirror/scripts/setup_neo4j.sh
 ```
 
 Use `--include-status review_only` to show only graph review rows, or repeat
@@ -89,8 +89,8 @@ review-only graph pockets, including:
 - `fraud_neighbours_hops2`
 - `multi_witness_neighbors_scenario_fraud_seed`
 - scenario-neighborhood variants, including
-  `graph:scenario_neighborhood:ring_account_reuse` with 13 net-new users at
-  84.6% DPD45 in the sample.
+  `graph:scenario_neighborhood:ring_account_reuse` with 14 net-new users at
+  85.7% user-level DPD45 in the sample.
 
 This is intentional. Review-only graph methods stay visible in the screened
 table for auditability, but they do not feed the final discovery union or plug
@@ -101,7 +101,7 @@ derivation until their method metadata becomes promotion-safe.
 Latest live Neo4j-backed sample control-loop report:
 
 - scenario union users: 1,024
-- review-only graph net-new users: 235 at 14.0% DPD45 user rate
+- review-only graph net-new users: 219 at 14.6% DPD45 user rate
 - selected graph net-new users: 0
 - final deduped discovery union users: 1,024
 - final discovery DPD45 user rate: 90.4%
@@ -136,6 +136,8 @@ Core skeleton:
 - `control/discovery_report.py` - method, union, and scenario-vs-graph reports.
 - `control/graph/` - Neo4j client boundary and Cypher/GDS graph discovery
   methods.
+- `neo4j_mirror/` - active DuckDB sample to Neo4j mirror exporter and local
+  Docker setup scripts.
 - `control/plug_report.py` - plug coverage and outside-discovery validation.
 - `control/report_store.py` - DuckDB JSON run report persistence.
 - `control/control_loop_report.py` - repeatable scenario, graph, plug,
@@ -186,28 +188,10 @@ uv run --group fraud ruff check \
   projects/fraud_anomaly_detection/neo4j_codex/tests/control \
   projects/fraud_anomaly_detection/graph/discover.py \
   projects/fraud_anomaly_detection/analysis/subgroup_core.py
-python - <<'PY'
-import subprocess
-import sys
-
-result = subprocess.run(
-    [
-        "rg",
-        "neo4j_codex\\\\.archived|from .*archived|import .*archived",
-        "projects/fraud_anomaly_detection/neo4j_codex/control",
-    ],
-    capture_output=True,
-    text=True,
-)
-if result.returncode == 0:
-    print(result.stdout)
-    sys.exit(1)
-if result.returncode == 1:
-    print("No archived imports found")
-    sys.exit(0)
-print(result.stderr)
-sys.exit(result.returncode)
-PY
+uv run pyright \
+  projects/fraud_anomaly_detection/neo4j_codex/control \
+  projects/fraud_anomaly_detection/neo4j_codex/neo4j_mirror \
+  projects/fraud_anomaly_detection/neo4j_codex/tests
 ```
 
 ## Next Steps

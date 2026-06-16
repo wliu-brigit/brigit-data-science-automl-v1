@@ -214,17 +214,41 @@ def generate_control_loop_report(
         "graph_rows": included_graph_rows,
         "graph_status_counts": graph_status_counts,
         "review_graph_net_new_users": len(review_graph_net_new),
+        "review_graph_net_new_dpd45_users": _outcome(review_graph_net_new, truth)[
+            "dpd45_users"
+        ],
         "review_graph_net_new_dpd45_user_rate": _outcome(review_graph_net_new, truth)[
             "dpd45_user_rate"
+        ],
+        "review_graph_net_new_dpd45_advances": _outcome(review_graph_net_new, truth)[
+            "dpd45_advances"
+        ],
+        "review_graph_net_new_mature_advances": _outcome(review_graph_net_new, truth)[
+            "mature_advances"
+        ],
+        "review_graph_net_new_dpd45_advance_rate": _outcome(review_graph_net_new, truth)[
+            "dpd45_advance_rate"
         ],
         "selected_graph_rows": selected_rows,
         "excluded_graph_rows": excluded_rows,
         "final_discovery": {
             "scenario_union_users": len(scenario_union),
             "selected_graph_net_new_users": len(selected_graph_net_new),
+            "selected_graph_net_new_dpd45_users": _outcome(
+                selected_graph_net_new, truth
+            )["dpd45_users"],
             "selected_graph_net_new_dpd45_user_rate": _outcome(
                 selected_graph_net_new, truth
             )["dpd45_user_rate"],
+            "selected_graph_net_new_dpd45_advances": _outcome(
+                selected_graph_net_new, truth
+            )["dpd45_advances"],
+            "selected_graph_net_new_mature_advances": _outcome(
+                selected_graph_net_new, truth
+            )["mature_advances"],
+            "selected_graph_net_new_dpd45_advance_rate": _outcome(
+                selected_graph_net_new, truth
+            )["dpd45_advance_rate"],
             "final_union_users": len(final_discovery),
             "final_union_dpd45_user_rate": _outcome(final_discovery, truth)[
                 "dpd45_user_rate"
@@ -417,42 +441,34 @@ def _scenario_rows(
     for scenario in scenarios:
         scenario_name = str(scenario.metadata.params["scenario_name"])
         outcomes = _outcome(scenario.users, truth)
-        rows.append(
-            {
-                "scenario": scenario_name,
-                "scenario method": scenario.name,
-                "method version": scenario.metadata.version,
-                "method type": scenario.metadata.method_type,
-                "time semantics": scenario.metadata.time_semantics,
-                "promotion tier": scenario.metadata.promotion_tier,
-                "enforcement projection": scenario.metadata.enforcement_projection,
-                "users found": f"{outcomes['users']:,}",
-                "DPD45 user rate": _pct(outcomes["dpd45_user_rate"]),
-                "DPD45 advances": f"{outcomes['dpd45_advances']:,}/{outcomes['mature_advances']:,}",
-                "DPD45 advance rate": _pct(outcomes["dpd45_advance_rate"]),
-            }
-        )
-    outcomes = _outcome(scenario_union, truth)
-    rows.append(
-        {
-            "scenario": "scenario union (deduped)",
-            "scenario method": "scenario:union",
-            "method version": SCENARIOS_VERSION,
-            "method type": "scenario",
-            "time semantics": "production_safe",
-            "promotion tier": "plug_candidate",
-            "enforcement projection": "scenario_rule",
-            "users found": f"{outcomes['users']:,}",
-            "DPD45 user rate": _pct(outcomes["dpd45_user_rate"]),
-            "DPD45 advances": f"{outcomes['dpd45_advances']:,}/{outcomes['mature_advances']:,}",
-            "DPD45 advance rate": _pct(outcomes["dpd45_advance_rate"]),
+        row = {
+            "scenario": scenario_name,
+            "scenario method": scenario.name,
+            "method version": scenario.metadata.version,
+            "method type": scenario.metadata.method_type,
+            "time semantics": scenario.metadata.time_semantics,
+            "promotion tier": scenario.metadata.promotion_tier,
+            "enforcement projection": scenario.metadata.enforcement_projection,
         }
-    )
+        row.update(_method_outcome_columns("all discovered", outcomes))
+        rows.append(row)
+    outcomes = _outcome(scenario_union, truth)
+    union_row = {
+        "scenario": "scenario union (deduped)",
+        "scenario method": "scenario:union",
+        "method version": SCENARIOS_VERSION,
+        "method type": "scenario",
+        "time semantics": "production_safe",
+        "promotion tier": "plug_candidate",
+        "enforcement projection": "scenario_rule",
+    }
+    union_row.update(_method_outcome_columns("all discovered", outcomes))
+    rows.append(union_row)
     return rows
 
 
 def _graph_row(method: SelectionRow) -> dict:
-    return {
+    row = {
         "graph method": method.name,
         "status": _graph_status(method),
         "display name": str(method.metadata.params["display_name"]),
@@ -461,17 +477,34 @@ def _graph_row(method: SelectionRow) -> dict:
         "time semantics": method.metadata.time_semantics,
         "promotion tier": method.metadata.promotion_tier,
         "enforcement projection": method.metadata.enforcement_projection,
-        "total users / DPD45": (
-            f"{method.total['users']:,} / {_pct(method.total['dpd45_user_rate'])}"
-        ),
-        "net-new beyond scenarios / DPD45": (
-            f"{method.net['users']:,} / {_pct(method.net['dpd45_user_rate'])}"
-        ),
-        "marginal after dedupe / DPD45": (
-            f"{method.marginal['users']:,} / {_pct(method.marginal['dpd45_user_rate'])}"
-        ),
         "selected?": "yes" if method.selected else "no",
         "reason": method.reason,
+    }
+    row.update(_method_outcome_columns("all discovered", method.total))
+    row.update(_method_outcome_columns("net-new", method.net))
+    row.update(_method_outcome_columns("marginal", method.marginal))
+    return row
+
+
+def _method_outcome_columns(prefix: str, outcome: dict) -> dict:
+    if prefix == "all discovered":
+        users_key = "all discovered users"
+    elif prefix == "net-new":
+        users_key = "net-new users beyond scenarios"
+    elif prefix == "marginal":
+        users_key = "marginal users after dedupe"
+    else:
+        raise ValueError(f"Unknown method outcome prefix: {prefix!r}")
+    return {
+        users_key: f"{outcome['users']:,}",
+        f"{prefix} DPD45 users/rate": (
+            f"{outcome['dpd45_users']:,}/{outcome['users']:,} "
+            f"({_pct(outcome['dpd45_user_rate'])})"
+        ),
+        f"{prefix} DPD45 advances/rate": (
+            f"{outcome['dpd45_advances']:,}/{outcome['mature_advances']:,} "
+            f"({_pct(outcome['dpd45_advance_rate'])})"
+        ),
     }
 
 
@@ -492,6 +525,8 @@ def _plug_bucket_row(bucket: str, report_bucket: dict) -> dict:
     return {
         "bucket": bucket,
         "users": f"{report_bucket['n_users']:,}",
+        "DPD45 users": f"{outcomes['n_dpd45_users']:,}/{outcomes['n_users_with_advances']:,}",
+        "DPD45 user rate": _pct(outcomes["dpd45_user_rate"]),
         "advances": f"{outcomes['n_advances']:,}",
         "DPD45 advances": (
             f"{outcomes['n_dpd45_advances']:,}/{outcomes['n_mature_advances']:,}"
@@ -520,6 +555,18 @@ def _render_markdown(
     graph_outcomes = _outcome(selected_graph_net_new, truth)
     review_graph_outcomes = _outcome(review_graph_net_new, truth)
     displayed_statuses = ", ".join(sorted(config.include_statuses))
+    scenario_headers = [
+        "scenario",
+        "scenario method",
+        "method version",
+        "method type",
+        "time semantics",
+        "promotion tier",
+        "enforcement projection",
+        "all discovered users",
+        "all discovered DPD45 users/rate",
+        "all discovered DPD45 advances/rate",
+    ]
     graph_headers = [
         "graph method",
         "status",
@@ -529,9 +576,12 @@ def _render_markdown(
         "time semantics",
         "promotion tier",
         "enforcement projection",
-        "total users / DPD45",
-        "net-new beyond scenarios / DPD45",
-        "marginal after dedupe / DPD45",
+        "all discovered users",
+        "all discovered DPD45 users/rate",
+        "all discovered DPD45 advances/rate",
+        "net-new users beyond scenarios",
+        "net-new DPD45 users/rate",
+        "net-new DPD45 advances/rate",
         "selected?",
         "reason",
     ]
@@ -543,9 +593,9 @@ Graph selection rule for this run: include a graph method only when its metadata
 
 Displayed graph statuses: `{displayed_statuses}`.
 
-## Scenario Performance
+## Scenario Method Screen
 
-{_table(scenario_rows, ["scenario", "scenario method", "method version", "method type", "time semantics", "promotion tier", "enforcement projection", "users found", "DPD45 user rate", "DPD45 advances", "DPD45 advance rate"])}
+{_table(scenario_rows, scenario_headers)}
 
 ## Graph Method Screen
 
@@ -556,7 +606,7 @@ Status counts before display filtering:
 - below_min_marginal_users: `{graph_status_counts["below_min_marginal_users"]}`
 - below_min_marginal_dpd45_user_rate: `{graph_status_counts["below_min_marginal_dpd45_user_rate"]}`
 
-Review-only graph net-new users beyond scenarios: `{len(review_graph_net_new):,}` at `{_pct(review_graph_outcomes["dpd45_user_rate"])}` DPD45 user rate. These are visible discovery leads, not plug-derived users, until their method metadata is upgraded to leak-free/as-of or production-safe.
+Review-only graph net-new users beyond scenarios: `{len(review_graph_net_new):,}`. User-level DPD45: `{review_graph_outcomes["dpd45_users"]:,}/{review_graph_outcomes["users"]:,}` at `{_pct(review_graph_outcomes["dpd45_user_rate"])}`. Advance-level DPD45: `{review_graph_outcomes["dpd45_advances"]:,}/{review_graph_outcomes["mature_advances"]:,}` at `{_pct(review_graph_outcomes["dpd45_advance_rate"])}`. These are visible discovery leads, not plug-derived users, until their method metadata is upgraded to leak-free/as-of or production-safe.
 
 ### Promoted Graph Methods
 
@@ -566,11 +616,12 @@ Review-only graph net-new users beyond scenarios: `{len(review_graph_net_new):,}
 
 {_table(excluded_rows, graph_headers) if excluded_rows else "No graph methods matched the display filter."}
 
-## Final Deduped Discovery Union
+## Discovery Summary
 
 - Scenario union users: `{_scenario_union_users(scenario_rows)}`
 - Selected graph net-new users beyond scenarios: `{len(selected_graph_net_new):,}`
-- Selected graph net-new DPD45 user rate: `{_pct(graph_outcomes["dpd45_user_rate"])}`
+- Selected graph net-new DPD45 user rate: `{graph_outcomes["dpd45_users"]:,}/{graph_outcomes["users"]:,}` at `{_pct(graph_outcomes["dpd45_user_rate"])}`
+- Selected graph net-new DPD45 advance rate: `{graph_outcomes["dpd45_advances"]:,}/{graph_outcomes["mature_advances"]:,}` at `{_pct(graph_outcomes["dpd45_advance_rate"])}`
 - Final discovery union users: `{final_outcomes["users"]:,}`
 - Final discovery union DPD45 user rate: `{_pct(final_outcomes["dpd45_user_rate"])}`
 - Final discovery union DPD45 advance rate: `{_pct(final_outcomes["dpd45_advance_rate"])}`
@@ -584,11 +635,11 @@ Default plug gates: support >= `{config.plug_config.min_support}`, discovery cov
 
 ### State A Backtest
 
-{_table(state_rows, ["bucket", "users", "advances", "DPD45 advances", "DPD45 advance rate"])}
+{_table(state_rows, ["bucket", "users", "DPD45 users", "DPD45 user rate", "advances", "DPD45 advances", "DPD45 advance rate"])}
 
 ### Holdout Cross-Validation
 
-{_table(holdout_rows, ["bucket", "users", "advances", "DPD45 advances", "DPD45 advance rate"])}
+{_table(holdout_rows, ["bucket", "users", "DPD45 users", "DPD45 user rate", "advances", "DPD45 advances", "DPD45 advance rate"])}
 
 ## Notes
 
@@ -602,7 +653,7 @@ Machine-readable JSON: `{paths.json}`
 
 
 def _scenario_union_users(scenario_rows: list[dict]) -> str:
-    return scenario_rows[-1]["users found"]
+    return scenario_rows[-1]["all discovered users"]
 
 
 def _pct(value: float) -> str:

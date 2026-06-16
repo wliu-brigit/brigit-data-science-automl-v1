@@ -69,6 +69,15 @@ def test_graph_queries_filter_users_by_asof_presence():
     assert all("first_seen_ts <= localdatetime($as_of)" in method.cypher for method in methods)
 
 
+def test_graph_queries_do_not_pre_filter_scenario_candidate_users():
+    methods = default_neo4j_graph_methods(["ring_account_reuse"])
+
+    for method in methods:
+        assert "coalesce(candidate.scenario_any, false) = false" not in method.cypher
+        assert "coalesce(candidate.is_fraud, false) = false" not in method.cypher
+        assert "residual_users" not in method.cypher
+
+
 def test_neo4j_graph_discovery_returns_contract_candidates():
     runner = RecordingRunner(
         {

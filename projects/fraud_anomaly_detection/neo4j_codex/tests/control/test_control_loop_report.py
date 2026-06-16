@@ -79,11 +79,32 @@ def test_graph_row_exposes_metadata_without_sample_store():
         SelectionRow(
             name="graph:test",
             users=frozenset({"u1"}),
-            total={"users": 1, "dpd45_user_rate": 0.5},
+            total={
+                "users": 1,
+                "dpd45_users": 1,
+                "dpd45_user_rate": 1.0,
+                "dpd45_advances": 2,
+                "mature_advances": 4,
+                "dpd45_advance_rate": 0.5,
+            },
             net_new_users=frozenset({"u1"}),
-            net={"users": 1, "dpd45_user_rate": 0.5},
+            net={
+                "users": 1,
+                "dpd45_users": 1,
+                "dpd45_user_rate": 1.0,
+                "dpd45_advances": 2,
+                "mature_advances": 4,
+                "dpd45_advance_rate": 0.5,
+            },
             marginal_users=frozenset({"u1"}),
-            marginal={"users": 1, "dpd45_user_rate": 0.5},
+            marginal={
+                "users": 1,
+                "dpd45_users": 1,
+                "dpd45_user_rate": 1.0,
+                "dpd45_advances": 2,
+                "mature_advances": 4,
+                "dpd45_advance_rate": 0.5,
+            },
             selected=False,
             reason="promotion_tier",
             metadata=metadata,
@@ -99,9 +120,15 @@ def test_graph_row_exposes_metadata_without_sample_store():
         "time semantics": "snapshot_review",
         "promotion tier": "review_queue",
         "enforcement projection": "entity_key",
-        "total users / DPD45": "1 / 50.0%",
-        "net-new beyond scenarios / DPD45": "1 / 50.0%",
-        "marginal after dedupe / DPD45": "1 / 50.0%",
+        "all discovered users": "1",
+        "all discovered DPD45 users/rate": "1/1 (100.0%)",
+        "all discovered DPD45 advances/rate": "2/4 (50.0%)",
+        "net-new users beyond scenarios": "1",
+        "net-new DPD45 users/rate": "1/1 (100.0%)",
+        "net-new DPD45 advances/rate": "2/4 (50.0%)",
+        "marginal users after dedupe": "1",
+        "marginal DPD45 users/rate": "1/1 (100.0%)",
+        "marginal DPD45 advances/rate": "2/4 (50.0%)",
         "selected?": "no",
         "reason": "promotion_tier",
     }
@@ -122,6 +149,32 @@ def test_control_loop_report_runs_on_tiny_store(tiny_store, tmp_path):
 
     assert Path(report["paths"]["markdown"]).exists()
     assert Path(report["paths"]["json"]).exists()
+    markdown = Path(report["paths"]["markdown"]).read_text()
+    assert markdown.index("## Scenario Method Screen") < markdown.index(
+        "## Graph Method Screen"
+    )
+    assert markdown.index("## Graph Method Screen") < markdown.index(
+        "## Discovery Summary"
+    )
+    assert "## Scenario Performance" not in markdown
+    assert (
+        "| scenario | scenario method | method version | method type | time semantics | "
+        "promotion tier | enforcement projection | all discovered users | "
+        "all discovered DPD45 users/rate | "
+        "all discovered DPD45 advances/rate |"
+    ) in markdown
+    assert (
+        "| graph method | status | display name | method version | method type | "
+        "time semantics | promotion tier | enforcement projection | "
+        "all discovered users | all discovered DPD45 users/rate | "
+        "all discovered DPD45 advances/rate | net-new users beyond scenarios | "
+        "net-new DPD45 users/rate | net-new DPD45 advances/rate | selected? | reason |"
+    ) in markdown
+    assert "marginal users after dedupe" not in markdown
+    assert (
+        "| bucket | users | DPD45 users | DPD45 user rate | advances | "
+        "DPD45 advances | DPD45 advance rate |"
+    ) in markdown
     assert report["scenario_rows"][0]["scenario method"].startswith("scenario:")
     assert report["scenario_rows"][0]["method version"] == report["scenario_version"]
     assert report["graph_status_counts"]["review_only"] > 0
@@ -239,7 +292,12 @@ def test_control_loop_report_is_repeatable(tmp_path):
     assert any(
         row["graph method"] == "graph:scenario_neighborhood:ring_account_reuse"
         and row["status"] == "review_only"
-        and row["net-new beyond scenarios / DPD45"] == "13 / 84.6%"
+        and row["all discovered users"] == "13"
+        and row["all discovered DPD45 users/rate"] == "11/13 (84.6%)"
+        and row["all discovered DPD45 advances/rate"] == "11/15 (73.3%)"
+        and row["net-new users beyond scenarios"] == "13"
+        and row["net-new DPD45 users/rate"] == "11/13 (84.6%)"
+        and row["net-new DPD45 advances/rate"] == "11/15 (73.3%)"
         for row in report["graph_rows"]
     )
     assert report["selected_graph_rows"] == []

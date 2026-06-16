@@ -24,6 +24,10 @@ ranking, and communities belong in Neo4j queries executed by the report.
 - **`neo4j_mirror/`** — the active local Neo4j mirror exporter and Docker
   setup scripts. It pours DuckDB sample facts into Neo4j import CSVs and does
   not run discovery itself.
+- **[`EXPLORE_IN_BROWSER.md`](EXPLORE_IN_BROWSER.md)** — a hands-on tour of the
+  fraud graph in the Neo4j Browser UI: stand the mirror up, paste the queries,
+  and *see* the fraud rings (9% baseline → 90–100% shared-resource pockets). No
+  code — just the visual front end.
 
 ## Control-loop workflow
 

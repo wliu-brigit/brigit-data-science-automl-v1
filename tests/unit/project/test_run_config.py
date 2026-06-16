@@ -153,3 +153,63 @@ def test_splits_from_dict_rejects_bad_payloads():
 def test_splits_from_dict_tombstones_old_ranges_payloads():
     with pytest.raises(ValueError, match="bucket ranges were removed"):
         Splits.from_dict({"ranges": {"train": [[0, 80]], "test": [[80, 100]]}})
+
+
+def _models():
+    return ModelsConfig(
+        manager=ModelRoute("sonnet", "medium"),
+        proposer=ModelRoute("sonnet", "medium"),
+        coder=ModelRoute("sonnet", "medium"),
+    )
+
+
+def test_serving_validation_seconds_defaults_to_300():
+    config = RunConfig(experiment_id="exp", models=_models(), per_trial_seconds=600)
+    assert config.serving_validation_seconds == 300
+
+
+def test_serving_validation_seconds_accepts_override():
+    config = RunConfig(
+        experiment_id="exp",
+        models=_models(),
+        per_trial_seconds=600,
+        serving_validation_seconds=42,
+    )
+    assert config.serving_validation_seconds == 42
+
+
+@pytest.mark.parametrize("bad", [0, -5, True, 1.5, "300"])
+def test_serving_validation_seconds_rejects_invalid(bad):
+    with pytest.raises(ValueError):
+        RunConfig(
+            experiment_id="exp",
+            models=_models(),
+            per_trial_seconds=600,
+            serving_validation_seconds=bad,
+        )
+
+
+def test_skip_snowflake_live_check_defaults_false():
+    config = RunConfig(experiment_id="exp", models=_models(), per_trial_seconds=600)
+    assert config.skip_snowflake_live_check is False
+
+
+def test_skip_snowflake_live_check_accepts_true():
+    config = RunConfig(
+        experiment_id="exp",
+        models=_models(),
+        per_trial_seconds=600,
+        skip_snowflake_live_check=True,
+    )
+    assert config.skip_snowflake_live_check is True
+
+
+@pytest.mark.parametrize("bad", [1, "true", None])
+def test_skip_snowflake_live_check_rejects_non_bool(bad):
+    with pytest.raises(TypeError):
+        RunConfig(
+            experiment_id="exp",
+            models=_models(),
+            per_trial_seconds=600,
+            skip_snowflake_live_check=bad,
+        )

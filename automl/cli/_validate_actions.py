@@ -19,7 +19,11 @@ from ._common import print_json, session_from_args
 
 
 def _project(args: argparse.Namespace) -> int:
-    report = validate_project(session=session_from_args(args), live=True)
+    report = validate_project(
+        session=session_from_args(args),
+        live=True,
+        probe_snowflake=getattr(args, "probe_snowflake", None),
+    )
     print_json(report)
     return 0 if report.passed else 1
 

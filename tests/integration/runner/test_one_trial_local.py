@@ -56,6 +56,16 @@ class FakeBlob:
     def download_as_bytes(self) -> bytes:
         return self._store[(self._bucket, self.name)]
 
+    def download_to_filename(
+        self,
+        filename: str,
+        *,
+        checksum: str | None = None,
+        retry: object = None,
+    ) -> None:
+        del checksum, retry
+        Path(filename).write_bytes(self._store[(self._bucket, self.name)])
+
     def exists(self) -> bool:
         return (self._bucket, self.name) in self._store
 
@@ -130,7 +140,7 @@ def test_run_trial_executes_homecredit_chain_and_logs_artifacts(tmp_path, monkey
         assert eval_loads == [
             (loaded.id, None, Where("SPLIT_PCT") >= 80),
             (loaded.id, None, Where("SPLIT_PCT") < 80),
-            (loaded.id, "test", None),
+            (loaded.id, None, None),
             (loaded.id, "test", None),
         ]
 
@@ -167,6 +177,7 @@ def test_run_trial_executes_homecredit_chain_and_logs_artifacts(tmp_path, monkey
             "features/feature_registry.csv",
             "manifest.json",
             "timing/summary.json",
+            "trial/issues.json",
             "validation/data/input.csv",
             "validation/data/input.parquet",
             "validation/data/expected.parquet",
@@ -277,6 +288,7 @@ def test_run_trial_executes_homecredit_chain_and_logs_artifacts(tmp_path, monkey
             "features/feature_registry.csv",
             "model/MLmodel",
             "timing/summary.json",
+            "trial/issues.json",
             "validation/data/input.csv",
             "validation/data/input.parquet",
             "validation/data/expected.parquet",
@@ -345,7 +357,11 @@ def test_run_trial_rebinds_explicit_session_and_restores_prior_binding(tmp_path,
 
 def test_run_trial_logs_failure_report_and_traceback_artifacts(tmp_path, monkeypatch):
     repo_root = Path(__file__).resolve().parents[3]
+    fake_gcs = FakeGCSClient()
+    monkeypatch.setattr(gcs, "_gcs_client", lambda: fake_gcs)
     monkeypatch.setenv("MLFLOW_TRACKING_URI", (tmp_path / "mlruns").as_uri())
+    monkeypatch.setenv("GCS_BUCKET", "automl-test-bucket")
+    monkeypatch.setenv("GCS_PREFIX", "runner-local")
 
     # Unique route per run (like the sibling import-failure test): the dataset
     # record lives in this run's fresh MLflow, so re-using a fixed GCS route

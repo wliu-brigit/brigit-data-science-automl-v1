@@ -128,7 +128,13 @@ EVAL = EvalSpec(primary=Auc())
 #                    orchestrates, the proposer designs the next trial, the
 #                    coder implements it. Each is ModelRoute(model, effort);
 #                    effort is one of "low" / "medium" / "high".
-# per_trial_seconds  hard time budget for a single trial.
+# per_trial_seconds  advisory time budget for a single trial, surfaced to
+#                    the proposer/coder as a constraint — not enforced as a
+#                    hard kill (only serving_validation_seconds is enforced).
+# serving_validation_seconds  wall-clock budget (default 300) for the post-fit
+#                    serving-validation subprocess; raise for slow/VPN loads.
+# skip_snowflake_live_check   bool (default False); set True to skip the live
+#                    SELECT 1 probe when off-VPN — env and SQL checks still run.
 # Deeper reference: agent-skills/references/setup/run-config.md
 
 RUN_CONFIG = RunConfig(
@@ -208,6 +214,13 @@ def _snowflake_templates(project_name: str) -> dict[str, str]:
     return {
         "__init__.py": "",
         "README.md": _readme_template(project_name),
+        # Generic, version-controlled guides surfaced through README's "Project
+        # docs" index (progressive disclosure). experiment-learnings.md is the
+        # canonical format+flow for promoting experiment-level learnings; copied
+        # verbatim so every project carries the same convention.
+        "docs/experiment-learnings.md": (
+            _TEMPLATES_DIR / "experiment-learnings.md"
+        ).read_text(encoding="utf-8"),
         # Project code mirrors the library domain it extends (see README.md):
         # eval/ for custom metrics, model/ for transformers/preprocessing,
         # data/ for a custom DataPipeline. Stubs so the convention is the path

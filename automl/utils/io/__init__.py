@@ -1,3 +1,3 @@
 """I/O helpers."""
 
-__all__ = ["gcs"]
+__all__ = ["blob_cache", "gcs"]

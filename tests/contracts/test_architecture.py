@@ -74,6 +74,7 @@ AUTOML_DOMAINS = {
 KNOWN_PRIVATE_MLFLOW_ROUTING_OFFENDERS = set()
 STORAGE_ERROR_RAISE_ALLOWED = {
     "automl/utils/io/gcs.py",
+    "automl/data/registry.py",  # data read seam: wraps download failures as StorageError
 }
 DIRECT_MLFLOW_BIND_ALLOWED = {
     "automl/project/session.py",
@@ -214,7 +215,7 @@ def test_cli_verb_files_stay_thin():
         "automl/cli/project.py": 80,
         "automl/cli/experiment.py": 80,
         "automl/cli/trial.py": 80,
-        "automl/cli/data.py": 80,
+        "automl/cli/data.py": 110,  # +30 for data cache list/prune/clear verbs
         "automl/cli/eval.py": 80,
         "automl/cli/validate.py": 80,
     }

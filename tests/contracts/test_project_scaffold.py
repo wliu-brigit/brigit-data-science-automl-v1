@@ -19,6 +19,7 @@ EXPECTED_SCAFFOLD = [
     "projects/shape_check/data/__init__.py",
     "projects/shape_check/data/queries/base_table.sql",
     "projects/shape_check/data/queries/training_data.sql",
+    "projects/shape_check/docs/experiment-learnings.md",
     "projects/shape_check/eval/__init__.py",
     "projects/shape_check/model/__init__.py",
     "projects/shape_check/tests/__init__.py",
@@ -40,3 +41,16 @@ def test_scaffolded_readme_carries_the_conventions(tmp_path):
     assert "## Writing PROJECT_INSTRUCTIONS.md" in readme
     assert "## Snowflake: when your base table already exists" in readme
     assert "{project_name}" not in readme  # substitution applied
+    # Progressive-disclosure entry point into docs/ (experiment-learnings guide)
+    assert "## Project docs" in readme
+    assert "docs/experiment-learnings.md" in readme
+
+
+def test_scaffolded_docs_carry_the_experiment_learnings_guide(tmp_path):
+    create_project("shape_check", project_root=tmp_path)
+    guide = (
+        tmp_path / "projects" / "shape_check" / "docs" / "experiment-learnings.md"
+    ).read_text(encoding="utf-8")
+    assert "# Publishing an experiment-level learning" in guide
+    assert "schema_version: 1" in guide  # versioned study format
+    assert "MLflow is the durable home" in guide

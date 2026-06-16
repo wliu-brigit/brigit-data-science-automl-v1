@@ -171,6 +171,30 @@ def read_json(uri: str, *, client: Any | None = None) -> dict[str, Any]:
     return payload
 
 
+def download_to_file(
+    uri: str,
+    dest: "str | os.PathLike[str]",
+    *,
+    client: Any | None = None,
+) -> None:
+    """Robust whole-object download: streamed to disk, checksummed, retried.
+
+    Unlike ``read_bytes``/``read_parquet`` (single-shot into RAM), this uses the
+    client's chunked transfer with explicit crc32c validation and an extended
+    retry window, for multi-GB objects where a long-lived connection sees
+    transients (design: trial-reliability §5).
+    """
+    from google.cloud.storage.retry import DEFAULT_RETRY
+
+    bucket, blob_name = parse_gcs_uri(uri)
+    blob = _client_or_default(client).bucket(bucket).blob(blob_name)
+    blob.download_to_filename(
+        str(dest),
+        checksum="crc32c",
+        retry=DEFAULT_RETRY.with_timeout(300.0),
+    )
+
+
 def read_bytes(uri: str, *, client: Any | None = None) -> bytes:
     """Read raw bytes from GCS."""
     bucket, blob_name = parse_gcs_uri(uri)
@@ -270,6 +294,7 @@ def _bucket_and_prefix(uri_or_bucket: str, prefix: str | None) -> tuple[str, str
 __all__ = [
     "blob_exists",
     "delete_prefix",
+    "download_to_file",
     "is_gcs_uri",
     "join_uri",
     "list_blob_names",
